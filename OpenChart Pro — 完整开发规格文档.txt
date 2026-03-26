@@ -1,0 +1,2790 @@
+# OpenChart Pro — 完整开发规格文档
+
+> **用途**：将此文档完整提供给 VS Code + Claude Code，作为项目开发的唯一需求来源。Claude Code 应按照文档中的模块顺序、技术选型、API 规范、数据结构逐步实现。
+
+---
+
+## 一、项目概述
+
+### 1.1 项目定位
+构建一个类似 TradingView 的专业级**自托管看盘平台**，命名为 **OpenChart Pro**。支持加密货币、美股、港股、A股四大市场，具备实时K线图表、20+内置技术指标、自定义公式编辑器、智能警报、策略回测、AI智能选股和加密货币链上数据仪表盘。
+
+### 1.2 技术栈总览
+
+| 层级 | 技术选型 | 版本要求 |
+|------|---------|---------|
+| 后端框架 | FastAPI | >=0.100 |
+| 实时通信 | WebSocket (FastAPI 原生) | - |
+| K线图表 | KLineChart Pro | v10+ |
+| 代码编辑器 | CodeMirror 6 | v6+ |
+| 后端计算 | NumPy + Pandas | >=1.24 / >=2.0 |
+| 回测引擎 | VectorBT | >=0.26 |
+| AI/LLM | DeepSeek API / 通义千问 API (可配置) | - |
+| 数据存储 | SQLite | 3.x |
+| 任务调度 | APScheduler | >=3.10 |
+| HTTP客户端 | aiohttp | >=3.9 |
+| 前端样式 | 原生CSS (暗色主题) | - |
+| 包管理 | pip + npm | - |
+
+### 1.3 目录结构
+
+```
+openchart-pro/
+├── backend/
+│   ├── main.py                  # FastAPI 入口，路由注册，启动逻辑
+│   ├── config.py                # 全局配置（交易所选择、API Key、LLM配置等）
+│   ├── requirements.txt         # Python 依赖
+│   │
+│   ├── data/                    # 数据源模块
+│   │   ├── __init__.py
+│   │   ├── fetcher.py           # 统一数据获取接口（工厂模式）
+│   │   ├── okx.py               # OKX WebSocket + REST
+│   │   ├── binance.py           # Binance WebSocket + REST（备用）
+│   │   ├── yahoo.py             # Yahoo Finance（美股/港股）
+│   │   ├── eastmoney.py         # 东方财富（A股）
+│   │   └── models.py            # 数据模型定义（Candle, Symbol等）
+│   │
+│   ├── indicators/              # 指标计算模块
+│   │   ├── __init__.py
+│   │   ├── builtin.py           # 20+内置指标引擎
+│   │   ├── registry.py          # 指标注册表（名称→计算函数映射）
+│   │   └── formula/
+│   │       ├── __init__.py
+│   │       ├── parser.py        # OpenScript 语法解析器
+│   │       ├── executor.py      # 安全沙箱执行器
+│   │       ├── builtins.py      # 公式内置函数库
+│   │       └── python_sandbox.py # Python高级模式沙箱
+│   │
+│   ├── alerts/                  # 警报模块
+│   │   ├── __init__.py
+│   │   ├── manager.py           # 警报管理器（条件检测+触发）
+│   │   ├── conditions.py        # 警报条件定义
+│   │   └── notifiers.py         # 通知分发（浏览器/Webhook/声音）
+│   │
+│   ├── backtest/                # 回测模块
+│   │   ├── __init__.py
+│   │   ├── engine.py            # VectorBT 回测引擎封装
+│   │   ├── strategy.py          # 策略定义和解析
+│   │   └── report.py            # 回测报告生成
+│   │
+│   ├── screener/                # 智能选股模块
+│   │   ├── __init__.py
+│   │   ├── rules.py             # 规则筛选引擎
+│   │   ├── news.py              # 新闻数据采集
+│   │   └── ai_analyzer.py       # AI情绪分析（DeepSeek/千问）
+│   │
+│   ├── crypto_dashboard/        # 加密货币数据仪表盘
+│   │   ├── __init__.py
+│   │   ├── onchain.py           # 链上数据（CryptoQuant/Glassnode）
+│   │   ├── sentiment.py         # 情绪指标（恐惧贪婪/资金费率/多空比）
+│   │   └── calendar.py          # 经济日历+加密事件
+│   │
+│   ├── ws/                      # WebSocket 模块
+│   │   ├── __init__.py
+│   │   └── hub.py               # WebSocket 推送中心（订阅管理+广播）
+│   │
+│   ├── trading/                 # 交易模块（Phase 6 预留）
+│   │   ├── __init__.py
+│   │   ├── base.py              # 交易接口抽象基类
+│   │   ├── okx_trader.py        # OKX 下单实现（预留）
+│   │   └── risk.py              # 风控引擎（预留）
+│   │
+│   └── db/
+│       ├── __init__.py
+│       └── database.py          # SQLite 数据库管理
+│
+├── frontend/
+│   ├── index.html               # 主页面（单页应用）
+│   ├── css/
+│   │   └── app.css              # 暗色主题全局样式
+│   ├── js/
+│   │   ├── app.js               # 主应用逻辑（初始化、路由、状态管理、全局快捷键）
+│   │   ├── chart.js             # KLineChart 初始化与数据绑定
+│   │   ├── indicators.js        # 指标选择面板交互（分类展示、参数调整）
+│   │   ├── formula.js           # 公式编辑器（CodeMirror 6 集成）
+│   │   ├── alerts.js            # 警报创建对话框 + 管理面板
+│   │   ├── backtest.js          # 回测策略定义 + 报告展示
+│   │   ├── screener.js          # 选股规则配置 + 结果展示
+│   │   ├── dashboard.js         # 加密货币数据仪表盘
+│   │   ├── watchlist.js         # 自选列表（右键菜单、实时价格、排序）
+│   │   ├── search.js            # 搜索品种组件（自动补全、市场分组、快捷键 /）
+│   │   ├── settings.js          # 设置对话框（配置持久化、API Key 管理）
+│   │   ├── toast.js             # Toast 通知组件（info/success/warning/error）
+│   │   └── websocket.js         # WebSocket 客户端（连接管理+消息分发+状态灯）
+│   └── lib/                     # 第三方库（CDN 引入或本地）
+│       └── (KLineChart Pro, CodeMirror 6 等)
+│
+├── data/                        # SQLite 数据库文件目录
+│   └── openchart.db
+│
+├── run.py                       # 一键启动脚本
+├── package.json                 # 前端依赖
+└── README.md
+```
+
+---
+
+## 二、后端详细设计
+
+### 2.1 config.py — 全局配置
+
+```python
+"""
+全局配置文件 — 仅作为默认值模板。
+运行时配置存储在 SQLite config 表（KV 格式）。
+优先级：SQLite DB > config.py 默认值
+启动流程：程序启动时读取 config.py 默认值，然后用 DB 中存储的值覆盖。
+用户通过前端设置页面 PUT /api/settings 修改配置 → 写入 DB → 内存热更新。
+"""
+
+# ═══ 服务器配置 ═══
+HOST = "0.0.0.0"
+PORT = 8888
+DEBUG = True
+
+# ═══ 数据库 ═══
+DB_PATH = "./data/openchart.db"
+
+# ═══ 交易所选择 ═══
+# 可选: "okx" | "binance"
+CRYPTO_EXCHANGE = "okx"
+
+# OKX API（公开数据无需Key，交易需要）
+OKX_BASE_URL = "https://www.okx.com"
+OKX_WS_PUBLIC = "wss://ws.okx.com:8443/ws/v5/public"
+OKX_API_KEY = ""          # Phase 4 交易用
+OKX_SECRET_KEY = ""       # Phase 4 交易用
+OKX_PASSPHRASE = ""       # Phase 4 交易用
+
+# Binance API（备用）
+BINANCE_BASE_URL = "https://api.binance.com"
+BINANCE_WS = "wss://stream.binance.com:9443/ws"
+
+# ═══ 股票数据源 ═══
+# Yahoo Finance（美股/港股）
+YAHOO_POLL_INTERVAL = 10          # 秒
+
+# 东方财富（A股）
+EASTMONEY_POLL_INTERVAL = 3       # 秒
+
+# ═══ AI/LLM 配置 ═══
+# 可选: "deepseek" | "qwen"
+LLM_PROVIDER = "deepseek"
+
+DEEPSEEK_API_KEY = ""
+DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
+DEEPSEEK_MODEL = "deepseek-chat"
+
+QWEN_API_KEY = ""
+QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"  # OpenAI兼容模式，统一调用方式
+QWEN_MODEL = "qwen-turbo"
+
+# ═══ 新闻数据源 ═══
+FINNHUB_API_KEY = ""              # 免费注册获取
+NEWS_POLL_INTERVAL = 60           # 秒
+
+# ═══ 链上数据 ═══
+GLASSNODE_API_KEY = ""            # 免费档
+CRYPTOQUANT_API_KEY = ""          # 免费档
+
+# ═══ 图表样式 ═══
+CANDLE_COLOR_SCHEME = "international"    # "international"(绿涨红跌) | "chinese"(红涨绿跌)
+CANDLE_TYPE = "candle_solid"             # candle_solid | candle_stroke | ohlc | area
+SHOW_GRID = True
+TIMEZONE = "Asia/Shanghai"
+
+# ═══ 警报通知 ═══
+WEBHOOK_URLS = []                 # Webhook URL 列表（微信/钉钉/Telegram）
+ENABLE_BROWSER_NOTIFICATION = True
+ENABLE_SOUND = True
+SOUND_VOLUME = 70                 # 0-100
+
+# ═══ 回测默认参数 ═══
+BACKTEST_INITIAL_CAPITAL = 100000
+BACKTEST_COMMISSION_CRYPTO = 0.001    # 0.1%
+BACKTEST_COMMISSION_STOCK = 0.0003    # 0.03%（设置页面分两档显示）
+BACKTEST_SLIPPAGE = 0.0005            # 0.05%
+```
+
+### 2.2 数据模型定义 — data/models.py
+
+```python
+"""
+统一数据模型，所有数据源输出都转换为这些标准格式。
+"""
+from dataclasses import dataclass, field
+from typing import List, Optional, Dict, Any
+from enum import Enum
+
+class Market(Enum):
+    CRYPTO = "crypto"
+    US = "us"
+    HK = "hk"
+    CN = "cn"
+
+class Interval(Enum):
+    M1 = "1m"
+    M5 = "5m"
+    M15 = "15m"
+    M30 = "30m"
+    H1 = "1H"
+    H4 = "4H"
+    D1 = "1D"
+    W1 = "1W"
+    MN = "1M"
+
+@dataclass
+class Candle:
+    timestamp: int          # 毫秒时间戳
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+    turnover: float = 0.0  # 成交额（可选）
+
+@dataclass
+class Symbol:
+    symbol: str             # 如 "BTC-USDT", "AAPL", "0700.HK", "600519.SH"
+    name: str               # 显示名称
+    market: Market
+    exchange: str           # 交易所/数据源名称
+    base: str = ""          # 基础货币（加密用）
+    quote: str = ""         # 计价货币（加密用）
+
+@dataclass
+class KlineData:
+    symbol: str
+    market: Market
+    interval: Interval
+    candles: List[Candle]
+    indicators: Dict[str, List[float]] = field(default_factory=dict)
+
+@dataclass
+class Alert:
+    id: str
+    symbol: str
+    market: Market
+    condition_type: str     # "price" | "indicator" | "crossover" | "volume" | "change" | "formula"
+    condition: Dict[str, Any]
+    message: str
+    notify_methods: List[str] = field(default_factory=lambda: ["browser", "sound"])  # "browser" | "sound" | "webhook"
+    label: str = ""         # 备注标签（如"突破关键压力位"）
+    repeat_mode: str        # "once" | "every_time"
+    cooldown: int = 300     # 秒
+    enabled: bool = True
+    triggered_count: int = 0
+    last_triggered: Optional[int] = None
+
+@dataclass
+class BacktestResult:
+    """
+    回测结果数据对象。
+    ⚠️ 此 dataclass 是 2.7.2 report JSON 的 Python 表示。
+    API 返回值以 2.7.2 的 JSON 格式为准（含 summary 嵌套对象）。
+    """
+    id: str
+    strategy_name: str
+    symbol: str
+    interval: str
+    start_date: str
+    end_date: str
+    summary: Dict[str, Any]     # 核心指标（见 2.7.2 report JSON 的 summary 对象）
+    equity_curve: List[Dict]    # 资金曲线 [{"time": ts, "value": float}]
+    benchmark_curve: List[Dict] # 基准曲线（买入持有）
+    drawdown_curve: List[Dict]  # 回撤曲线
+    trades: List[Dict]          # 交易记录明细
+    monthly_returns: Dict       # 月度收益
+    optimization: Optional[Dict] = None  # 参数优化结果（仅优化模式）
+```
+
+### 2.3 数据源模块
+
+#### 2.3.1 统一接口 — data/fetcher.py
+
+```python
+"""
+数据源工厂，根据 market 类型自动选择对应的数据源。
+所有方法返回统一的数据模型。
+"""
+from abc import ABC, abstractmethod
+from typing import List, Callable
+from data.models import Symbol, Candle, Market, Interval
+import config
+
+class DataFetcher(ABC):
+    """数据源抽象基类，所有数据源必须实现以下方法"""
+
+    @abstractmethod
+    async def get_symbols(self, query: str = "") -> List[Symbol]:
+        """搜索/获取交易品种列表"""
+        pass
+
+    @abstractmethod
+    async def get_klines(self, symbol: str, interval: Interval,
+                         limit: int = 500) -> List[Candle]:
+        """获取历史K线数据"""
+        pass
+
+    @abstractmethod
+    async def subscribe_realtime(self, symbol: str, interval: Interval,
+                                  callback) -> None:
+        """订阅实时K线推送（WebSocket或轮询）"""
+        pass
+
+    @abstractmethod
+    async def unsubscribe(self, symbol: str) -> None:
+        """取消订阅"""
+        pass
+
+def get_fetcher(market: Market) -> DataFetcher:
+    """工厂方法，根据市场类型返回对应的数据源实例"""
+    if market == Market.CRYPTO:
+        if config.CRYPTO_EXCHANGE == "okx":
+            return OKXFetcher()
+        return BinanceFetcher()
+    elif market == Market.US or market == Market.HK:
+        return YahooFetcher()
+    elif market == Market.CN:
+        return EastMoneyFetcher()
+```
+
+#### 2.3.2 OKX 数据源 — data/okx.py
+
+**REST API 端点（公开数据，无需API Key）**：
+
+| 接口 | 用途 | URL |
+|------|------|-----|
+| 获取交易品种 | 品种列表 | `GET /api/v5/public/instruments?instType=SPOT` |
+| 历史K线 | K线数据 | `GET /api/v5/market/candles?instId=BTC-USDT&bar=1H&limit=100` |
+| 更早历史K线 | 分页拉取 | `GET /api/v5/market/history-candles?instId=BTC-USDT&bar=1H&after={ts}&limit=100` |
+| 最新行情 | 实时价格 | `GET /api/v5/market/ticker?instId=BTC-USDT` |
+| 资金费率 | 合约费率 | `GET /api/v5/public/funding-rate?instId=BTC-USDT-SWAP` |
+| 持仓量 | 合约OI | `GET /api/v5/public/open-interest?instId=BTC-USDT-SWAP` |
+| 多空比 | 多空持仓 | `GET /api/v5/rubik/stat/contracts/long-short-account-ratio?ccy=BTC&period=1H` |
+
+**WebSocket 订阅（实时K线）**：
+
+```python
+# 连接地址: wss://ws.okx.com:8443/ws/v5/public
+# 订阅消息:
+{
+    "op": "subscribe",
+    "args": [{"channel": "candle1H", "instId": "BTC-USDT"}]
+}
+
+# 推送数据格式:
+{
+    "arg": {"channel": "candle1H", "instId": "BTC-USDT"},
+    "data": [
+        ["1711324800000", "67234.5", "67890.0", "67100.0", "67650.25", "1234.56", "83234567.8", "83234567.8", "1"]
+        # [ts(ms), open, high, low, close, vol(交易量), volCcy(计价货币成交量), volCcyQuote(USDT成交额), confirm(0未完结/1已完结)]
+    ]
+}
+```
+
+**OKX K线周期映射**：
+
+| 平台周期 | OKX bar参数 | OKX WS channel |
+|---------|------------|----------------|
+| 1m | 1m | candle1m |
+| 5m | 5m | candle5m |
+| 15m | 15m | candle15m |
+| 30m | 30m | candle30m |
+| 1H | 1H | candle1H |
+| 4H | 4H | candle4H |
+| 1D | 1D | candle1D |
+| 1W | 1W | candle1W |
+| 1M | 1M | candle1M |
+
+**实现要点**：
+- WebSocket 需要每 25 秒发送一次 `"ping"` 保持连接
+- REST API 限频：20次/2秒
+- K线数据单次最多返回 **100 根**（不是1440），需要用 `after` 参数分页拉取更早的历史数据；更早的历史用 `/api/v5/market/history-candles` 接口
+- 将 OKX 的数组格式转换为 `Candle` 对象
+
+#### 2.3.3 Binance 数据源 — data/binance.py（备用）
+
+**REST API**：
+
+| 接口 | URL |
+|------|-----|
+| 品种列表 | `GET /api/v3/exchangeInfo` |
+| 历史K线 | `GET /api/v3/klines?symbol=BTCUSDT&interval=1h&limit=500` |
+| 最新价 | `GET /api/v3/ticker/price?symbol=BTCUSDT` |
+
+**WebSocket**：
+
+```
+wss://stream.binance.com:9443/ws/btcusdt@kline_1h
+```
+
+#### 2.3.4 Yahoo Finance — data/yahoo.py（美股/港股）
+
+使用 `yfinance` Python 库：
+
+```python
+import yfinance as yf
+
+# 美股
+ticker = yf.Ticker("AAPL")
+hist = ticker.history(period="6mo", interval="1d")
+
+# 港股（代码后加.HK）
+ticker = yf.Ticker("0700.HK")
+hist = ticker.history(period="6mo", interval="1d")
+```
+
+**注意事项**：
+- 分钟级数据只保留最近60天
+- 日线数据可获取多年历史
+- 15分钟延迟（免费版）
+- 后端用 APScheduler 每 10 秒轮询一次最新价格
+- **交易时段判断**：美股仅在北京时间 21:30-04:00（夏令时）/ 22:30-05:00（冬令时）轮询；港股仅在 9:30-16:00 轮询
+- Symbol 映射：直接使用原始代码（AAPL, TSLA, 0700.HK, 9988.HK）
+
+#### 2.3.5 东方财富 — data/eastmoney.py（A股）
+
+**K线数据接口**：
+
+```
+GET http://push2his.eastmoney.com/api/qt/stock/kline/get
+参数:
+  secid=1.600519          # 1=上海, 0=深圳
+  fields1=f1,f2,f3,f4,f5,f6
+  fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61
+  klt=60                  # 60=60分钟, 101=日线, 102=周线
+  fqt=1                   # 前复权
+  end=20500101
+  lmt=500                 # 数量
+```
+
+**实时行情接口**：
+
+```
+GET http://push2.eastmoney.com/api/qt/stock/get
+参数:
+  secid=1.600519
+  fields=f43,f44,f45,f46,f47,f48,f50,f57,f58,f169,f170
+  # f43=最新价, f44=最高, f45=最低, f46=开盘, f47=成交量, f48=成交额
+```
+
+**品种搜索接口**：
+
+```
+GET https://searchapi.eastmoney.com/api/suggest/get
+参数:
+  input=茅台               # 搜索关键词
+  type=14
+  count=10
+```
+
+**注意**：
+- secid 前缀规则：
+  - 上海主板: `1.600xxx`, `1.601xxx`, `1.603xxx`
+  - 科创板: `1.688xxx`
+  - 深圳主板: `0.000xxx`, `0.001xxx`
+  - 中小板: `0.002xxx`
+  - 创业板: `0.300xxx`, `0.301xxx`
+  - 北交所: `0.8xxxxx`, `0.43xxxx`
+- klt 周期映射：1=1分钟, 5=5分钟, 15=15分钟, 30=30分钟, 60=60分钟, 101=日, 102=周, 103=月
+- **注意**：东方财富不支持 4H(4小时) 周期。A股市场前端需隐藏 4H 选项，或后端用 60 分钟 K 线数据聚合计算 4H K 线（每 4 根合并为 1 根）
+- 后端每 3 秒轮询最新行情，转换为标准 Candle 格式推送
+- **交易时段判断**：仅在交易日 9:15-11:30, 13:00-15:00 期间轮询，非交易时段停止以节省资源
+
+### 2.4 指标系统
+
+#### 2.4.1 内置指标引擎 — indicators/builtin.py
+
+用 NumPy 实现以下 20+ 指标，每个指标是一个纯函数，输入 OHLCV 数组，输出计算结果数组：
+
+**趋势类（主图叠加）**：
+
+| 指标 | 函数签名 | 默认参数 |
+|------|---------|---------|
+| MA | `calc_ma(close, period)` | period=20（单次调用计算一条线；前端默认同时添加 5,10,20,60 四条，每条独立调用） |
+| EMA | `calc_ema(close, period)` | periods=[12,26] |
+| BOLL | `calc_boll(close, period, multiplier)` | period=20, mult=2 |
+| SAR | `calc_sar(high, low, af_step, af_max)` | af=0.02, max=0.2 |
+| Ichimoku | `calc_ichimoku(high, low, close, t, k, s)` | 9,26,52 |
+| VWAP | `calc_vwap(high, low, close, volume)` | 无参数 |
+| Donchian | `calc_donchian(high, low, period)` | period=20 |
+| Envelope | `calc_envelope(close, period, pct)` | period=20, pct=0.05 |
+
+**动量类（副图窗格）**：
+
+| 指标 | 函数签名 | 默认参数 | 输出 |
+|------|---------|---------|------|
+| MACD | `calc_macd(close, fast, slow, signal)` | 12,26,9 | DIF, DEA, Histogram |
+| RSI | `calc_rsi(close, period)` | 14 | RSI值 |
+| KDJ | `calc_kdj(high, low, close, period, k_smooth, d_smooth)` | period=9, k_smooth=3, d_smooth=3 | K, D, J |
+| CCI | `calc_cci(high, low, close, period)` | 14 | CCI值 |
+| Williams %R | `calc_williams(high, low, close, period)` | 14 | %R值 |
+| ROC | `calc_roc(close, period)` | 12 | ROC值 |
+| Stochastic RSI | `calc_stoch_rsi(close, period, k, d)` | 14,3,3 | %K, %D |
+| MFI | `calc_mfi(high, low, close, vol, period)` | 14 | MFI值 |
+
+**成交量类（副图窗格）**：
+
+| 指标 | 函数签名 | 输出 |
+|------|---------|------|
+| OBV | `calc_obv(close, volume)` | OBV曲线 |
+| CMF | `calc_cmf(high, low, close, volume, period)` | CMF值 |
+| Volume MA | `calc_volume_ma(volume, period)` | 成交量均线 |
+
+**波动类（副图窗格）**：
+
+| 指标 | 函数签名 | 输出 |
+|------|---------|------|
+| ATR | `calc_atr(high, low, close, period)` | ATR值 |
+| Std Dev | `calc_stddev(close, period)` | 标准差 |
+
+**趋势强度类（副图窗格，category="strength"）**：
+
+| 指标 | 函数签名 | 默认参数 | 输出 |
+|------|---------|---------|------|
+| DMI/ADX | `calc_dmi(high, low, close, period)` | 14 | +DI, -DI, ADX |
+| TRIX | `calc_trix(close, period)` | 12 | TRIX值, Signal |
+| ADL | `calc_adl(high, low, close, volume)` | 无参数 | ADL累积线 |
+
+**补充说明**：
+- SMA 与 MA 等价（简单移动平均），在注册表中注册为 MA 的别名
+- VOL 为成交量柱状图，不需要计算函数，直接使用 KLineChart 内置 volume 窗格
+- STOCH（随机指标）与 Stochastic RSI 不同：STOCH 基于价格计算，签名为 `calc_stoch(high, low, close, k_period, d_period)` 默认 14,3
+
+#### 2.4.2 指标注册表 — indicators/registry.py
+
+```python
+"""
+指标注册表：所有指标（内置+自定义）统一注册管理。
+前端通过 /api/indicators 获取可用指标列表及其参数定义。
+"""
+
+INDICATOR_REGISTRY = {
+    # category 可选值: trend | momentum | volume | volatility | strength
+    # 前端指标面板分组映射:
+    #   trend     → "趋势类"（主图叠加）
+    #   momentum  → "震荡类"（副图窗格）
+    #   volume    → "成交量类"（副图窗格）
+    #   volatility→ "波动类"（副图窗格，ATR/StdDev）
+    #   strength  → "趋势强度"（副图窗格，DMI/ADX/TRIX/ADL）
+
+    "MA": {
+        "name": "移动平均线",
+        "category": "trend",
+        "overlay": True,            # True=主图叠加, False=副图窗格
+        "params": [
+            {"name": "period", "type": "int", "default": 20, "min": 1, "max": 500}
+        ],
+        "outputs": ["ma"],
+        "calc_func": "calc_ma"
+    },
+    "MACD": {
+        "name": "MACD",
+        "category": "momentum",
+        "overlay": False,
+        "params": [
+            {"name": "fast", "type": "int", "default": 12, "min": 1, "max": 100},
+            {"name": "slow", "type": "int", "default": 26, "min": 1, "max": 200},
+            {"name": "signal", "type": "int", "default": 9, "min": 1, "max": 50}
+        ],
+        "outputs": ["dif", "dea", "histogram"],
+        "calc_func": "calc_macd"
+    },
+    # ... 其他所有指标按此格式注册
+}
+```
+
+### 2.5 公式编辑器 — OpenScript
+
+#### 2.5.1 简单模式（类 Pine Script）
+
+**语法规范**：
+
+```python
+# 声明指标
+indicator("指标名称", overlay=true/false)
+
+# 声明策略（回测用）
+strategy("策略名称", initial_capital=100000)
+
+# 数据引用（全局变量，直接使用）
+open, high, low, close, volume
+
+# 用户参数输入
+fast = input(12, title="快线周期", type="int", min=1, max=200)
+threshold = input(70, title="RSI阈值", type="float")
+
+# 内置计算函数
+sma(source, length)          # 简单移动平均
+ema(source, length)          # 指数移动平均
+wma(source, length)          # 加权移动平均
+rsi(source, length)          # RSI
+macd(source, fast, slow, sig) # MACD，返回 [dif, dea, hist]
+stdev(source, length)        # 标准差
+highest(source, length)      # N周期最高值
+lowest(source, length)       # N周期最低值
+sum(source, length)          # N周期求和
+abs(value)                   # 绝对值
+max(a, b), min(a, b)        # 最大/最小
+pow(base, exp), sqrt(value)  # 幂/平方根
+log(value)                   # 自然对数
+
+# 信号检测函数
+crossover(a, b)              # a 上穿 b，返回 bool 数组
+crossunder(a, b)             # a 下穿 b
+rising(source, length)       # 连续上升
+falling(source, length)      # 连续下降
+valuewhen(condition, source, occurrence)  # 条件成立时的值
+barssince(condition)         # 距离条件成立的K线数
+
+# 绘图函数（指标模式）
+plot(series, color="#FF0000", title="名称", linewidth=1)
+plotshape(condition, style="triangle_up", color="#00FF00", location="below", text="标记")
+hline(price, color="#888888", linestyle="dashed", title="水平线")
+fill(plot1, plot2, color="#FF000033", title="填充")
+bgcolor(condition, color="#FF000022")
+
+# 策略函数（回测模式）
+strategy.entry(id, direction)            # direction: strategy.LONG / strategy.SHORT
+strategy.close(id)                       # 平仓
+strategy.exit(id, stop=None, limit=None) # 止损/止盈
+
+# 警报函数
+alertcondition(condition, title="标题", message="消息内容")
+```
+
+**后端实现方式**：
+1. `parser.py` 用 Python AST 模块解析 OpenScript 代码
+2. 将 OpenScript 转译为受限的 Python 代码
+3. `executor.py` 在沙箱环境中执行转译后的代码
+4. 沙箱白名单：只允许数学运算和内置函数，禁止 import、文件操作、网络访问
+5. 执行超时限制：单次计算最多 5 秒
+6. **重要**：OpenScript 中的 `open` 变量（开盘价）与 Python 内置 `open()` 函数同名。转译时必须确保内置 `open()` 被移除/屏蔽，在沙箱 globals 中只注入 OHLCV 数据数组，不暴露任何内置危险函数
+
+#### 2.5.2 高级模式（Python）
+
+用户直接编写 Python 代码，使用 `RestrictedPython` 在安全沙箱中执行。
+
+**白名单库**：numpy, pandas, math, statistics
+**禁止**：import os/sys/subprocess, open(), exec(), eval(), __import__
+**执行超时**：10秒
+
+```python
+# 用户Python代码示例
+import numpy as np
+
+def calculate(open, high, low, close, volume):
+    """
+    输入: OHLCV numpy数组
+    返回: dict, key=指标名, value=数组或dict
+    """
+    # 自定义波动率指标
+    returns = np.diff(np.log(close))
+    vol_20 = np.array([np.std(returns[max(0,i-20):i]) * np.sqrt(252)
+                        for i in range(1, len(returns)+1)])
+
+    # 自定义信号
+    signal = np.where(vol_20 > 0.5, 1, 0)  # 高波动标记
+
+    return {
+        "plots": [
+            {"name": "年化波动率", "data": vol_20, "overlay": False, "color": "#FF6B6B"},
+        ],
+        "shapes": [
+            {"name": "高波动", "data": signal, "style": "triangle_up", "color": "#FFD700"}
+        ]
+    }
+```
+
+### 2.6 警报系统 — alerts/
+
+#### 2.6.1 警报条件类型
+
+```python
+# alerts/conditions.py
+
+# 1. 价格条件
+{
+    "type": "price",
+    "operator": "above",       # above | below | cross_above | cross_below
+    "value": 70000,
+    "symbol": "BTC-USDT"
+}
+
+# 2. 指标条件
+{
+    "type": "indicator",
+    "indicator": "RSI",
+    "params": {"period": 14},
+    "operator": "below",       # above | below | cross_above | cross_below
+    "value": 30
+}
+
+# 3. 均线交叉
+{
+    "type": "crossover",
+    "fast": {"indicator": "EMA", "params": {"period": 12}},
+    "slow": {"indicator": "EMA", "params": {"period": 26}},
+    "direction": "golden"      # golden(金叉) | death(死叉) | both
+}
+
+# 4. 成交量异常
+{
+    "type": "volume",
+    "multiplier": 3,           # N倍于均值
+    "ma_period": 20
+}
+
+# 5. 涨跌幅
+{
+    "type": "change",
+    "period": "5m",            # 时间窗口
+    "threshold": 3,            # 百分比
+    "direction": "both"        # up | down | both
+}
+
+# 6. 自定义公式
+{
+    "type": "formula",
+    "code": "crossover(ema(close, 12), ema(close, 26))"
+}
+```
+
+#### 2.6.2 通知分发 — alerts/notifiers.py
+
+```python
+class NotifierBase(ABC):
+    @abstractmethod
+    async def send(self, alert: Alert, message: str): pass
+
+class WebSocketNotifier(NotifierBase):
+    """通过 WebSocket 推送到前端浏览器"""
+    pass
+
+class WebhookNotifier(NotifierBase):
+    """
+    POST 到配置的 Webhook URL
+    支持：
+    - 企业微信机器人：https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx
+    - 钉钉机器人：https://oapi.dingtalk.com/robot/send?access_token=xxx
+    - Telegram Bot：https://api.telegram.org/bot{token}/sendMessage
+    - Discord Webhook
+    - 自定义 HTTP POST
+    """
+    pass
+
+class SoundNotifier(NotifierBase):
+    """通过 WebSocket 通知前端播放提示音"""
+    pass
+```
+
+### 2.7 回测系统 — backtest/
+
+#### 2.7.1 回测引擎 — backtest/engine.py
+
+基于 VectorBT 封装，提供简化的接口：
+
+```python
+class BacktestEngine:
+    def __init__(self, config):
+        self.initial_capital = config.get("initial_capital", 100000)
+        self.commission = config.get("commission", 0.001)
+        self.slippage = config.get("slippage", 0.0005)
+
+    async def run(self, symbol, interval, start_date, end_date,
+                  strategy_code, strategy_type="openscript") -> BacktestResult:
+        """
+        执行回测
+        1. 从数据库加载历史K线
+        2. 解析策略代码，生成买卖信号
+        3. VectorBT 执行模拟交易
+        4. 计算统计指标
+        5. 生成报告
+        """
+        pass
+
+    async def optimize(self, symbol, interval, start_date, end_date,
+                       strategy_code, param_grid) -> Dict:
+        """
+        参数优化回测
+        param_grid 示例: {"fast": range(5,50,5), "slow": range(10,100,10)}
+        返回所有参数组合的回测结果 + 最优参数 + 热力图数据
+        """
+        pass
+```
+
+#### 2.7.2 回测报告 — backtest/report.py
+
+生成的报告数据结构（JSON），前端用图表渲染：
+
+```python
+{
+    # 核心指标
+    "summary": {
+        "total_return": 0.35,           # 35%
+        "annual_return": 0.28,
+        "max_drawdown": -0.12,          # -12%
+        "max_drawdown_duration": 45,    # 天
+        "sharpe_ratio": 1.85,
+        "sortino_ratio": 2.31,
+        "calmar_ratio": 2.33,
+        "total_trades": 48,
+        "win_rate": 0.625,              # 62.5%
+        "profit_factor": 2.1,
+        "avg_holding_bars": 12,
+        "max_consecutive_wins": 8,
+        "max_consecutive_losses": 3
+    },
+
+    # 资金曲线（图表用）
+    "equity_curve": [
+        {"time": 1700000000, "value": 100000},
+        {"time": 1700086400, "value": 101200},
+        ...
+    ],
+
+    # 基准对比曲线（买入持有）
+    "benchmark_curve": [...],
+
+    # 回撤曲线
+    "drawdown_curve": [...],
+
+    # 交易记录
+    "trades": [
+        {
+            "entry_time": 1700000000,
+            "exit_time": 1700172800,
+            "direction": "long",
+            "entry_price": 67000,
+            "exit_price": 69500,
+            "size": 1.5,
+            "pnl": 3750,
+            "pnl_pct": 0.0373,
+            "bars_held": 4
+        }
+    ],
+
+    # 月度收益（热力图用）
+    "monthly_returns": {
+        "2025-01": 0.05,
+        "2025-02": -0.02,
+        ...
+    },
+
+    # 参数优化结果（如果是优化模式）
+    "optimization": {
+        "best_params": {"fast": 10, "slow": 30},
+        "heatmap_data": {
+            "x_param": "fast",
+            "y_param": "slow",
+            "x_values": [5, 10, 15, 20, 25],
+            "y_values": [20, 30, 40, 50, 60],
+            "z_values": [[0.12, 0.18, ...], ...]  # 收益率矩阵
+        }
+    }
+}
+```
+
+### 2.8 智能选股 — screener/
+
+#### 2.8.1 规则筛选 — screener/rules.py
+
+```python
+class ScreenerEngine:
+    """
+    规则筛选引擎
+    用户定义筛选条件组合，从全市场股票中实时过滤。
+    """
+
+    # 支持的筛选条件
+    FILTER_TYPES = {
+        # 价格相关
+        "price_above": "当前价格 > 指定值",
+        "price_below": "当前价格 < 指定值",
+        "change_pct_above": "涨跌幅 > N%",
+        "change_pct_below": "涨跌幅 < N%",
+
+        # 成交量相关
+        "volume_above_ma": "成交量 > N日均量的M倍",
+        "turnover_above": "成交额 > 指定值",
+
+        # 技术指标
+        "rsi_above": "RSI > 指定值",
+        "rsi_below": "RSI < 指定值",
+        "macd_golden_cross": "MACD金叉（最近N根K线内）",
+        "macd_death_cross": "MACD死叉",
+        "price_above_ma": "价格在N日均线上方",
+        "price_below_ma": "价格在N日均线下方",
+        "boll_upper_break": "突破布林带上轨",
+        "boll_lower_break": "跌破布林带下轨",
+
+        # 形态
+        "new_high": "创N日新高",
+        "new_low": "创N日新低",
+    }
+
+    async def screen(self, markets: List[Market], filters: List[Dict]) -> List[Dict]:
+        """
+        执行筛选（支持多市场同时筛选）
+
+        每种 FILTER_TYPE 的完整参数定义：
+
+        # ── 价格相关 ──
+        {"type": "price_above", "value": 100}           # 当前价格 > 100
+        {"type": "price_below", "value": 50}            # 当前价格 < 50
+        {"type": "change_pct_above", "value": 3}        # 涨幅 > 3%
+        {"type": "change_pct_below", "value": -5}       # 跌幅 < -5%
+
+        # ── 成交量相关 ──
+        {"type": "volume_above_ma", "ma_period": 20, "multiplier": 2}  # 成交量 > 20日均量的2倍
+        {"type": "turnover_above", "value": 10000000}   # 成交额 > 1000万
+
+        # ── 技术指标 ──
+        {"type": "rsi_above", "period": 14, "value": 70}              # RSI(14) > 70
+        {"type": "rsi_below", "period": 14, "value": 30}              # RSI(14) < 30
+        {"type": "macd_golden_cross", "bars_lookback": 5}             # 最近5根K线内出现MACD金叉
+        {"type": "macd_death_cross", "bars_lookback": 5}              # 最近5根K线内出现MACD死叉
+        {"type": "price_above_ma", "ma_period": 200}                  # 价格 > MA(200)
+        {"type": "price_below_ma", "ma_period": 20}                   # 价格 < MA(20)
+        {"type": "boll_upper_break", "period": 20, "multiplier": 2}   # 突破布林带上轨
+        {"type": "boll_lower_break", "period": 20, "multiplier": 2}   # 跌破布林带下轨
+
+        # ── 形态 ──
+        {"type": "new_high", "days": 60}                # 创60日新高
+        {"type": "new_low", "days": 60}                 # 创60日新低
+
+        返回符合所有条件（AND逻辑）的品种列表
+        """
+        pass
+```
+
+#### 2.8.2 AI 新闻分析 — screener/ai_analyzer.py
+
+```python
+class AIAnalyzer:
+    """
+    AI驱动的新闻情绪分析和选股推荐
+    支持 DeepSeek / 通义千问
+    """
+
+    async def analyze_news(self, news_list: List[Dict]) -> List[Dict]:
+        """
+        分析一批新闻，返回情绪标注结果
+
+        输入: [{"title": "...", "content": "...", "source": "...", "time": "..."}]
+
+        LLM Prompt 模板:
+        -------
+        你是一个专业的金融分析师。请分析以下财经新闻，对每条新闻给出：
+        1. 情绪评分（-1到1，-1=极度利空，0=中性，1=极度利好）
+        2. 受影响的行业板块
+        3. 受影响的具体股票/加密货币代码
+        4. 影响程度（高/中/低）
+        5. 简要分析理由（一句话）
+
+        请以JSON数组格式返回结果。
+        -------
+
+        返回: [{"news_id": 1, "sentiment": 0.8, "sectors": ["半导体"],
+                "symbols": ["NVDA", "002230.SZ"], "impact": "高",
+                "reason": "AI芯片需求持续增长利好头部厂商"}]
+        """
+        pass
+
+    async def get_recommendations(self, market: Market, hours: int = 24, min_score: int = 60) -> List[Dict]:
+        """
+        综合新闻分析+技术面数据，给出选股推荐
+        hours: 分析最近N小时的新闻
+        min_score: 最低推荐评分(0-100)，低于此分的不返回
+
+        返回:
+        [
+            {
+                "symbol": "NVDA",
+                "name": "英伟达",
+                "score": 85,                  # 综合评分 0-100
+                "sentiment_score": 0.8,       # 新闻情绪
+                "technical_score": 0.7,       # 技术面评分
+                "reason": "AI芯片需求旺盛，近期多条利好消息...",
+                "related_news": [{"title": "...", "url": "...", "sentiment": 0.9}],
+                "signals": ["MACD金叉", "放量突破均线"]
+            }
+        ]
+        """
+        pass
+```
+
+#### 2.8.3 新闻数据源 — screener/news.py
+
+```python
+class NewsCollector:
+    """新闻数据采集，多源聚合"""
+
+    async def fetch_eastmoney_news(self) -> List[Dict]:
+        """
+        东方财富7x24快讯
+        URL: https://np-listapi.eastmoney.com/comm/web/getNewsByColumns
+        参数: columns=102, pageSize=50
+        返回: 最新50条快讯
+        """
+        pass
+
+    async def fetch_finnhub_news(self, category="general") -> List[Dict]:
+        """
+        Finnhub 全球财经新闻
+        URL: https://finnhub.io/api/v1/news?category=general&token={API_KEY}
+        category: general | forex | crypto | merger
+        """
+        pass
+
+    async def fetch_crypto_news(self) -> List[Dict]:
+        """
+        加密货币专属新闻源
+        - CoinTelegraph RSS
+        - TheBlock RSS
+        - Decrypt RSS
+        """
+        pass
+```
+
+#### 2.8.4 选股系统完整链路时序图
+
+选股系统有**两条独立链路**，分别由前端两个按钮触发：
+
+**链路 A — 规则筛选（同步，1~5秒）**
+
+```
+用户操作                    前端 screener.js                  后端 API                          后端逻辑
+────────                    ────────────                     ─────────                         ─────────
+1. 配置筛选条件
+   (左栏规则卡片)
+2. 点击[🔍开始筛选] ──→ 3. 组装请求JSON
+                           {markets:["us","crypto"],
+                            filters:[
+                              {type:"rsi_below",
+                               period:14, value:30},
+                              {type:"price_above_ma",
+                               ma_period:200}
+                            ]}
+                        4. 右栏显示Loading
+                           "正在筛选..."
+                        5. POST /api/screener/filter ──→ 6. ScreenerEngine.screen() 启动
+                                                             │
+                                                             ├─ 7. 遍历 markets 数组，从 SQLite 加载各市场所有品种的最新K线
+                                                             │     SELECT * FROM klines_{market}_{interval}
+                                                             │     （加密约200+币对，A股约5000只，多市场则合并）
+                                                             │
+                                                             ├─ 8. 用 NumPy 批量计算所需指标
+                                                             │     RSI(14), MA(200) 等
+                                                             │     （向量化计算，5000只股票<1秒）
+                                                             │
+                                                             ├─ 9. 逐品种检查是否满足ALL条件
+                                                             │     filter1 AND filter2 AND ...
+                                                             │
+                                                             └─ 10. 排序 + 返回结果
+                                                     ←──────────  [{symbol, name, price,
+                                                                    change_pct, volume,
+                                                                    rsi, ma200, ...}]
+                        11. 隐藏Loading
+                        12. 渲染结果表格(右栏上方)
+                            可排序列：品种/价格/涨跌幅/RSI/成交量
+                        13. 点击任意行 → 主图表切换到该品种
+```
+
+**链路 B — AI 智能推荐（异步，5~20秒）**
+
+```
+用户操作                    前端 screener.js                  后端 API                          后端逻辑
+────────                    ────────────                     ─────────                         ─────────
+1. 勾选[✓]启用AI分析
+   设置分析范围/最低评分
+2. 点击[🤖AI分析]  ──→  3. 按钮变为[⏳分析中...]
+                            禁用按钮防重复点击
+                        4. 右栏AI区域显示骨架屏
+                           "🤖 AI正在分析最新新闻,
+                            预计需要10-20秒..."
+                        5. POST /api/screener/       ──→  6. 创建异步任务，返回 task_id
+                           ai-analyze                        │   前端开始轮询 GET /api/screener/ai-status/{task_id}
+                           {market:"us",                     │
+                            hours:24,                        │   AIAnalyzer.get_recommendations() 启动
+                            min_score:60}                    │ ═══ 阶段一：新闻采集（并行，2~5秒）═══
+                                                             ├─ 7a. NewsCollector.fetch_eastmoney_news()                     │      → 东方财富快讯50条
+                                                             ├─ 7b. NewsCollector.fetch_finnhub_news()
+                                                             │      → Finnhub全球新闻30条
+                                                             ├─ 7c. NewsCollector.fetch_crypto_news()
+                                                             │      → RSS聚合20条
+                                                             │      （三个源 asyncio.gather 并行请求）
+                                                             │
+                                                             │ ═══ 阶段二：LLM情绪分析（3~10秒）═══
+                                                             ├─ 8. 合并去重新闻列表
+                                                             │     按时间范围过滤（最近24h）
+                                                             │
+                                                             ├─ 9. 调用 LLM API（DeepSeek/千问）
+                                                             │     将新闻分批发送（每批10条，避免超token）
+                                                             │     Prompt: "分析情绪评分/受影响品种/行业..."
+                                                             │     返回: [{sentiment:0.8, symbols:["NVDA"],
+                                                             │             sectors:["半导体"], reason:"..."}]
+                                                             │
+                                                             │ ═══ 阶段三：综合评分（<1秒）═══
+                                                             ├─ 10. 从 SQLite 获取相关品种的最新技术面数据
+                                                             │
+                                                             ├─ 11. 计算技术面信号
+                                                             │      MACD金叉? 放量突破? RSI超卖?
+                                                             │
+                                                             ├─ 12. 加权综合评分
+                                                             │      score = sentiment_score × 0.4
+                                                             │            + technical_score × 0.35
+                                                             │            + news_volume_score × 0.15
+                                                             │            + impact_score × 0.10
+                                                             │
+                                                             └─ 13. 按 score 降序，过滤 min_score，返回
+                                                     ←──────────  [{symbol, name, score,
+                                                                    sentiment_score, technical_score,
+                                                                    reason, related_news, signals}]
+                        14. 按钮恢复为[🤖AI分析]
+                        15. 渲染AI推荐卡片(右栏下方)
+                            每张卡片: 评分星级 + 理由 + 技术信号标签 + 关联新闻
+                        16. 点击卡片 → 主图表切换到该品种
+                        17. 点击关联新闻标题 → 新窗口打开原文
+```
+
+**两条链路的关系：**
+- 两条链路**完全独立**，可同时运行，互不阻塞
+- 链路A的结果显示在右栏**上方表格区**
+- 链路B的结果显示在右栏**下方卡片区**
+- 两个区域之间用分割线 `── AI 智能推荐 ──` 隔开
+- 如果只点了规则筛选没点AI分析，下方卡片区显示提示："点击 [🤖AI分析] 获取AI推荐"
+- 如果只点了AI分析没配规则，上方表格区显示提示："配置左侧条件后点击 [🔍开始筛选]"
+
+**评分权重公式说明：**
+
+| 维度 | 权重 | 数据来源 | 说明 |
+|------|------|---------|------|
+| 新闻情绪 `sentiment_score` | 40% | LLM 返回的 -1~1 映射到 0~100 | 核心驱动因子 |
+| 技术面 `technical_score` | 35% | 后端指标计算（金叉/突破/超卖等信号加分） | 量化验证 |
+| 新闻热度 `news_volume_score` | 15% | 相关新闻数量归一化 | 关注度越高权重越高 |
+| 影响程度 `impact_score` | 10% | LLM 标注的 高/中/低 映射到 100/60/30 | 事件重要性 |
+
+**错误处理：**
+
+| 异常场景 | 处理方式 |
+|---------|---------|
+| 新闻源全部超时 | 返回 `{"error": "news_fetch_failed", "message": "新闻数据获取失败，请稍后重试"}` |
+| 单个新闻源失败 | 跳过该源，用其余源的数据继续分析（降级不中断） |
+| LLM API 超时（30s） | 重试1次，仍失败返回 `{"error": "llm_timeout"}` |
+| LLM 返回格式异常 | 解析失败则返回空推荐 + 日志报错 |
+| LLM API Key 未配置 | 前端点击 [AI分析] 时弹窗提示 "请先在设置中配置 LLM API Key"，不发请求 |
+
+### 2.9 加密货币数据仪表盘 — crypto_dashboard/
+
+#### 2.9.1 链上数据 — crypto_dashboard/onchain.py
+
+```python
+class OnChainData:
+
+    async def get_exchange_flow(self, coin="BTC") -> Dict:
+        """
+        交易所净流入/流出
+        数据源: CryptoQuant API (免费档)
+        URL: https://api.cryptoquant.com/v1/btc/exchange-flows/netflow
+        返回: {"netflow": [...], "inflow": [...], "outflow": [...]}
+        更新频率: ~1小时
+        """
+        pass
+
+    async def get_whale_transactions(self, coin="BTC", min_value=1000000) -> List:
+        """
+        巨鲸交易追踪
+        数据源: Blockchain.com API (免费) 或 Whale Alert API
+        返回: 近24小时大额转账列表
+        """
+        pass
+
+    async def get_active_addresses(self, coin="BTC") -> Dict:
+        """
+        活跃地址数趋势
+        数据源: Glassnode 免费档 或 Blockchain.com
+        返回: 每日活跃地址数时序数据
+        更新频率: 每日
+        """
+        pass
+
+    async def get_nupl(self) -> Dict:
+        """
+        Net Unrealized Profit/Loss (NUPL)
+        数据源: Glassnode 免费档
+        更新频率: 每日
+        """
+        pass
+
+    async def get_miner_data(self) -> Dict:
+        """
+        矿工相关数据：哈希率、矿工收入、矿工持仓变化
+        数据源: Blockchain.com API
+        """
+        pass
+```
+
+#### 2.9.2 情绪指标 — crypto_dashboard/sentiment.py
+
+```python
+class SentimentData:
+
+    async def get_fear_greed_index(self) -> Dict:
+        """
+        恐惧贪婪指数
+        数据源: Alternative.me (完全免费，无需Key)
+        URL: https://api.alternative.me/fng/?limit=30
+        返回: {"value": 72, "label": "Greed", "history": [...]}
+        更新频率: 每日
+        """
+        pass
+
+    async def get_funding_rate(self, symbol="BTC-USDT-SWAP") -> Dict:
+        """
+        资金费率
+        数据源: OKX API (免费)
+        URL: GET /api/v5/public/funding-rate?instId=BTC-USDT-SWAP
+        返回: 当前费率 + 历史费率
+        更新频率: 实时（每8小时结算）
+        """
+        pass
+
+    async def get_open_interest(self, symbol="BTC-USDT-SWAP") -> Dict:
+        """
+        持仓量 (Open Interest)
+        数据源: OKX API
+        URL: GET /api/v5/public/open-interest?instId=BTC-USDT-SWAP
+        返回: 当前OI + 历史OI
+        更新频率: 实时
+        """
+        pass
+
+    async def get_long_short_ratio(self, coin="BTC") -> Dict:
+        """
+        多空比
+        数据源: OKX API
+        URL: GET /api/v5/rubik/stat/contracts/long-short-account-ratio?ccy=BTC&period=1H
+        返回: 大户多空比 + 散户多空比
+        更新频率: ~5分钟
+        """
+        pass
+```
+
+#### 2.9.3 经济日历 — crypto_dashboard/calendar.py
+
+```python
+class EconomicCalendar:
+
+    async def get_macro_events(self) -> List[Dict]:
+        """
+        宏观经济事件（CPI/FOMC/非农/GDP等）
+        数据源: Investing.com 日历页面爬取 或 TradingEconomics
+
+        返回:
+        [
+            {
+                "time": "2026-03-26T12:30:00Z",
+                "event": "美国CPI同比",
+                "country": "US",
+                "importance": "high",       # high | medium | low
+                "forecast": "2.8%",
+                "previous": "2.9%",
+                "actual": null              # 公布后填入
+            }
+        ]
+        """
+        pass
+
+    async def get_crypto_events(self) -> List[Dict]:
+        """
+        加密货币专属事件
+        数据源: CoinMarketCal 爬取
+
+        事件类型:
+        - token_unlock: Token解锁（大额解锁=潜在抛压）
+        - network_upgrade: 网络升级（如ETH硬分叉）
+        - mainnet_launch: 主网上线
+        - halving: 代币减半
+        - airdrop: 空投
+        - exchange_listing: 交易所上线
+        - regulation: 监管政策（SEC听证、ETF审批等）
+
+        返回:
+        [
+            {
+                "time": "2026-04-01T00:00:00Z",
+                "event": "SUI Token Unlock",
+                "symbol": "SUI",
+                "type": "token_unlock",
+                "importance": "high",
+                "details": "解锁约1.28亿美元SUI代币",
+                "source_url": "https://..."
+            }
+        ]
+        """
+        pass
+```
+
+### 2.10 WebSocket 推送中心 — ws/hub.py
+
+```python
+class WebSocketHub:
+    """
+    WebSocket 推送中心
+    管理所有客户端连接，按订阅关系分发数据。
+    """
+
+    def __init__(self):
+        self.connections = {}       # client_id -> websocket
+        self.subscriptions = {}     # client_id -> set of (symbol, interval)
+
+    async def handle_client(self, websocket):
+        """处理新的WebSocket连接"""
+        pass
+
+    async def broadcast_kline(self, symbol, interval, candle, indicators):
+        """向所有订阅了该品种的客户端推送K线数据"""
+        pass
+
+    async def broadcast_alert(self, alert, message):
+        """广播警报触发通知"""
+        pass
+
+    async def broadcast_backtest_progress(self, backtest_id, progress):
+        """推送回测进度"""
+        pass
+
+# WebSocket 消息协议（JSON）
+
+# ═══ 客户端 → 服务器 ═══
+
+# 订阅K线
+{"action": "subscribe", "symbol": "BTC-USDT", "interval": "1H"}
+
+# 取消订阅
+{"action": "unsubscribe", "symbol": "BTC-USDT"}
+
+# 切换品种（自动取消旧订阅+创建新订阅）
+{"action": "switch", "symbol": "ETH-USDT", "interval": "4H"}
+
+# ═══ 服务器 → 客户端 ═══
+
+# 订阅确认/错误响应（对 subscribe/unsubscribe/switch 操作的回执）
+{
+    "type": "subscription_result",
+    "action": "subscribe",          # subscribe | unsubscribe | switch
+    "symbol": "BTC-USDT",
+    "status": "ok",                 # ok | error
+    "message": ""                   # 仅 error 时有值，如 "品种不存在"
+}
+
+# 实时K线推送
+{
+    "type": "kline",
+    "symbol": "BTC-USDT",
+    "market": "crypto",             # 品种所属市场，用于前端联动判断
+    "interval": "1H",
+    "data": {
+        "timestamp": 1711324800000,
+        "open": 67234.5,
+        "high": 67890.0,
+        "low": 67100.0,
+        "close": 67650.25,
+        "volume": 1234.56
+    },
+    "indicators": {
+        "MA_20": 67500.0,
+        "RSI_14": 58.3,
+        "MACD": {"dif": 120.5, "dea": 98.2, "hist": 44.6}
+    }
+}
+
+# 警报触发
+{
+    "type": "alert",
+    "id": "alert_001",
+    "symbol": "BTC-USDT",
+    "message": "BTC 突破 70000!",
+    "severity": "high",
+    "condition": {"type": "price", "operator": "above", "value": 70000},
+    "timestamp": 1711324800000
+}
+
+# 回测进度
+{"type": "backtest_progress", "id": "bt_001", "progress": 75, "status": "running"}
+
+# 回测完成
+{"type": "backtest_complete", "id": "bt_001", "status": "done"}
+
+# 选股推荐更新（备选方案B，当前推荐用 REST 轮询方案A，见 4.10.1）
+# 如未来改用 WebSocket 推送进度，使用此消息格式：
+{
+    "type": "screener_progress",
+    "task_id": "ai_20260325_001",
+    "status": "analyzing",
+    "progress": "正在分析 47 条新闻..."
+}
+
+# 加密仪表盘数据更新
+{
+    "type": "dashboard_update",
+    "fear_greed": {"value": 72, "label": "Greed"},
+    "funding_rate": {"BTC": 0.0012, "ETH": 0.0008},
+    "exchange_netflow": {"BTC": -1250.5}
+}
+```
+
+---
+
+## 三、REST API 完整定义
+
+### 3.1 基础接口
+
+```
+GET  /api/markets
+返回: [
+    {"id": "crypto", "name": "加密货币", "default_symbol": "BTC-USDT", "currency": "USDT"},
+    {"id": "us", "name": "美股", "default_symbol": "AAPL", "currency": "USD"},
+    {"id": "hk", "name": "港股", "default_symbol": "0700.HK", "currency": "HKD"},
+    {"id": "cn", "name": "A股", "default_symbol": "600519", "currency": "CNY"}
+]
+
+GET  /api/symbols?market=crypto&q=BTC
+返回: [{"symbol": "BTC-USDT", "name": "Bitcoin/USDT", "market": "crypto", "exchange": "okx"}, ...]
+
+GET  /api/klines?symbol=BTC-USDT&interval=1H&limit=500
+返回: {"symbol": "BTC-USDT", "interval": "1H", "candles": [{...}]}
+```
+
+### 3.2 指标接口
+
+```
+GET  /api/indicators
+返回: 所有可用指标的列表及其参数定义（见 registry.py 格式）
+
+POST /api/indicators/calculate
+Body: {"symbol": "BTC-USDT", "interval": "1H", "indicators": [{"name": "MACD", "params": {"fast": 12, "slow": 26, "signal": 9}}]}
+返回: {"MACD": {"dif": [...], "dea": [...], "histogram": [...]}}
+```
+
+### 3.3 公式接口
+
+```
+POST /api/formula/validate
+Body: {"code": "plot(ema(close, 20))", "mode": "openscript"}
+返回: {"valid": true, "errors": []}
+
+POST /api/formula/execute
+Body: {"code": "...", "mode": "openscript", "symbol": "BTC-USDT", "interval": "1H"}
+返回: {"plots": [...], "shapes": [...]}
+```
+
+### 3.4 警报接口
+
+```
+GET    /api/alerts                          # 获取所有警报（可选 ?symbol=BTC-USDT 过滤）
+POST   /api/alerts                          # 创建警报
+Body: {
+    "symbol": "BTC-USDT",
+    "market": "crypto",
+    "condition_type": "price",              # price | indicator | crossover | volume | change | formula
+    "condition": {                          # 结构见 2.6.1 各类型定义
+        "operator": "above",
+        "value": 70000
+    },
+    "message": "BTC 突破 70000!",
+    "notify_methods": ["browser", "sound"], # browser | sound | webhook
+    "label": "突破关键压力位",
+    "repeat_mode": "once"                   # once | every_time
+}
+返回: {"id": "alert_001", "created": true}
+
+PUT    /api/alerts/{id}                     # 修改警报（Body 同上，部分更新）
+DELETE /api/alerts/{id}                     # 删除警报
+GET    /api/alerts/history?limit=50&offset=0&symbol=BTC-USDT&market=crypto&days=7
+# 警报触发历史（所有参数均可选，默认返回最近50条，按时间倒序）
+```
+
+### 3.5 回测接口
+
+```
+POST   /api/backtest/run
+Body: {
+    "symbol": "BTC-USDT",
+    "market": "crypto",                     # crypto | us | hk | cn（用于定位 klines 分表）
+    "interval": "1D",
+    "start_date": "2025-01-01",
+    "end_date": "2026-03-25",
+    "strategy_code": "...",
+    "strategy_type": "openscript",
+    "config": {"initial_capital": 100000, "commission": 0.001}
+}
+返回: {"id": "bt_001", "status": "running"}  # 通过WebSocket推送进度
+
+GET    /api/backtest/report/{id}            # 获取回测报告（返回格式见 2.7.2 report JSON）
+
+POST   /api/backtest/optimize               # 参数优化回测
+Body: {
+    "symbol": "BTC-USDT",
+    "market": "crypto",                     # crypto | us | hk | cn
+    "interval": "1D",
+    "start_date": "2025-01-01",
+    "end_date": "2026-03-25",
+    "strategy_code": "...",
+    "strategy_type": "openscript",
+    "config": {"initial_capital": 100000, "commission": 0.001},
+    "param_grid": {
+        "fast": {"min": 5, "max": 50, "step": 5},
+        "slow": {"min": 10, "max": 100, "step": 10}
+    }
+}
+返回: {"id": "opt_001", "status": "running"}  # 通过WebSocket推送进度
+```
+
+### 3.6 选股接口
+
+```
+# ── 规则筛选（同步，1~5秒返回）──
+POST   /api/screener/filter
+Body: {
+    "markets": ["us", "crypto"],                 # 数组，支持多市场同时筛选: crypto | us | hk | cn
+    "filters": [
+        {"type": "rsi_below", "period": 14, "value": 30},
+        {"type": "price_above_ma", "ma_period": 200},
+        {"type": "volume_above_ma", "ma_period": 20, "multiplier": 2}
+    ],
+    "sort_by": "change_pct",                     # 排序字段
+    "sort_order": "desc",                        # asc | desc
+    "limit": 50                                  # 最多返回条数
+}
+返回: {
+    "count": 23,
+    "results": [                                     # 多市场结果合并，每条结果自带 market 字段
+        {
+            "symbol": "AAPL", "name": "Apple Inc.", "market": "us",
+            "price": 178.50, "change_pct": 1.8, "volume": 52340000,
+            "rsi_14": 29.1, "ma_200": 165.30,
+            "last_update": "2026-03-25T15:30:00Z"
+        }, ...
+    ]
+}
+
+# ── AI智能推荐（异步，5~20秒）──
+POST   /api/screener/ai-analyze
+Body: {
+    "market": "us",                              # 分析哪个市场
+    "hours": 24,                                 # 分析最近N小时的新闻
+    "min_score": 60                              # 最低推荐评分（0-100）
+}
+返回: {"task_id": "ai_20260325_001"}
+
+GET    /api/screener/ai-status/{task_id}
+返回: {
+    "task_id": "ai_20260325_001",
+    "status": "done",                            # collecting_news | analyzing | scoring | done | error
+    "progress": "分析完成",                       # 人类可读进度描述
+    "result": [                                  # 仅 status=done 时存在
+        {
+            "symbol": "NVDA", "name": "英伟达",
+            "score": 85,                         # 综合评分 0-100
+            "sentiment_score": 0.8,              # 新闻情绪 -1~1
+            "technical_score": 0.7,              # 技术面 0~1
+            "reason": "AI芯片需求旺盛，多家机构上调目标价",
+            "signals": ["MACD金叉", "放量突破MA20"],
+            "related_news": [
+                {"title": "NVDA Q3 revenue beats...", "url": "https://...", "sentiment": 0.9, "time": "2026-03-25T10:00:00Z"},
+                {"title": "AI chip demand surges...", "url": "https://...", "sentiment": 0.7, "time": "2026-03-25T08:30:00Z"}
+            ]
+        }, ...
+    ],
+    "error": null                                # 仅 status=error 时有值
+}
+```
+
+### 3.7 加密仪表盘接口
+
+```
+GET    /api/dashboard/fear-greed                        # 恐惧贪婪指数
+GET    /api/dashboard/funding-rate?symbol=BTC-USDT-SWAP # 资金费率
+GET    /api/dashboard/open-interest?symbol=BTC-USDT-SWAP # 持仓量
+GET    /api/dashboard/long-short-ratio?coin=BTC         # 多空比
+GET    /api/dashboard/exchange-flow?coin=BTC             # 交易所净流入流出
+GET    /api/dashboard/whale-transactions?coin=BTC        # 巨鲸交易
+GET    /api/dashboard/calendar                           # 经济日历+加密事件
+GET    /api/dashboard/onchain?coin=BTC                   # 链上数据汇总
+```
+
+### 3.8 自选列表接口
+
+```
+GET    /api/watchlist?market=crypto          # 获取指定市场的自选列表（必传 market）
+POST   /api/watchlist
+Body: {"symbol": "BTC-USDT", "market": "crypto", "name": "Bitcoin/USDT"}
+DELETE /api/watchlist/{symbol}?market=crypto # 从指定市场删除品种
+PUT    /api/watchlist/reorder               # 调整顺序
+Body: {"market": "crypto", "symbols": ["BTC-USDT", "ETH-USDT", "SOL-USDT"]}
+```
+
+### 3.9 配置接口
+
+```
+GET    /api/settings
+返回: {
+    // ── 数据源 ──
+    "crypto_exchange": "okx",              // "okx" | "binance"
+
+    // ── LLM 配置（按 provider 分组，前端根据 llm_provider 显示对应字段）──
+    "llm_provider": "deepseek",            // "deepseek" | "qwen"
+    "deepseek_api_key": "sk-****",         // 脱敏显示，仅前4位+后4位
+    "deepseek_base_url": "https://api.deepseek.com/v1",
+    "deepseek_model": "deepseek-chat",
+    "qwen_api_key": "sk-****",
+    "qwen_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "qwen_model": "qwen-turbo",
+
+    // ── 第三方 API Key ──
+    "finnhub_api_key": "****",             // 新闻数据源（选股 AI 分析需要）
+    "glassnode_api_key": "****",           // 链上数据（仪表盘需要）
+    "cryptoquant_api_key": "****",         // 链上数据（仪表盘需要）
+
+    // ── 图表样式 ──
+    "candle_color_scheme": "international", // "international"(绿涨红跌) | "chinese"(红涨绿跌)
+    "candle_type": "candle_solid",          // candle_solid | candle_stroke | ohlc | area
+    "show_grid": true,
+    "timezone": "Asia/Shanghai",
+
+    // ── 回测默认参数 ──
+    "default_initial_capital": 100000,
+    "default_commission_crypto": 0.001,     // 加密货币默认手续费 0.1%
+    "default_commission_stock": 0.0003,     // 股票默认手续费 0.03%
+    "default_slippage": 0.0005,
+
+    // ── 通知设置 ──
+    "notification_browser": true,
+    "notification_sound": true,
+    "notification_sound_volume": 70,
+    "notification_webhook_urls": [],        // 数组，支持多个 Webhook 目标
+}
+
+PUT    /api/settings
+Body: { "crypto_exchange": "okx", "llm_provider": "deepseek", "deepseek_api_key": "sk-...", ... }
+// 部分更新：只传需要修改的字段即可，未传的字段保持不变
+返回: { "success": true }
+```
+
+---
+
+## 四、前端详细设计
+
+### 4.0 前端库引入方式
+
+前端为纯 Vanilla JS 项目，**不使用打包工具**，所有第三方库通过 CDN / UMD 方式引入：
+
+```html
+<!-- index.html -->
+
+<!-- KLineChart (UMD版本，暴露全局 klinecharts 对象) -->
+<!-- ⚠️ 锁定版本号，避免自动升级导致 API 不兼容 -->
+<script src="https://unpkg.com/klinecharts@10.0.0/dist/klinecharts.min.js"></script>
+
+<!-- CodeMirror 6 (用 ESM CDN) -->
+<script type="module">
+  import { EditorView, basicSetup } from 'https://esm.sh/@codemirror/basic-setup';
+  import { python } from 'https://esm.sh/@codemirror/lang-python';
+  // 或者用 importmap 统一管理
+</script>
+
+<!-- 图表库（回测报告用） -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+```
+
+> **注意**：KLineChart UMD 版本使用 `klinecharts.init()` 而非 ES Module 的 `import { init }`。文档中 chart.js 的代码示例需要相应调整为 `klinecharts.init('chart-container', {...})`。
+
+### 4.0.1 CORS 配置（后端 main.py）
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+app = FastAPI(title="OpenChart Pro")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],           # 开发环境允许所有，生产环境改为具体域名
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 静态文件服务（前端）
+# ⚠️ 必须在所有 app.include_router() 之后再执行 mount！
+# mount("/") 会拦截所有未匹配的路径，如果放在 API 路由之前，所有 /api/* 请求都会 404
+# 正确顺序：先注册 API 路由 → 最后 mount 静态文件
+app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
+```
+
+### 4.0.2 错误处理与重连规范
+
+| 场景 | 超时 | 重试次数 | 重试间隔 |
+|------|------|---------|---------|
+| REST API 请求 | 10秒 | 3次 | 1s, 2s, 4s（指数退避） |
+| WebSocket 断线重连 | - | 无限重试 | 3s, 6s, 12s, 30s（指数退避，上限30s） |
+| LLM API 调用 | 30秒 | 2次 | 5s |
+| 数据源切换 | - | 自动降级 | OKX失败→自动切Binance |
+
+### 4.1 页面布局
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  工具栏 (50px)                                                       │
+│  [市场▼] [搜索品种...] [1m|5m|15m|30m|1H|4H|1D|1W|1M] [指标] [画线] │
+│  [警报] [回测] [选股] [仪表盘] [⚙设置]                               │
+├──────────┬──────────────────────────────────────┬───────────────────┤
+│ 自选列表  │                                      │ 信息面板 (240px)   │
+│ (180px)  │         主图表区域                      │                   │
+│          │         KLineChart Pro                │ [品种信息]         │
+│ BTC-USDT │         蜡烛图 + 叠加指标              │  开: 67234.50      │
+│ ETH-USDT │                                      │  高: 67890.00      │
+│ AAPL     │                                      │  低: 67100.00      │
+│ 0700.HK  │──────────────────────────────────────│  收: 67650.25      │
+│ 600519   │         副图区域                       │  量: 1234.56      │
+│          │         MACD / RSI / KDJ              │  额: 83.2M        │
+│ ──────── │                                      │                   │
+│ [+添加]  │                                      │ [指标值面板]       │
+│          │                                      │  MA20: 67500       │
+│          │                                      │  RSI: 58.3         │
+│          │                                      │                   │
+│          │                                      │ [警报列表]         │
+│          │                                      │  🔔 BTC>70000      │
+├──────────┴──────────────────────────────────────┴───────────────────┤
+│  底部面板 (可收起, 默认300px)                                         │
+│  [公式编辑器] [控制台] [警报日志] [回测报告] [选股结果] [仪表盘]       │
+│                                                                     │
+│  CodeMirror 编辑器 / 回测图表 / 选股表格 / 链上数据图表              │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 4.2 暗色主题色值
+
+```css
+:root {
+    /* 背景 */
+    --bg-primary: #0D1117;         /* 主背景 */
+    --bg-secondary: #161B22;       /* 面板背景 */
+    --bg-tertiary: #1C2333;        /* 卡片/输入框背景 */
+    --bg-hover: #21283B;           /* 悬浮背景 */
+
+    /* 边框 */
+    --border-primary: #30363D;     /* 主边框 */
+    --border-secondary: #21262D;   /* 次边框 */
+
+    /* 文字 */
+    --text-primary: #E6EDF3;       /* 主文字 */
+    --text-secondary: #7D8590;     /* 次文字 */
+    --text-tertiary: #484F58;      /* 弱文字 */
+
+    /* 涨跌色 */
+    --color-up: #00C853;           /* 涨/阳线 */
+    --color-down: #FF1744;         /* 跌/阴线 */
+
+    /* 强调色 */
+    --color-accent: #2196F3;       /* 主强调 */
+    --color-accent2: #60A5FA;      /* 次强调 */
+    --color-warning: #F59E0B;      /* 警告 */
+    --color-purple: #A855F7;       /* 紫色 */
+
+    /* 图表 */
+    --chart-bg: #0D1117;
+    --chart-grid: #1C2333;
+    --chart-crosshair: #4B5563;
+    --chart-text: #7D8590;
+}
+```
+
+### 4.3 KLineChart Pro 初始化配置
+
+```javascript
+// frontend/js/chart.js
+// ⚠️ 使用 UMD 版本，klinecharts 为全局对象，不要用 ES Module import
+
+const chart = klinecharts.init('chart-container', {
+    styles: {
+        grid: {
+            show: true,
+            horizontal: { color: 'var(--chart-grid)' },
+            vertical: { color: 'var(--chart-grid)' }
+        },
+        candle: {
+            type: 'candle_solid',
+            priceMark: { show: true },
+            bar: {
+                upColor: '#00C853',
+                downColor: '#FF1744',
+                upBorderColor: '#00C853',
+                downBorderColor: '#FF1744',
+                upWickColor: '#00C853',
+                downWickColor: '#FF1744'
+            }
+        },
+        indicator: {
+            lines: [
+                { color: '#FF6B6B' },
+                { color: '#4ECDC4' },
+                { color: '#45B7D1' },
+                { color: '#96CEB4' },
+                { color: '#FFEAA7' }
+            ]
+        },
+        xAxis: { color: 'var(--chart-text)' },
+        yAxis: { color: 'var(--chart-text)' },
+        crosshair: {
+            horizontal: { color: 'var(--chart-crosshair)' },
+            vertical: { color: 'var(--chart-crosshair)' }
+        },
+        overlay: { /* 画线工具样式 */ }
+    }
+});
+
+// 加载K线数据
+chart.applyNewData(candles);
+
+// 添加指标到主图
+chart.createIndicator('MA', false, { id: 'candle_pane' });
+
+// 添加指标到副图
+chart.createIndicator('MACD', false, { id: 'pane_macd' });
+chart.createIndicator('RSI', false, { id: 'pane_rsi' });
+
+// 副图 pane 管理策略：
+// - 每个副图指标创建独立 pane（不共享），pane_id 用指标名生成如 "pane_MACD"
+// - 主图叠加指标（overlay=true）都添加到 id="candle_pane"
+// - 移除指标时同步删除对应 pane：chart.removeIndicator('pane_MACD', 'MACD')
+// - 最多允许同时显示 4 个副图 pane，超出时提示用户先移除已有指标
+
+// 注册后端计算的自定义指标
+klinecharts.registerIndicator({
+    name: 'CUSTOM_FROM_BACKEND',
+    figures: [{ key: 'value', title: '', type: 'line' }],
+    calc: (kLineDataList) => {
+        // 这里不做前端计算，数据由WebSocket推送后直接填入
+        return kLineDataList.map((_, i) => ({
+            value: backendIndicatorData[i] || null
+        }));
+    }
+});
+```
+
+### 4.4 WebSocket 客户端
+
+```javascript
+// frontend/js/websocket.js
+
+class WSClient {
+    constructor() {
+        this.ws = null;
+        this.handlers = {};         // type -> callback
+        this.reconnectTimer = null;
+        this.reconnectDelay = 3000; // 初始重连延迟 3s
+        this.maxReconnectDelay = 30000; // 最大延迟 30s
+    }
+
+    connect() {
+        this.ws = new WebSocket(`ws://${location.host}/ws`);
+        this.ws.onopen = () => {
+            this.reconnectDelay = 3000;  // 连接成功，重置延迟
+            updateConnectionStatus("connected"); // 更新状态灯为绿色
+        };
+        this.ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            const handler = this.handlers[msg.type];
+            if (handler) handler(msg);
+        };
+        this.ws.onclose = () => {
+            updateConnectionStatus("disconnected"); // 状态灯变红
+            // 指数退避重连: 3s → 6s → 12s → 24s → 30s(上限)
+            this.reconnectTimer = setTimeout(() => this.connect(), this.reconnectDelay);
+            this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);
+        };
+    }
+
+    subscribe(symbol, interval) {
+        this.send({ action: "subscribe", symbol, interval });
+    }
+
+    unsubscribe(symbol) {
+        this.send({ action: "unsubscribe", symbol });
+    }
+
+    switch(symbol, interval) {
+        // 自动取消旧订阅 + 创建新订阅（服务端原子操作，见 WS 协议 "switch" action）
+        this.send({ action: "switch", symbol, interval });
+    }
+
+    on(type, callback) {
+        this.handlers[type] = callback;
+    }
+
+    send(data) {
+        if (this.ws?.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify(data));
+        }
+    }
+}
+
+// 使用示例
+const ws = new WSClient();
+ws.connect();
+
+ws.on("kline", (msg) => {
+    chart.updateData(msg.data);           // 更新K线
+    updateIndicators(msg.indicators);      // 更新指标值
+});
+
+ws.on("alert", (msg) => {
+    showAlertNotification(msg);            // 显示警报
+    playAlertSound();                      // 播放声音
+});
+
+ws.on("backtest_progress", (msg) => {
+    updateBacktestProgress(msg);           // 更新回测进度条
+});
+
+ws.on("backtest_complete", (msg) => {
+    onBacktestComplete(msg);               // 回测完成，加载完整报告
+});
+
+ws.on("dashboard_update", (msg) => {
+    updateDashboard(msg);                  // 更新仪表盘
+});
+```
+
+### 4.5 底部面板标签页
+
+| 标签页 | 内容 | 关键组件 |
+|--------|------|---------|
+| 公式编辑器 | CodeMirror 6 代码编辑器，左侧编辑代码，右侧函数文档/语法参考面板（不是自动计算预览；用户点击 [▶运行] 按钮后才发送到后端计算并渲染到主图表） | CodeMirror, 模式切换(OpenScript/Python), 运行按钮(Ctrl+Enter), 函数文档侧栏 |
+| 控制台 | 日志输出，公式执行结果，错误信息 | 滚动日志列表 |
+| 警报日志 | 警报触发历史记录 | 时间、品种、条件、动作 |
+| 回测报告 | 资金曲线图表、统计指标卡片、交易记录表格、月度热力图 | Chart.js/Plotly图表, 数据表格 |
+| 选股结果 | 筛选结果表格、AI推荐列表+理由+关联新闻 | 可排序表格, 新闻卡片 |
+| 仪表盘 | 恐惧贪婪仪表盘、资金费率图、持仓量图、经济日历时间轴、链上数据图表 | 仪表盘组件, 迷你图表, 日历时间轴 |
+
+### 4.6 搜索品种组件 — search.js
+
+```
+┌────────────────────────────────────────┐
+│ 🔍 搜索品种...                    [×]  │
+├────────────────────────────────────────┤
+│ 热门:  BTC-USDT  ETH-USDT  AAPL       │
+│        TSLA      0700.HK   600519     │
+├────────────────────────────────────────┤
+│ 🏷 加密货币                             │
+│   BTC-USDT   Bitcoin / Tether  $67,650 │
+│   BTC-USDC   Bitcoin / USDC   $67,648 │
+│ 🏷 美股                                │
+│   AAPL       Apple Inc.       $178.50  │
+│ 🏷 港股                                │
+│   0700.HK    腾讯控股          $298.40  │
+│ 🏷 A股                                 │
+│   600519     贵州茅台           ¥1,685  │
+└────────────────────────────────────────┘
+```
+
+**功能规格：**
+
+| 特性 | 说明 |
+|------|------|
+| 触发方式 | 点击工具栏搜索框，或按 `/` 快捷键 |
+| 搜索逻辑 | 前端本地搜索（品种代码 + 名称），品种列表在启动时从后端 `/api/symbols` 加载并缓存 |
+| 结果分组 | 按市场分组显示（加密/美股/港股/A股），每组最多显示5条 |
+| 热门列表 | 默认显示6个热门品种快捷入口（可配置） |
+| 键盘导航 | ↑↓ 选择、Enter 确认切换、Esc 关闭 |
+| 选中行为 | 选择品种后：(1) 主图切换到该品种 (2) 触发 WebSocket 订阅切换 (3) 信息面板更新 |
+
+**需新增后端接口：**
+
+```
+GET /api/symbols?market=crypto|us|hk|cn
+响应: [{ "symbol": "BTC-USDT", "name": "Bitcoin / Tether", "market": "crypto" }, ...]
+```
+
+### 4.7 设置对话框 — settings.js
+
+设置通过模态框（Modal）方式打开，点击工具栏 `[⚙设置]` 触发。
+
+```
+┌─────────── OpenChart Pro 设置 ──────────────┐
+│                                              │
+│  ▸ 通用设置                                   │
+│    时区：  [Asia/Shanghai (UTC+8)▼]           │
+│                                              │
+│  ▸ 图表样式                                   │
+│    涨跌配色：  ○ 中国标准（红涨绿跌）           │
+│               ● 国际标准（绿涨红跌）            │
+│    K线类型：  [实心蜡烛▼] （实心/空心/美国线）   │
+│    背景网格：  [✓] 显示                        │
+│                                              │
+│  ▸ 数据源                                     │
+│    加密交易所：  ● OKX  ○ Binance              │
+│    A股数据源：   [东方财富] (只读)              │
+│                                              │
+│  ▸ AI / LLM 配置                              │
+│    LLM 提供商：  [DeepSeek▼]                   │
+│    ── 当选择 DeepSeek 时显示 ──                │
+│    API Key：     [••••••••••] [👁]            │
+│    Base URL：    [https://api.deepseek.com/v1]│
+│    Model：       [deepseek-chat▼]             │
+│    ── 当选择通义千问时显示 ──                   │
+│    API Key：     [••••••••••] [👁]            │
+│    Base URL：    [https://dashscope...]        │
+│    Model：       [qwen-turbo▼]                │
+│                                              │
+│  ▸ 第三方 API Key                             │
+│    Finnhub：     [••••••••••]  (新闻数据)     │
+│    Glassnode：   [••••••••••]  (链上数据)     │
+│    CryptoQuant： [••••••••••]  (链上数据)     │
+│                                              │
+│  ▸ 通知设置                                   │
+│    浏览器通知：  [✓] 启用  [请求权限]          │
+│    声音提醒：    [✓] 启用  音量 [████░░ 70%]  │
+│    Webhook URLs：                             │
+│      [https://qyapi.weixin.qq.com/...]  [×]  │
+│      [https://oapi.dingtalk.com/...]    [×]  │
+│      [+ 添加 Webhook]                        │
+│                                              │
+│  ▸ 回测默认参数                               │
+│    默认初始资金：[100000]                      │
+│    默认手续费率：[0.001]                       │
+│    默认滑点：    [0.0005]                      │
+│                                              │
+│              [恢复默认]        [保存设置]       │
+└──────────────────────────────────────────────┘
+```
+
+**持久化方案：** 所有设置统一通过 `PUT /api/settings` 保存到后端 SQLite config 表（与 2.1 配置优先级一致），前端不使用 localStorage 存储设置。打开设置页面时通过 `GET /api/settings` 加载当前值。
+
+**需新增后端接口：**
+
+```
+GET  /api/settings              → 获取当前后端配置（脱敏，API Key 显示 ****）
+PUT  /api/settings              → 更新后端配置（部分更新，只传需要改的字段）
+Body: { "llm_provider": "deepseek", "deepseek_api_key": "sk-...", "finnhub_api_key": "xxx" }
+```
+
+### 4.8 警报创建对话框
+
+点击工具栏 `[警报]` 按钮或右侧面板 `[+ 新增警报]` 触发。
+
+```
+┌──────────── 创建警报 ────────────────────────┐
+│                                              │
+│  品种：  [BTC-USDT▼]  （默认当前图表品种）     │
+│                                              │
+│  触发类型：                                   │
+│  ● 价格触发    ○ 指标触发    ○ 交叉触发       │
+│  ○ 成交量触发  ○ 涨跌幅触发  ○ 自定义公式     │
+│                                              │
+│  ┌─ 价格触发条件 ─────────────────────┐      │
+│  │  条件:  [价格 ≥ ▼]   值: [70000]  │      │
+│  │  可选:  ≥ / ≤ / 穿越上行 / 穿越下行│      │
+│  └────────────────────────────────────┘      │
+│                                              │
+│  ┌─ 指标触发条件（当选择"指标触发"时显示）─┐  │
+│  │  指标:  [RSI▼]  参数: [14]              │  │
+│  │  条件:  [≥▼]    值: [70]               │  │
+│  └──────────────────────────────────────┘   │
+│                                              │
+│  ┌─ 交叉触发（当选择"交叉触发"时显示）────┐  │
+│  │  指标A: [MA▼] 参数:[5]                 │  │
+│  │  指标B: [MA▼] 参数:[20]                │  │
+│  │  方向:  ● 金叉（A上穿B） ○ 死叉（A下穿B）│ │
+│  └──────────────────────────────────────┘   │
+│                                              │
+│  ┌─ 自定义公式（当选择"自定义公式"时显示）─┐  │
+│  │  close > sma(close,20) and rsi(14) > 50│  │
+│  └──────────────────────────────────────┘   │
+│                                              │
+│  通知方式（可多选）：                          │
+│  [✓] 浏览器通知  [✓] 声音提醒  [  ] Webhook  │
+│                                              │
+│  触发次数：  ● 仅一次  ○ 每次满足都触发        │
+│  备注标签：  [突破关键压力位...]                │
+│                                              │
+│              [取消]            [创建警报]      │
+└──────────────────────────────────────────────┘
+```
+
+**交互逻辑：** 选择不同触发类型时，中间条件区域动态切换对应表单。创建成功后自动添加到右侧面板的警报列表和底部警报日志标签页。
+
+### 4.9 回测策略定义界面
+
+底部面板 `[回测报告]` 标签页分为左右两栏：**左栏策略定义 + 右栏报告展示**。
+
+```
+┌─ 策略定义 (40%) ─────────────────┬─ 回测报告 (60%) ──────────────────┐
+│                                  │                                   │
+│ 品种: [BTC-USDT▼]               │  📊 资金曲线                       │
+│ 时间范围:                        │  ┌────────────────────────────┐   │
+│   [2024-01-01] ~ [2024-12-31]   │  │  /\    /\  /\              │   │
+│ 初始资金: [100000]              │  │ /  \  /  \/  \    /\       │   │
+│ 手续费率: [0.1%]                │  │/    \/        \  /  \      │   │
+│ 时间周期: [1H▼]                 │  │                \/    \___  │   │
+│                                  │  └────────────────────────────┘   │
+│ ── 入场条件 ──                   │                                   │
+│ [+ 添加条件]                     │  📋 统计摘要                       │
+│ ┌────────────────────────────┐  │  ┌──────────┬──────────────────┐  │
+│ │ IF  RSI(14) < 30           │  │  │ 总收益率  │  +23.5%          │  │
+│ │ AND MA(5) > MA(20)         │  │  │ 年化收益  │  +18.2%          │  │
+│ │                     [×删除]│  │  │ Sharpe   │  1.85             │  │
+│ └────────────────────────────┘  │  │ 最大回撤  │  -12.3%          │  │
+│                                  │  │ 胜率     │  58.6%            │  │
+│ ── 出场条件 ──                   │  │ 盈亏比   │  1.92             │  │
+│ [+ 添加条件]                     │  │ 总交易数  │  147              │  │
+│ ┌────────────────────────────┐  │  │ 最长回撤期│  23天             │  │
+│ │ IF  RSI(14) > 70           │  │  │ 最大连赢  │  8次              │  │
+│ │ OR  止损: -5%              │  │  │ 最大连亏  │  4次              │  │
+│ │ OR  止盈: +15%             │  │  └──────────┴──────────────────┘  │
+│ │                     [×删除]│  │                                   │
+│ └────────────────────────────┘  │  📊 月度收益热力图                  │
+│                                  │  ┌────────────────────────────┐   │
+│ ── 参数优化（可选）──            │  │  Jan  Feb  Mar  Apr  ...   │   │
+│ [✓] 启用参数扫描                │  │  2.1  -1.3  4.5  0.8  ... │   │
+│ RSI周期: [10] ~ [30] 步长:[2]  │  │  (红绿色块热力图)           │   │
+│ MA快线:  [3] ~ [10]  步长:[1]  │  └────────────────────────────┘   │
+│                                  │                                   │
+│ [🔄 运行回测]  [📊 运行优化]     │  📋 交易记录（可展开折叠）         │
+│                                  │  | 时间 | 方向 | 价格 | 盈亏 |    │
+└──────────────────────────────────┴───────────────────────────────────┘
+```
+
+**条件构建器交互：** 每个条件为一行卡片，点击 `[+ 添加条件]` 新增，支持指标条件（指标名+参数+运算符+值）和固定止损/止盈两种模式。条件之间用 AND/OR 连接。
+
+**手续费率自动填充：** 切换回测品种时，根据市场自动设置默认手续费率：加密货币 = `default_commission_crypto`(0.1%)，股票(美/港/A股) = `default_commission_stock`(0.03%)。用户可手动覆盖。
+
+### 4.10 选股规则配置界面
+
+底部面板 `[选股结果]` 标签页同样分左右两栏：**左栏规则配置 + 右栏结果列表**。
+
+```
+┌─ 筛选条件 (35%) ──────────────────┬─ 筛选结果 (65%) ─────────────────┐
+│                                   │                                   │
+│ 市场范围:                          │  找到 23 个符合条件的品种           │
+│ [✓] 加密  [✓] 美股  [ ] 港股  [ ] A股│                               │
+│                                   │  | 品种     | 价格    | 涨幅   |  │
+│ ── 规则条件 ──                     │  |----------|---------|--------|  │
+│ [+ 添加规则]                       │  | BTC-USDT | 67,650  | +3.2%  |  │
+│                                   │  | ETH-USDT | 3,450   | +5.1%  |  │
+│ ┌──────────────────────────────┐  │  | AAPL     | 178.50  | +1.8%  |  │
+│ │ 规则1: RSI(14) < 30   [×]   │  │  | ...      |         |        |  │
+│ │ 关系: [AND▼]                 │  │                                   │
+│ │ 规则2: 成交量 > MA均量(20) [×]│  │  ── AI 智能推荐 ──                │
+│ │ 关系: [AND▼]                 │  │  🤖 基于最新新闻的AI分析：         │
+│ │ 规则3: 价格 > MA(200)  [×]  │  │                                   │
+│ └──────────────────────────────┘  │  ┌─ NVDA ──────────────────────┐  │
+│                                   │  │ 评分: ⭐⭐⭐⭐☆ 85/100          │  │
+│ ── AI 智能模式 ──                  │  │ 理由: 最新财报超预期，AI芯片   │  │
+│ [✓] 启用AI新闻分析                 │  │ 需求持续增长，多家机构上调目标价│  │
+│ 分析范围: [最近24小时▼]            │  │ 关联新闻:                     │  │
+│ 最低评分: [60] / 100              │  │  • "NVDA Q3 revenue beats..." │  │
+│                                   │  │  • "AI chip demand surges..." │  │
+│ ── 排序方式 ──                     │  └──────────────────────────────┘  │
+│ [涨跌幅▼]  [降序▼]                │                                   │
+│                                   │  ┌─ BTC-USDT ─────────────────┐   │
+│ [🔍 开始筛选]  [🤖 AI分析]        │  │ 评分: ⭐⭐⭐⭐☆ 82/100          │   │
+│                                   │  │ 理由: ETF资金持续流入...     │   │
+│                                   │  └──────────────────────────────┘  │
+└───────────────────────────────────┴───────────────────────────────────┘
+```
+
+**规则构建器类型：** 价格（>=/<=/在范围内）、技术指标（RSI/MA/MACD 值+条件）、成交量（相对均量倍数）、涨跌幅（日/周涨跌幅范围）、市值（大盘/中盘/小盘）。
+
+#### 4.10.1 选股前端交互状态机
+
+**按钮状态：**
+
+| 按钮 | 默认状态 | 运行中状态 | 完成状态 |
+|------|---------|-----------|---------|
+| `[🔍 开始筛选]` | 蓝色可点击 | `[⏳ 筛选中...]` 灰色禁用 | 恢复蓝色，右栏显示结果数量 "找到 23 个" |
+| `[🤖 AI分析]` | 紫色可点击 | `[⏳ 分析中... 预计15秒]` 灰色禁用 | 恢复紫色，右栏显示推荐数量 |
+
+**AI 分析 Loading 交互（重点）：**
+
+由于 LLM 调用耗时较长（5~20秒），需要给用户明确的进度反馈：
+
+```
+阶段1（0~3秒）：  右栏AI区域显示
+                  "🔄 正在采集最新新闻..."
+
+阶段2（3~15秒）： 文字变为
+                  "🤖 AI正在分析 47 条新闻..."
+                  （47 = 实际采集到的新闻数量，通过中间响应更新）
+
+阶段3（完成）：    隐藏loading，渲染推荐卡片
+```
+
+**实现方案：** 由于 REST API 不适合推送中间状态，采用以下方案之一（推荐方案A）：
+
+- **方案A（推荐）**：`POST /api/screener/ai-analyze` 返回 `{"task_id": "ai_001"}`，前端轮询 `GET /api/screener/ai-status/{task_id}` 获取状态 `{status: "collecting_news" | "analyzing" | "scoring" | "done", progress: "采集到47条新闻", result: [...]}`
+- **方案B**：通过 WebSocket 推送进度，`ws.on("screener_progress", (msg) => updateProgress(msg))`
+
+**API Key 未配置的前置检查：**
+
+```javascript
+// screener.js — 点击[🤖AI分析]时的前置检查
+async function onClickAIAnalyze() {
+    // 先检查 LLM API Key 是否已配置
+    const settings = await fetch('/api/settings').then(r => r.json());
+    // 根据当前 LLM 提供商检查对应的 API Key
+    const keyField = settings.llm_provider === 'qwen' ? 'qwen_api_key' : 'deepseek_api_key';
+    if (!settings[keyField] || settings[keyField] === '****') {
+        showToast("请先在设置(⚙)中配置 LLM API Key", "warning");
+        return;
+    }
+    // 通过检查，开始AI分析
+    startAIAnalysis();
+}
+```
+
+**右栏结果区域布局（上下分区）：**
+
+```
+┌─ 右栏结果区 ──────────────────────────────────┐
+│                                                │
+│  ━━ 规则筛选结果 ━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│  找到 23 个符合条件的品种     [导出CSV]         │
+│                                                │
+│  | 品种▼    | 价格▼    | 涨幅▼  | RSI▼  |      │
+│  |----------|---------|--------|-------|       │
+│  | BTC-USDT | 67,650  | +3.2%  | 28.5  |      │
+│  | ETH-USDT | 3,450   | +5.1%  | 25.3  |      │
+│  | AAPL     | 178.50  | +1.8%  | 29.1  |      │
+│  （可滚动，最多显示50条，▼=可点击排序）          │
+│                                                │
+│  ━━ AI 智能推荐 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│  🤖 基于最近24小时新闻分析，推荐 5 个品种：      │
+│                                                │
+│  ┌─ #1 NVDA ─ 评分 85/100 ──────────────────┐ │
+│  │ ⭐⭐⭐⭐☆                                  │ │
+│  │ 理由: AI芯片需求旺盛，多家机构上调目标价    │ │
+│  │ 技术信号: [MACD金叉] [放量突破MA20]        │ │
+│  │ 关联新闻:                                 │ │
+│  │  📰 "NVDA Q3 revenue beats expectation"   │ │
+│  │  📰 "AI chip demand surges in 2026"       │ │
+│  │                    [查看K线] [设置警报]     │ │
+│  └────────────────────────────────────────────┘ │
+│                                                │
+│  ┌─ #2 BTC-USDT ─ 评分 82/100 ──────────────┐ │
+│  │ ...                                       │ │
+│  └────────────────────────────────────────────┘ │
+│                                                │
+│  ── 未运行时的占位 ──                           │
+│  （规则区）"配置左侧条件后点击 [🔍] 开始筛选"   │
+│  （AI区）"点击 [🤖AI分析] 获取基于新闻的AI推荐"  │
+└────────────────────────────────────────────────┘
+```
+
+**结果行交互：**
+
+| 操作 | 说明 |
+|------|------|
+| 单击表格行 | 主图表切换到该品种，自动订阅 WebSocket |
+| 单击AI卡片 `[查看K线]` | 同上，切换到该品种K线图 |
+| 单击AI卡片 `[设置警报]` | 打开警报创建对话框（4.8），预填该品种 |
+| 单击关联新闻标题 | 新窗口 `window.open()` 打开新闻原文链接 |
+| 点击表头排序 | 规则结果表格按该列升/降序排列 |
+| `[导出CSV]` | 将当前筛选结果下载为 CSV 文件 |
+
+**需新增后端接口（异步AI分析）：**
+
+```
+POST  /api/screener/ai-analyze
+Body: {"market": "us", "hours": 24, "min_score": 60}
+返回: {"task_id": "ai_20260325_001"}
+
+GET   /api/screener/ai-status/{task_id}
+返回: {
+    "status": "collecting_news" | "analyzing" | "scoring" | "done" | "error",
+    "progress": "正在分析 47 条新闻...",      // 人类可读进度文字
+    "result": [...],                          // 仅 status=done 时有值
+    "error": "..."                            // 仅 status=error 时有值
+}
+```
+
+### 4.11 市场切换器联动逻辑
+
+工具栏 `[市场▼]` 下拉菜单切换市场时的 UI 联动规则：
+
+| 动作 | 说明 |
+|------|------|
+| 自选列表刷新 | 切换到对应市场的自选品种列表，每个市场独立维护 |
+| 默认品种 | 加密→BTC-USDT，美股→AAPL，港股→0700.HK，A股→600519 |
+| 时间周期 | 加密: 全部9档。 美股/港股: 隐藏1m（延迟数据无意义）。 A股: 隐藏1m和4H（东方财富不支持4H，后端用60min×4聚合成本高且A股盘中仅4小时无意义），仅交易时间显示实时 |
+| 信息面板货币 | 加密→USDT，美股→USD，港股→HKD，A股→CNY |
+| A股特有显示 | 涨停价、跌停价、换手率 |
+| 仪表盘可见性 | `[仪表盘]` 按钮仅在加密市场时高亮可用，其他市场时灰色禁用 |
+| 选股市场范围 | 自动勾选当前市场，但允许用户手动切换 |
+| WebSocket | 自动取消旧订阅，发起新订阅 |
+
+### 4.12 画线工具面板
+
+点击工具栏 `[画线]` 展开下拉面板（非模态，类似 TradingView 画线工具栏）：
+
+| 分类 | 工具 | KLineChart API |
+|------|------|---------------|
+| 趋势线 | 直线、射线、趋势线段、水平线、垂直线 | `chart.createOverlay('segment')` 等 |
+| 斐波那契 | 斐波那契回撤、斐波那契扇形 | `chart.createOverlay('fibonacciLine')` |
+| 形状 | 矩形、平行通道 | `chart.createOverlay('parallelStraightLine')` |
+| 标注 | 文字标注、价格标签 | `chart.createOverlay('simpleAnnotation')` |
+| 操作 | 撤销最后一个、清除所有画线 | `chart.removeOverlay()` |
+
+**交互方式：** 选择工具后鼠标变为十字准星，在图表上点击/拖拽绘制。画线数据保存到 `localStorage` 按品种存储，切换品种时加载对应画线。
+
+### 4.13 指标选择面板
+
+点击工具栏 `[指标]` 弹出指标选择模态框：
+
+```
+┌────────── 技术指标 ──────────────────────────┐
+│ 🔍 搜索指标...                               │
+│                                              │
+│ 📌 已添加:  [MA ×] [MACD ×] [RSI ×]          │
+│                                              │
+│ ── 趋势类 ──                                 │
+│   MA(移动均线)    EMA(指数均线)    SMA          │
+│   BOLL(布林带)    SAR(抛物线)     VWAP         │
+│                                              │
+│ ── 震荡类 ──                                 │
+│   RSI(相对强弱)   KDJ(随机指标)   WR(威廉)     │
+│   CCI            ROC            STOCH        │
+│                                              │
+│ ── 成交量类 ──                               │
+│   VOL(成交量)    OBV(累积量)     MFI(资金流)   │
+│   CMF                                        │
+│                                              │
+│ ── 趋势强度 ──                               │
+│   MACD           DMI/ADX        ATR          │
+│   ADL            TRIX                        │
+│                                              │
+│ ── 自定义 ──                                 │
+│   📝 MyFormula1  📝 MyFormula2               │
+│   [+ 新建公式指标]                            │
+│                                              │
+│  点击指标名添加到图表，点击 × 移除             │
+│                                              │
+│ ── 参数调整（选中指标时显示）──               │
+│ MA 参数: 周期1=[5] 周期2=[10] 周期3=[20]     │
+│          周期4=[60]                           │
+│ [应用参数]                                    │
+└──────────────────────────────────────────────┘
+```
+
+**交互：** 点击指标名称立即添加到图表（主图指标叠加在K线上，副图指标自动创建新窗格）。已添加指标显示在顶部，可点击 × 移除。点击已添加指标名称展开参数调整区。
+
+### 4.14 浏览器通知权限流程
+
+```javascript
+// 通知权限请求时机和流程
+// 1. 首次创建警报时检查权限
+// 2. 设置页面点击 [请求权限] 按钮
+
+async function requestNotificationPermission() {
+    if (!("Notification" in window)) {
+        showToast("当前浏览器不支持桌面通知", "warning");
+        return false;
+    }
+    if (Notification.permission === "granted") return true;
+    if (Notification.permission === "denied") {
+        showToast("通知权限已被拒绝，请在浏览器设置中手动开启", "error");
+        return false;
+    }
+    // 弹出系统授权弹窗
+    const result = await Notification.requestPermission();
+    return result === "granted";
+}
+
+// 创建警报时自动检查
+async function onCreateAlert(alertData) {
+    if (alertData.notify_browser) {
+        const granted = await requestNotificationPermission();
+        if (!granted) {
+            showToast("提示：浏览器通知未授权，警报将仅通过声音/Webhook通知", "info");
+        }
+    }
+    // ... 继续创建警报
+}
+```
+
+### 4.15 自选列表完整操作 — watchlist.js
+
+| 操作 | 触发方式 | 说明 |
+|------|---------|------|
+| 添加品种 | 点击 `[+添加]` 按钮 | 弹出搜索品种组件（复用 4.6），选择后添加到当前市场列表 |
+| 删除品种 | 右键菜单 → 删除 | 从自选列表移除 |
+| 置顶品种 | 右键菜单 → 置顶 | 移动到列表首位 |
+| 切换品种 | 单击品种行 | 主图表切换、WebSocket 订阅切换、信息面板更新 |
+| 实时价格 | 自动更新 | 每行显示：品种代码 + 最新价 + 涨跌幅（红/绿色） |
+| 排序 | 列表头部排序按钮 | 按代码/价格/涨跌幅排序 |
+| 数据持久化 | 后端 SQLite | 通过 REST API (`GET/POST/DELETE /api/watchlist?market=xxx`) 存取，每个市场独立 |
+
+**每行显示格式：**
+```
+BTC-USDT
+67,650.25  ▲ +3.2%    ← 绿色（涨）
+
+ETH-USDT
+3,421.80   ▼ -1.5%    ← 红色（跌）
+```
+
+**右键菜单：**
+```
+┌──────────────┐
+│ 📌 置顶      │
+│ 📊 查看详情   │
+│ 🔔 设置警报   │
+│ ────────────  │
+│ 🗑 删除       │
+└──────────────┘
+```
+
+### 4.16 Loading / 空状态 / 错误状态 UI
+
+| 场景 | UI 表现 |
+|------|--------|
+| 首次加载K线 | 图表区域显示骨架屏（灰色闪烁矩形模拟K线形状），下方文字"加载中..." |
+| WebSocket 连接中 | 工具栏右上角状态灯：🟡 黄色闪烁 + "连接中" |
+| WebSocket 已连接 | 状态灯：🟢 绿色 + "实时" |
+| WebSocket 断线 | 状态灯：🔴 红色 + "断线重连中..."，底部弹出 Toast 提示 |
+| REST API 超时 | 对应面板显示 "请求超时，[重试]" 按钮 |
+| 自选列表为空 | 居中显示 "暂无自选品种\n点击 [+添加] 开始" |
+| 选股结果为空 | "未找到符合条件的品种，请调整筛选条件" |
+| 回测未运行 | 右栏显示 "配置策略后点击 [运行回测] 开始" 占位图 |
+| 警报日志为空 | "暂无警报记录" |
+| LLM API 失败 | AI 推荐区域显示 "AI 分析暂不可用：[错误详情]，请检查 API Key 设置" |
+| 数据源降级 | Toast 提示 "OKX 连接失败，已自动切换至 Binance 备用源" |
+
+**Toast 通知组件规格：**
+- 位置：页面右上角堆叠
+- 类型：info（蓝）/ success（绿）/ warning（黄）/ error（红）
+- 持续：3秒自动消失，error 类型需手动关闭
+- 最多同时显示 3 条
+
+### 4.17 键盘快捷键
+
+| 快捷键 | 功能 |
+|--------|------|
+| `/` | 聚焦搜索品种 |
+| `Esc` | 关闭当前模态框/面板 |
+| `1~9` | 快速切换时间周期（1=1m, 2=5m, 3=15m, 4=30m, 5=1H, 6=4H, 7=1D, 8=1W, 9=1M） |
+| `Ctrl+S` | 保存当前公式 |
+| `Ctrl+Enter` | 运行当前公式 / 运行回测 |
+| `Alt+A` | 打开创建警报对话框 |
+| `Alt+I` | 打开指标选择面板 |
+| `Alt+D` | 打开画线工具面板 |
+| `Ctrl+Z` | 撤销最后一个画线（仅图表区域获得焦点时生效，公式编辑器焦点时由 CodeMirror 处理文字撤销） |
+| `Tab` | 底部面板标签页前进切换 |
+| `Shift+Tab` | 底部面板标签页后退切换 |
+| `F11` | 图表全屏 |
+
+**实现方式：** 在 `app.js` 中注册全局 `keydown` 监听器，模态框打开时仅响应 `Esc`。
+
+### 4.18 品种信息面板完整字段
+
+右侧信息面板 (240px) 根据不同市场显示不同字段：
+
+**通用字段（所有市场）：**
+```
+┌─ BTC-USDT ─────────────┐
+│ Bitcoin / Tether        │
+│ ────────────────────── │
+│ 最新价  67,650.25       │
+│ 开盘价  67,234.50       │
+│ 最高价  67,890.00       │
+│ 最低价  67,100.00       │
+│ 收盘价  67,650.25       │
+│ 24h涨跌 +415.75 (+0.62%)│
+│ 成交量  1,234.56 BTC    │
+│ 成交额  83.2M USDT      │
+│ ────────────────────── │
+│ 📊 指标值               │
+│ MA(5):  67,520          │
+│ MA(20): 67,100          │
+│ RSI(14): 58.3           │
+│ MACD: 125.6 / 98.2     │
+│ ────────────────────── │
+│ 🔔 活跃警报             │
+│ BTC > 70,000  ⏳待触发   │
+│ RSI > 80      ⏳待触发   │
+│ [+ 新增警报]            │
+└─────────────────────────┘
+```
+
+**A股特有字段：**
+```
+│ 涨停价  1,851.50        │
+│ 跌停价  1,518.50        │
+│ 换手率  0.32%           │
+│ 市盈率  38.5            │
+│ 市值    2.12万亿        │
+```
+
+**加密特有字段：**
+```
+│ 24h最高 68,200.00       │
+│ 24h最低 66,500.00       │
+│ 资金费率 +0.0123%       │
+│ 持仓量  $12.5B          │
+│ 多空比  1.25            │
+```
+
+---
+
+## 五、数据库设计 (SQLite)
+
+```sql
+-- K线历史数据（按市场和周期分表，在 database.py 初始化时动态创建）
+-- 表名示例: klines_crypto_1H, klines_us_1D, klines_cn_1D, klines_hk_1D 等
+-- 需要创建的表: 4个市场 × 9个周期 = 最多36张表（按需创建，不必一次全建）
+CREATE TABLE klines_{market}_{interval} (
+    symbol TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    open REAL NOT NULL,
+    high REAL NOT NULL,
+    low REAL NOT NULL,
+    close REAL NOT NULL,
+    volume REAL NOT NULL,
+    turnover REAL DEFAULT 0,
+    PRIMARY KEY (symbol, timestamp)
+);
+-- 索引
+CREATE INDEX idx_klines_symbol ON klines_{market}_{interval}(symbol, timestamp);
+
+-- 自选列表
+CREATE TABLE watchlist (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,
+    market TEXT NOT NULL,
+    name TEXT,
+    sort_order INTEGER DEFAULT 0,
+    added_at INTEGER NOT NULL,
+    UNIQUE(symbol, market)           -- 同一市场内品种不重复，不同市场可有同代码
+);
+
+-- 警报配置
+CREATE TABLE alerts (
+    id TEXT PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    market TEXT NOT NULL,
+    condition_type TEXT NOT NULL,
+    condition_json TEXT NOT NULL,     -- JSON 格式的条件详情
+    message TEXT,
+    notify_methods TEXT DEFAULT '["browser","sound"]',  -- JSON数组: "browser" | "sound" | "webhook"
+    label TEXT DEFAULT '',           -- 备注标签
+    repeat_mode TEXT DEFAULT 'once', -- once | every_time
+    cooldown INTEGER DEFAULT 300,
+    enabled INTEGER DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER
+);
+
+-- 警报触发历史
+CREATE TABLE alert_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_id TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    market TEXT NOT NULL,             -- 冗余存储市场，方便按市场筛选历史
+    triggered_at INTEGER NOT NULL,
+    price REAL,
+    message TEXT
+);
+
+-- 回测报告
+CREATE TABLE backtest_reports (
+    id TEXT PRIMARY KEY,
+    strategy_name TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    interval TEXT NOT NULL,
+    start_date TEXT,
+    end_date TEXT,
+    config_json TEXT,                -- 回测配置
+    result_json TEXT,                -- 完整回测结果（JSON）
+    created_at INTEGER NOT NULL
+);
+
+-- 自定义公式/策略
+CREATE TABLE formulas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',     -- 公式描述/备注
+    code TEXT NOT NULL,
+    mode TEXT DEFAULT 'openscript',  -- openscript | python
+    type TEXT DEFAULT 'indicator',   -- indicator | strategy
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER
+);
+
+-- 新闻缓存
+CREATE TABLE news_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT,
+    url TEXT,
+    sentiment REAL,                  -- AI 情绪评分 (-1 到 1)
+    symbols TEXT,                    -- 关联的品种（JSON数组）
+    published_at INTEGER,
+    analyzed_at INTEGER
+);
+
+-- AI选股异步任务
+CREATE TABLE screener_tasks (
+    task_id TEXT PRIMARY KEY,
+    market TEXT NOT NULL,
+    status TEXT DEFAULT 'collecting_news',  -- collecting_news | analyzing | scoring | done | error
+    progress TEXT,                          -- 人类可读进度描述
+    result_json TEXT,                       -- 完整结果（仅 done 时有值）
+    error TEXT,                             -- 错误信息（仅 error 时有值）
+    created_at INTEGER NOT NULL,
+    completed_at INTEGER
+);
+
+-- 用户配置（KV 存储，运行时配置写入此处，优先级高于 config.py 默认值）
+CREATE TABLE config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+```
+
+---
+
+## 六、启动脚本 — run.py
+
+```python
+"""
+一键启动脚本
+Usage: python run.py
+"""
+import uvicorn
+import webbrowser
+import threading
+import time
+
+def open_browser():
+    time.sleep(2)
+    webbrowser.open("http://localhost:8888")
+
+if __name__ == "__main__":
+    threading.Thread(target=open_browser, daemon=True).start()
+    uvicorn.run(
+        "backend.main:app",
+        host="0.0.0.0",
+        port=8888,
+        reload=True,
+        log_level="info"
+    )
+```
+
+---
+
+## 七、requirements.txt
+
+```
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+websockets>=11.0
+aiohttp>=3.9.0              # OKX/Binance WebSocket连接 + 东方财富/新闻RSS等 HTTP 请求
+numpy>=1.24.0
+pandas>=2.0.0
+vectorbt>=0.26.0
+yfinance>=0.2.30
+apscheduler>=3.10.0
+aiosqlite>=0.19.0
+pydantic>=2.0.0
+python-dateutil>=2.8.0
+httpx>=0.25.0               # Webhook 通知推送 + CryptoQuant/Glassnode API 调用
+RestrictedPython>=6.0
+feedparser>=6.0.0
+beautifulsoup4>=4.12.0
+openai>=1.0.0
+```
+
+> **注意**：DeepSeek 和通义千问都支持 OpenAI 兼容模式，所以用 `openai` 库统一调用即可，只需切换 `base_url` 和 `api_key`。
+
+---
+
+## 八、开发顺序（建议 Claude Code 按此顺序实现）
+
+### Phase 1 — 核心基建（先跑通最小可用版本）
+1. `backend/config.py` + `backend/db/database.py` — 配置和数据库初始化
+2. `backend/main.py` — FastAPI 基础框架 + 静态文件服务 + CORS
+3. `backend/data/models.py` + `backend/data/fetcher.py` — 数据模型和工厂
+4. `backend/data/okx.py` — OKX WebSocket 实时K线 + REST 历史数据
+5. `backend/ws/hub.py` — WebSocket 推送中心
+6. `frontend/index.html` + `frontend/css/app.css` — 基础页面布局和暗色主题
+7. `frontend/js/websocket.js` — WebSocket 客户端（含指数退避重连 + 状态灯）
+8. `frontend/js/chart.js` — KLineChart Pro 初始化，能显示实时K线
+9. `frontend/js/app.js` — 主应用逻辑，品种切换，周期切换，全局快捷键
+10. `frontend/js/toast.js` — Toast 通知组件
+11. `frontend/js/search.js` — 搜索品种组件
+12. `frontend/js/settings.js` — 设置对话框
+
+**Phase 1 验收标准**：打开浏览器能看到 BTC-USDT 的实时K线图，能切换时间周期，能搜索品种切换，设置页面能打开并保存。
+
+### Phase 2 — 指标和多市场
+13. `backend/indicators/builtin.py` + `registry.py` — 全部20+内置指标
+14. `frontend/js/indicators.js` — 指标选择面板，添加/移除指标
+15. `backend/data/yahoo.py` — 美股/港股数据
+16. `backend/data/eastmoney.py` — A股数据
+17. `frontend/js/watchlist.js` — 自选列表功能
+
+**Phase 2 验收标准**：能看四大市场的K线，能叠加多个指标。
+
+### Phase 3 — 公式和警报
+18. `backend/indicators/formula/` — OpenScript 解析器 + 沙箱执行器
+19. `backend/indicators/formula/python_sandbox.py` — Python 高级模式
+20. `frontend/js/formula.js` — CodeMirror 6 公式编辑器
+21. `backend/alerts/` — 警报管理器 + 条件检测 + 通知分发
+22. `frontend/js/alerts.js` — 警报管理面板
+
+**Phase 3 验收标准**：能写公式画自定义指标，能设置警报并收到通知。
+
+### Phase 4 — 回测和选股
+23. `backend/backtest/` — VectorBT 回测引擎
+24. `frontend/js/backtest.js` — 回测界面和报告展示
+25. `backend/screener/` — 规则筛选 + AI分析
+26. `frontend/js/screener.js` — 选股工具界面
+
+**Phase 4 验收标准**：能回测策略看报告，能用规则+AI选股。
+
+### Phase 5 — 加密仪表盘
+27. `backend/crypto_dashboard/` — 链上数据 + 情绪 + 日历
+28. `frontend/js/dashboard.js` — 仪表盘界面
+
+### Phase 6 — 交易对接（预留）
+29. `backend/trading/` — OKX 下单 API + 风控
+
+---
+
+## 九、关键注意事项
+
+1. **OKX WebSocket 心跳**：每 25 秒发送 `"ping"`，否则服务器断开
+2. **东方财富接口无认证**：直接 HTTP 请求即可，但需要设置合适的 User-Agent
+3. **Yahoo Finance 限频**：避免短时间大量请求，建议用缓存
+4. **公式沙箱安全**：严格限制 Python 执行环境，禁止文件/网络/系统调用
+5. **数据库分表**：K线按市场和周期分表存储，避免单表过大
+6. **前端性能**：KLineChart Pro 万级K线流畅，但指标过多时注意渲染性能
+7. **错误处理**：所有数据源请求都要有超时和重试机制
+8. **配置热更新**：修改 config.py 后尽量不需要重启服务
+9. **LLM API 调用**：做好 Token 用量统计和异常处理，避免意外高额账单
+10. **CORS 配置**：开发环境允许 localhost，生产环境按需限制
+11. **交易时段管理**：各市场交易时间不同，轮询调度需根据市场判断：
+    - 加密货币：7×24 全天候，持续轮询
+    - A股：工作日 9:15-11:30, 13:00-15:00（北京时间）
+    - 港股：工作日 9:30-12:00, 13:00-16:00（北京时间）
+    - 美股：工作日 21:30-04:00 夏令时 / 22:30-05:00 冬令时（北京时间）
+    - 非交易时段停止行情轮询以节省资源，但保留最后一次数据在缓存中供前端展示
+12. **Symbol 命名统一**：全平台统一使用 OKX 格式（带横杠），如 `BTC-USDT`。Binance 备用数据源内部做 `BTC-USDT` ↔ `BTCUSDT` 的转换
+13. **前端库引入**：KLineChart 用 UMD 版本（`klinecharts.init()` 而非 ES Module import），CodeMirror 6 用 ESM CDN，Chart.js 用 CDN
+14. **LLM 统一调用**：DeepSeek 和通义千问都用 OpenAI 兼容模式（`openai` Python库），只需切换 `base_url` 和 `api_key`，不需要写两套调用逻辑

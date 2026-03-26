@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>OpenChart Pro</title>
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="css/app.css">
+
+  <!-- KLineChart (本地) -->
+  <script src="lib/klinecharts.min.js"></script>
+  <!-- Chart.js (本地) -->
+  <script src="lib/chart.umd.min.js"></script>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ============================================================
+       工具栏 (50px)
+       ============================================================ -->
+  <div id="toolbar">
+    <!-- 市场下拉 -->
+    <select id="market-select" class="market-select">
+      <option value="crypto">加密货币</option>
+      <option value="us">美股</option>
+      <option value="hk">港股</option>
+      <option value="a">A股</option>
+      <option value="forex">外汇</option>
+    </select>
+
+    <div class="toolbar-divider"></div>
+
+    <!-- 搜索框 -->
+    <div class="toolbar-search">
+      <span class="search-icon">🔍</span>
+      <input id="toolbar-search-input" type="text" placeholder="搜索品种..." readonly>
+      <span class="search-shortcut">/</span>
+    </div>
+
+    <div class="toolbar-divider"></div>
+
+    <!-- 时间周期按钮 -->
+    <div class="toolbar-group interval-group">
+      <button class="interval-btn" data-interval="1m">1m</button>
+      <button class="interval-btn" data-interval="5m">5m</button>
+      <button class="interval-btn" data-interval="15m">15m</button>
+      <button class="interval-btn" data-interval="30m">30m</button>
+      <button class="interval-btn active" data-interval="1H">1H</button>
+      <button class="interval-btn" data-interval="4H">4H</button>
+      <button class="interval-btn" data-interval="1D">1D</button>
+      <button class="interval-btn" data-interval="1W">1W</button>
+      <button class="interval-btn" data-interval="1M">1M</button>
+    </div>
+
+    <div class="toolbar-divider"></div>
+
+    <!-- 功能按钮 -->
+    <div class="toolbar-group">
+      <button id="btn-indicators" class="toolbar-btn" title="指标 (Alt+I)">
+        <span>📊</span><span class="btn-label">指标</span>
+      </button>
+      <button id="btn-drawing" class="toolbar-btn" title="画线工具">
+        <span>✏️</span><span class="btn-label">画线</span>
+      </button>
+      <button id="btn-alerts" class="toolbar-btn" title="警报 (Alt+A)">
+        <span>🔔</span><span class="btn-label">警报</span>
+      </button>
+      <button id="btn-backtest" class="toolbar-btn" title="回测">
+        <span>⚡</span><span class="btn-label">回测</span>
+      </button>
+      <button id="btn-screener" class="toolbar-btn" title="选股">
+        <span>🔎</span><span class="btn-label">选股</span>
+      </button>
+      <button id="btn-dashboard" class="toolbar-btn" title="仪表盘 (Alt+D)">
+        <span>📋</span><span class="btn-label">仪表盘</span>
+      </button>
+      <button id="btn-settings" class="toolbar-btn" title="设置">
+        <span>⚙️</span><span class="btn-label">设置</span>
+      </button>
+    </div>
+
+    <!-- WebSocket 状态灯 -->
+    <div id="ws-status" class="ws-status disconnected" title="已断开"></div>
+  </div>
+
+  <!-- ============================================================
+       主内容区 (flex)
+       ============================================================ -->
+  <div id="main-content">
+
+    <!-- 左侧：自选列表 (180px) -->
+    <div id="watchlist-panel">
+      <div class="watchlist-header">
+        <span>自选列表</span>
+        <button class="add-btn" title="添加品种">+</button>
+      </div>
+      <div class="watchlist-items">
+        <!-- 由 watchlist.js 动态渲染 -->
+      </div>
+    </div>
+
+    <!-- 左侧分隔线 -->
+    <div id="resize-left" class="resize-handle-v"></div>
+
+    <!-- 中间：图表区 (flex-grow) -->
+    <div id="chart-area">
+      <div id="chart-container">
+        <div id="chart-watermark" class="chart-watermark">BTC-USDT</div>
+        <div id="chart-loading" class="chart-loading">
+          <div class="chart-spinner"></div>
+          <span>加载中...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右侧分隔线 -->
+    <div id="resize-right" class="resize-handle-v"></div>
+
+    <!-- 右侧：信息面板 (240px) -->
+    <div id="info-panel">
+      <!-- OHLCV -->
+      <div class="info-section">
+        <div class="info-section-title">行情数据</div>
+        <div class="info-ohlcv">
+          <span class="label">开盘</span><span class="value" id="info-open">--</span>
+          <span class="label">最高</span><span class="value" id="info-high">--</span>
+          <span class="label">最低</span><span class="value" id="info-low">--</span>
+          <span class="label">收盘</span><span class="value" id="info-close">--</span>
+          <span class="label">成交量</span><span class="value" id="info-volume">--</span>
+          <span class="label">涨跌</span><span class="value" id="info-change">--</span>
+        </div>
+      </div>
+      <!-- 指标值 -->
+      <div class="info-section">
+        <div class="info-section-title">指标</div>
+        <div class="info-indicators" id="info-indicators">
+          <div class="info-indicator-row">
+            <span class="ind-name">MA(5)</span>
+            <span class="ind-value">--</span>
+          </div>
+          <div class="info-indicator-row">
+            <span class="ind-name">MA(10)</span>
+            <span class="ind-value">--</span>
+          </div>
+          <div class="info-indicator-row">
+            <span class="ind-name">MA(20)</span>
+            <span class="ind-value">--</span>
+          </div>
+          <div class="info-indicator-row">
+            <span class="ind-name">RSI(14)</span>
+            <span class="ind-value">--</span>
+          </div>
+          <div class="info-indicator-row">
+            <span class="ind-name">MACD</span>
+            <span class="ind-value">--</span>
+          </div>
+        </div>
+      </div>
+      <!-- 警报列表 -->
+      <div class="info-section" style="flex:1;overflow:hidden;">
+        <div class="info-section-title">活跃警报</div>
+        <div class="info-alerts">
+          <!-- 由 alerts.js 动态渲染 -->
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main-content -->
+
+  <!-- 底部分隔线 -->
+  <div id="resize-bottom" class="resize-handle-h"></div>
+
+  <!-- ============================================================
+       底部面板 (可收起, 默认300px)
+       ============================================================ -->
+  <div id="bottom-panel">
+    <div class="bottom-tabs">
+      <button class="bottom-tab active" data-tab="formula">公式编辑器</button>
+      <button class="bottom-tab" data-tab="console">控制台</button>
+      <button class="bottom-tab" data-tab="alert-log">警报日志</button>
+      <button class="bottom-tab" data-tab="backtest">回测报告</button>
+      <button class="bottom-tab" data-tab="screener">选股结果</button>
+      <button class="bottom-tab" data-tab="aijudge">AI研判</button>
+      <button class="bottom-tab" data-tab="dashboard">仪表盘</button>
+      <button id="bottom-toggle" class="toggle-btn" title="收起/展开">▼</button>
+    </div>
+    <div class="bottom-content">
+      <!-- 公式编辑器 -->
+      <div class="bottom-pane active" data-pane="formula">
+        <div class="formula-editor-wrapper">
+          <div class="formula-toolbar">
+            <button id="formula-run" class="btn btn-primary btn-sm">▶ 运行 (Ctrl+Enter)</button>
+            <button id="formula-save" class="btn btn-sm">💾 保存 (Ctrl+S)</button>
+            <button id="formula-clear" class="btn btn-sm">🗑 清空</button>
+          </div>
+          <div class="formula-editor-container">
+            <!-- CodeMirror 6 挂载点 -->
+          </div>
+        </div>
+      </div>
+      <!-- 控制台 -->
+      <div class="bottom-pane" data-pane="console">
+        <div class="console-output"></div>
+      </div>
+      <!-- 警报日志 -->
+      <div class="bottom-pane" data-pane="alert-log">
+        <div class="alert-log-content">
+          <div style="color:var(--text-tertiary);padding:20px;text-align:center;">暂无警报记录</div>
+        </div>
+      </div>
+      <!-- 回测报告 -->
+      <div class="bottom-pane" data-pane="backtest">
+        <div style="margin-bottom:12px;">
+          <div class="backtest-config">
+            <div class="form-group">
+              <label class="form-label">起始日期</label>
+              <input id="bt-start" type="date" class="input" value="2024-01-01">
+            </div>
+            <div class="form-group">
+              <label class="form-label">结束日期</label>
+              <input id="bt-end" type="date" class="input" value="2025-01-01">
+            </div>
+            <div class="form-group">
+              <label class="form-label">初始资金</label>
+              <input id="bt-capital" type="number" class="input" value="100000">
+            </div>
+            <div class="form-group">
+              <label class="form-label">手续费率</label>
+              <input id="bt-commission" type="number" class="input" value="0.001" step="0.0001">
+            </div>
+            <div class="form-group">
+              <label class="form-label">滑点</label>
+              <input id="bt-slippage" type="number" class="input" value="0.0005" step="0.0001">
+            </div>
+            <div class="form-group">
+              <label class="form-label">策略</label>
+              <select id="bt-strategy" class="select">
+                <option value="custom">自定义公式</option>
+                <option value="ma_cross">双均线交叉</option>
+                <option value="rsi">RSI超买超卖</option>
+                <option value="boll">布林带突破</option>
+              </select>
+            </div>
+          </div>
+          <div class="backtest-actions">
+            <button id="bt-run" class="btn btn-primary">▶ 开始回测</button>
+            <button id="bt-stop" class="btn btn-danger">■ 停止</button>
+            <button id="bt-export" class="btn">📥 导出报告</button>
+            <span id="bt-progress-text" style="font-size:11px;color:var(--text-tertiary);margin-left:8px;"></span>
+          </div>
+          <div style="height:3px;background:var(--bg-tertiary);border-radius:2px;overflow:hidden;margin-bottom:12px;">
+            <div id="bt-progress-bar" style="height:100%;width:0%;background:var(--color-accent);transition:width 0.3s;"></div>
+          </div>
+        </div>
+        <div class="backtest-report">
+          <div style="color:var(--text-tertiary);padding:20px;text-align:center;">点击"开始回测"运行策略回测</div>
+        </div>
+      </div>
+      <!-- 选股结果（左栏配置 + 右栏结果） -->
+      <div class="bottom-pane" data-pane="screener">
+        <div class="screener-layout">
+          <!-- 左栏：筛选条件 35% -->
+          <div class="screener-left">
+            <h4 style="margin:0 0 8px;font-size:13px;color:var(--text-primary);">市场范围</h4>
+            <div class="screener-markets">
+              <label><input type="checkbox" value="crypto" checked> 加密货币</label>
+              <label><input type="checkbox" value="us"> 美股</label>
+              <label><input type="checkbox" value="hk"> 港股</label>
+              <label><input type="checkbox" value="cn"> A股</label>
+            </div>
+
+            <h4 style="margin:12px 0 8px;font-size:13px;color:var(--text-primary);">规则条件</h4>
+            <div id="screener-rules"></div>
+            <button id="screener-add-rule" class="btn btn-sm" style="margin-top:6px;">+ 添加规则</button>
+
+            <h4 style="margin:12px 0 8px;font-size:13px;color:var(--text-primary);">AI 智能模式</h4>
+            <div class="form-group" style="margin-bottom:6px;">
+              <label style="font-size:12px;"><input type="checkbox" id="screener-enable-ai"> 启用AI新闻分析</label>
+            </div>
+            <div class="form-group" style="display:flex;gap:8px;align-items:center;">
+              <label class="form-label" style="font-size:11px;min-width:50px;">分析范围</label>
+              <select id="screener-ai-hours" class="select" style="width:120px;font-size:11px;">
+                <option value="6">最近6小时</option>
+                <option value="12">最近12小时</option>
+                <option value="24" selected>最近24小时</option>
+                <option value="48">最近48小时</option>
+              </select>
+            </div>
+            <div class="form-group" style="display:flex;gap:8px;align-items:center;margin-top:4px;">
+              <label class="form-label" style="font-size:11px;min-width:50px;">最低评分</label>
+              <input type="number" id="screener-ai-min-score" class="input" style="width:60px;font-size:11px;" value="60" min="0" max="100">
+              <span style="font-size:11px;color:var(--text-tertiary);">/ 100</span>
+            </div>
+
+            <h4 style="margin:12px 0 8px;font-size:13px;color:var(--text-primary);">排序方式</h4>
+            <div style="display:flex;gap:6px;">
+              <select id="screener-sort" class="select" style="width:100px;font-size:11px;">
+                <option value="change_pct">涨跌幅</option>
+                <option value="volume">成交量</option>
+                <option value="price">价格</option>
+              </select>
+              <select id="screener-order" class="select" style="width:80px;font-size:11px;">
+                <option value="desc">降序</option>
+                <option value="asc">升序</option>
+              </select>
+            </div>
+
+            <div style="display:flex;gap:8px;margin-top:12px;">
+              <button id="screener-run" class="btn btn-primary btn-sm" style="flex:1;">🔍 开始筛选</button>
+              <button id="screener-ai-run" class="btn btn-sm" style="flex:1;background:var(--color-purple);color:#fff;">🤖 AI分析</button>
+            </div>
+          </div>
+
+          <!-- 右栏：结果 65% -->
+          <div class="screener-right">
+            <!-- 规则筛选结果（上方） -->
+            <div class="screener-filter-results" id="screener-filter-results">
+              <div style="color:var(--text-tertiary);padding:30px;text-align:center;font-size:12px;">配置左侧条件后点击 🔍 开始筛选</div>
+            </div>
+            <!-- 分割线 -->
+            <div style="padding:6px 0;text-align:center;color:var(--text-tertiary);font-size:11px;border-top:1px solid var(--border-secondary);border-bottom:1px solid var(--border-secondary);margin:8px 0;">── AI 智能推荐 ──</div>
+            <!-- AI推荐结果（下方） -->
+            <div class="screener-ai-results" id="screener-ai-results">
+              <div style="color:var(--text-tertiary);padding:30px;text-align:center;font-size:12px;">点击 🤖AI分析 获取基于新闻的AI推荐</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- AI研判 -->
+      <div class="bottom-pane" data-pane="aijudge">
+        <div class="aijudge-layout">
+          <div class="aijudge-header">
+            <span style="font-size:13px;font-weight:600;">🤖 AI研判</span>
+            <span id="aijudge-symbol" style="font-size:13px;color:var(--color-accent);font-weight:600;">BTC-USDT</span>
+            <select id="aijudge-interval" class="select" style="width:70px;font-size:11px;">
+              <option value="1H">1H</option>
+              <option value="4H">4H</option>
+              <option value="1D" selected>1D</option>
+              <option value="1W">1W</option>
+            </select>
+            <button id="aijudge-run" class="btn btn-primary btn-sm" style="background:var(--color-purple);white-space:nowrap;padding:4px 16px;">🤖 开始研判</button>
+          </div>
+          <div class="aijudge-content" id="aijudge-content">
+            <div style="color:var(--text-tertiary);padding:40px;text-align:center;">
+              选择品种和周期后，点击「开始研判」<br>
+              <span style="font-size:11px;">AI将结合K线形态、技术指标、新闻情绪，给出综合开仓建议</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- 仪表盘 -->
+      <div class="bottom-pane" data-pane="dashboard">
+        <div class="dashboard-grid">
+          <!-- 由 dashboard.js 动态渲染 -->
+        </div>
+      </div>
+    </div>
+  </div><!-- /bottom-panel -->
+
+</div><!-- /app -->
+
+<!-- ============================================================
+     画线工具下拉菜单
+     ============================================================ -->
+<div id="drawing-dropdown" class="drawing-dropdown">
+  <div class="dd-group-title">趋势线</div>
+  <div class="dd-item" data-tool="straightLine"><span class="dd-icon">─</span>直线</div>
+  <div class="dd-item" data-tool="rayLine"><span class="dd-icon">→</span>射线</div>
+  <div class="dd-item" data-tool="segment"><span class="dd-icon">—</span>线段</div>
+  <div class="dd-item" data-tool="horizontalStraightLine"><span class="dd-icon">━</span>水平线</div>
+  <div class="dd-item" data-tool="verticalStraightLine"><span class="dd-icon">│</span>垂直线</div>
+  <div class="dd-item" data-tool="priceLine"><span class="dd-icon">$</span>价格线</div>
+  <div class="dd-divider"></div>
+  <div class="dd-group-title">斐波那契</div>
+  <div class="dd-item" data-tool="fibonacciLine"><span class="dd-icon">F</span>斐波那契回撤</div>
+  <div class="dd-item" data-tool="fibonacciSegment"><span class="dd-icon">Fs</span>斐波那契线段</div>
+  <div class="dd-divider"></div>
+  <div class="dd-group-title">形状</div>
+  <div class="dd-item" data-tool="rect"><span class="dd-icon">□</span>矩形</div>
+  <div class="dd-item" data-tool="parallelogram"><span class="dd-icon">▱</span>平行四边形</div>
+  <div class="dd-item" data-tool="circle"><span class="dd-icon">○</span>圆形</div>
+  <div class="dd-divider"></div>
+  <div class="dd-group-title">标注</div>
+  <div class="dd-item" data-tool="simpleAnnotation"><span class="dd-icon">T</span>文字标注</div>
+  <div class="dd-item" data-tool="simpleTag"><span class="dd-icon">🏷</span>标签</div>
+  <div class="dd-divider"></div>
+  <div class="dd-group-title">操作</div>
+  <div class="dd-item" data-tool="clear-all"><span class="dd-icon">🗑</span>清除所有画线</div>
+</div>
+
+<!-- ============================================================
+     右键菜单
+     ============================================================ -->
+<div id="context-menu" class="context-menu">
+  <div class="context-menu-item" onclick="Indicators.open()">添加指标 <span class="cm-shortcut">Alt+I</span></div>
+  <div class="context-menu-item" onclick="toggleDrawingPanel()">画线工具</div>
+  <div class="context-menu-item" onclick="Alerts.open()">设置警报 <span class="cm-shortcut">Alt+A</span></div>
+  <div class="context-menu-divider"></div>
+  <div class="context-menu-item" onclick="if(chart)chart.removeOverlay()">清除画线</div>
+  <div class="context-menu-item" onclick="if(chart)chart.setStyles({grid:{horizontal:{show:!chart.getStyles().grid.horizontal.show},vertical:{show:!chart.getStyles().grid.vertical.show}}})">切换网格</div>
+  <div class="context-menu-divider"></div>
+  <div class="context-menu-item" onclick="toggleFullscreen()">全屏模式 <span class="cm-shortcut">F11</span></div>
+</div>
+
+<!-- ============================================================
+     Toast 通知容器
+     ============================================================ -->
+<div id="toast-container"></div>
+
+<!-- ============================================================
+     模态框：搜索品种
+     ============================================================ -->
+<div id="search-modal" class="modal-overlay search-modal">
+  <div class="modal">
+    <div class="search-input-wrap">
+      <input class="search-input" type="text" placeholder="搜索品种代码或名称..." autofocus>
+    </div>
+    <div class="search-hot">
+      <div class="search-hot-title">热门品种</div>
+      <div class="search-hot-items">
+        <span class="search-hot-item" data-symbol="BTC-USDT">BTC-USDT</span>
+        <span class="search-hot-item" data-symbol="ETH-USDT">ETH-USDT</span>
+        <span class="search-hot-item" data-symbol="AAPL">AAPL</span>
+        <span class="search-hot-item" data-symbol="TSLA">TSLA</span>
+        <span class="search-hot-item" data-symbol="0700.HK">0700.HK</span>
+        <span class="search-hot-item" data-symbol="600519">600519</span>
+      </div>
+    </div>
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<!-- ============================================================
+     模态框：设置
+     ============================================================ -->
+<div id="settings-modal" class="modal-overlay settings-modal">
+  <div class="modal" style="max-width:640px;">
+    <div class="modal-header">
+      <span class="modal-title">设置</span>
+      <button class="modal-close">&times;</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- 通用设置 -->
+      <div class="settings-group">
+        <div class="settings-group-title">通用设置</div>
+        <div class="settings-row">
+          <span class="setting-label">时区</span>
+          <div class="setting-control">
+            <select id="setting-timezone" class="select" style="width:200px;">
+              <option value="Asia/Shanghai">亚洲/上海 (UTC+8)</option>
+              <option value="Asia/Tokyo">亚洲/东京 (UTC+9)</option>
+              <option value="Asia/Hong_Kong">亚洲/香港 (UTC+8)</option>
+              <option value="America/New_York">美东 (UTC-5)</option>
+              <option value="America/Chicago">美中 (UTC-6)</option>
+              <option value="Europe/London">伦敦 (UTC+0)</option>
+              <option value="UTC">UTC</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- 图表样式 -->
+      <div class="settings-group">
+        <div class="settings-group-title">图表样式</div>
+        <div class="settings-row">
+          <span class="setting-label">涨色</span>
+          <div class="setting-control">
+            <input id="setting-upColor" type="color" value="#00C853" style="width:40px;height:30px;border:none;cursor:pointer;">
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="setting-label">跌色</span>
+          <div class="setting-control">
+            <input id="setting-downColor" type="color" value="#FF1744" style="width:40px;height:30px;border:none;cursor:pointer;">
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="setting-label">K线类型</span>
+          <div class="setting-control">
+            <select id="setting-candleType" class="select" style="width:160px;">
+              <option value="candle_solid">实体K线</option>
+              <option value="candle_stroke">空心K线</option>
+              <option value="candle_up_stroke">涨空心</option>
+              <option value="candle_down_stroke">跌空心</option>
+              <option value="ohlc">OHLC柱</option>
+              <option value="area">面积图</option>
+            </select>
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="setting-label">显示网格</span>
+          <div class="setting-control">
+            <label class="toggle-switch">
+              <input type="checkbox" id="setting-showGrid" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- 数据源 -->
+      <div class="settings-group">
+        <div class="settings-group-title">数据源</div>
+        <div class="settings-row">
+          <span class="setting-label">交易所</span>
+          <div class="setting-control">
+            <select id="setting-exchange" class="select" style="width:200px;">
+              <option value="binance">Binance</option>
+              <option value="okx">OKX</option>
+              <option value="bybit">Bybit</option>
+              <option value="coinbase">Coinbase</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI/LLM 配置 -->
+      <div class="settings-group">
+        <div class="settings-group-title">AI / LLM 配置</div>
+        <div class="settings-row">
+          <span class="setting-label">模型提供商</span>
+          <div class="setting-control">
+            <select id="setting-llmProvider" class="select" style="width:200px;">
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="deepseek">DeepSeek</option>
+              <option value="ollama">Ollama (本地)</option>
+            </select>
+          </div>
+        </div>
+        <div class="settings-row" id="row-llmApiKey">
+          <span class="setting-label">API Key</span>
+          <div class="setting-control">
+            <input id="setting-llmApiKey" type="password" class="input" style="width:240px;" placeholder="sk-...">
+          </div>
+        </div>
+        <div class="settings-row" id="row-llmModel">
+          <span class="setting-label">模型</span>
+          <div class="setting-control">
+            <input id="setting-llmModel" type="text" class="input" style="width:200px;" value="deepseek-chat" placeholder="deepseek-chat">
+          </div>
+        </div>
+        <div class="settings-row" id="row-llmBaseUrl">
+          <span class="setting-label">Base URL</span>
+          <div class="setting-control">
+            <input id="setting-llmBaseUrl" type="text" class="input" style="width:240px;" value="https://api.deepseek.com/v1" placeholder="https://api.deepseek.com/v1">
+          </div>
+        </div>
+        <div class="settings-row" id="row-ollamaModel" style="display:none;">
+          <span class="setting-label">Ollama 模型</span>
+          <div class="setting-control">
+            <input id="setting-ollamaModel" type="text" class="input" style="width:200px;" placeholder="llama3">
+          </div>
+        </div>
+        <div class="settings-row" id="row-ollamaBaseUrl" style="display:none;">
+          <span class="setting-label">Ollama 地址</span>
+          <div class="setting-control">
+            <input id="setting-ollamaBaseUrl" type="text" class="input" style="width:240px;" placeholder="http://localhost:11434">
+          </div>
+        </div>
+      </div>
+
+      <!-- 第三方 API Key -->
+      <div class="settings-group">
+        <div class="settings-group-title">第三方 API Key</div>
+        <div class="settings-row">
+          <span class="setting-label">交易所 API Key</span>
+          <div class="setting-control">
+            <input id="setting-exchangeApiKey" type="password" class="input" style="width:240px;" placeholder="API Key">
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="setting-label">交易所 Secret</span>
+          <div class="setting-control">
+            <input id="setting-exchangeApiSecret" type="password" class="input" style="width:240px;" placeholder="API Secret">
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="setting-label">新闻 API Key</span>
+          <div class="setting-control">
+            <input id="setting-newsApiKey" type="password" class="input" style="width:240px;" placeholder="News API Key">
+          </div>
+        </div>
+      </div>
+
+      <!-- 通知设置 -->
+      <div class="settings-group">
+        <div class="settings-group-title">通知设置</div>
+        <div class="settings-row">
+          <span class="setting-label">浏览器通知</span>
+          <div class="setting-control">
+            <label class="toggle-switch">
+              <input type="checkbox" id="setting-notifyBrowser" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="setting-label">声音提醒</span>
+          <div class="setting-control">
+            <label class="toggle-switch">
+              <input type="checkbox" id="setting-notifySound" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="setting-label">Webhook URL</span>
+          <div class="setting-control">
+            <input id="setting-webhookUrl" type="text" class="input" style="width:240px;" placeholder="https://...">
+          </div>
+        </div>
+      </div>
+
+      <!-- 回测默认参数 -->
+      <div class="settings-group">
+        <div class="settings-group-title">回测默认参数</div>
+        <div class="settings-row">
+          <span class="setting-label">初始资金</span>
+          <div class="setting-control">
+            <input id="setting-btInitialCapital" type="number" class="input" style="width:140px;" value="100000">
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="setting-label">手续费率</span>
+          <div class="setting-control">
+            <input id="setting-btCommission" type="number" class="input" style="width:140px;" value="0.001" step="0.0001">
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="setting-label">滑点</span>
+          <div class="setting-control">
+            <input id="setting-btSlippage" type="number" class="input" style="width:140px;" value="0.0005" step="0.0001">
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button id="settings-reset" class="btn">恢复默认</button>
+      <button id="settings-save" class="btn btn-primary">保存设置</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     模态框：创建警报
+     ============================================================ -->
+<div id="alert-modal" class="modal-overlay alert-modal">
+  <div class="modal" style="max-width:500px;">
+    <div class="modal-header">
+      <span class="modal-title">创建警报</span>
+      <button class="modal-close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert-form">
+        <div class="form-group">
+          <label class="form-label">品种</label>
+          <input id="alert-symbol" type="text" class="input" placeholder="BTC-USDT">
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1;">
+            <label class="form-label">条件</label>
+            <select id="alert-condition" class="select">
+              <option value="crossing">穿越</option>
+              <option value="crossing_up">向上穿越</option>
+              <option value="crossing_down">向下穿越</option>
+              <option value="greater_than">大于</option>
+              <option value="less_than">小于</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label class="form-label">价格</label>
+            <input id="alert-price" type="number" class="input" step="any" placeholder="0.00">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">备注消息</label>
+          <input id="alert-message" type="text" class="input" placeholder="可选: 警报触发时显示的消息">
+        </div>
+        <div class="settings-row">
+          <span class="setting-label">重复触发</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="alert-repeat">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="Alerts.close()">取消</button>
+      <button id="alert-create-btn" class="btn btn-primary">创建警报</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     模态框：指标选择
+     ============================================================ -->
+<div id="indicator-modal" class="modal-overlay indicator-panel">
+  <div class="modal" style="max-width:500px;">
+    <div class="modal-header">
+      <span class="modal-title">技术指标</span>
+      <button class="modal-close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="indicator-list">
+        <!-- 由 indicators.js 动态渲染 -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     JavaScript 文件（按依赖顺序加载）
+     ============================================================ -->
+<script src="js/toast.js?v=33"></script>
+<script src="js/websocket.js?v=33"></script>
+<script src="js/chart.js?v=33"></script>
+<script src="js/search.js?v=33"></script>
+<script src="js/settings.js?v=33"></script>
+<script src="js/indicators.js?v=33"></script>
+<script src="js/formula.js?v=33"></script>
+<script src="js/alerts.js?v=33"></script>
+<script src="js/backtest.js?v=33"></script>
+<script src="js/screener.js?v=33"></script>
+<script src="js/dashboard.js?v=33"></script>
+<script src="js/watchlist.js?v=33"></script>
+<script src="js/aijudge.js?v=33"></script>
+<script src="js/app.js?v=33"></script>
+
+</body>
+</html>

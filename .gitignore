@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+data/openchart.db
+data/*.db
+server.log
+.env
+node_modules/
+*.egg-info/
+dist/
+build/
