@@ -172,7 +172,159 @@ function initChart() {
     console.warn('[Chart] 注册BOLL样式失败:', e);
   }
 
+  // 注册缠论分析指标（自定义绘制：笔/线段/中枢/买卖点）
+  try {
+    klinecharts.registerIndicator({
+      name: 'CHANLUN',
+      shortName: '缠论',
+      calcParams: [],
+      figures: [],
+      draw: ({ ctx, bounding, barSpace, visibleRange, indicator, xAxis, yAxis }) => {
+        const dataList = chart.getDataList();
+        if (!dataList || !dataList.length || !window._chanlunData) return false;
+        const cl = window._chanlunData;
 
+        // 工具函数：bar_index -> 像素x坐标
+        function barToX(barIdx) {
+          return xAxis.convertToPixel(barIdx);
+        }
+        // 价格 -> 像素y坐标
+        function priceToY(price) {
+          return yAxis.convertToPixel(price);
+        }
+
+        ctx.save();
+
+        // ---- 1. 画中枢（半透明矩形，放在最底层）----
+        if (cl.zs_list) {
+          for (const zs of cl.zs_list) {
+            if (zs.end_x < visibleRange.from || zs.begin_x > visibleRange.to) continue;
+            const x1 = barToX(zs.begin_x);
+            const x2 = barToX(zs.end_x);
+            const y1 = priceToY(zs.zg);
+            const y2 = priceToY(zs.zd);
+
+            if (zs.level === 'seg') {
+              // 线段中枢 - 更大更明显
+              ctx.fillStyle = zs.dir > 0 ? 'rgba(255,23,68,0.06)' : 'rgba(0,200,83,0.06)';
+              ctx.strokeStyle = zs.dir > 0 ? 'rgba(255,23,68,0.25)' : 'rgba(0,200,83,0.25)';
+              ctx.lineWidth = 1.5;
+            } else {
+              // 笔中枢
+              ctx.fillStyle = zs.dir > 0 ? 'rgba(255,152,0,0.08)' : 'rgba(33,150,243,0.08)';
+              ctx.strokeStyle = zs.dir > 0 ? 'rgba(255,152,0,0.35)' : 'rgba(33,150,243,0.35)';
+              ctx.lineWidth = 1;
+            }
+            ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+            ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+
+            // 中枢标签
+            ctx.font = '9px sans-serif';
+            ctx.fillStyle = zs.level === 'seg' ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.3)';
+            const label = zs.level === 'seg' ? 'ZS-S' : 'ZS';
+            ctx.fillText(label, x1 + 3, y1 + 11);
+          }
+        }
+
+        // ---- 2. 画笔（灰色细线）----
+        if (cl.bi_list) {
+          for (const bi of cl.bi_list) {
+            if (bi.end_x < visibleRange.from || bi.begin_x > visibleRange.to) continue;
+            const x1 = barToX(bi.begin_x);
+            const y1 = priceToY(bi.begin_y);
+            const x2 = barToX(bi.end_x);
+            const y2 = priceToY(bi.end_y);
+
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.strokeStyle = bi.is_sure ? 'rgba(150,150,150,0.6)' : 'rgba(150,150,150,0.3)';
+            ctx.lineWidth = 1;
+            if (!bi.is_sure) ctx.setLineDash([4, 3]);
+            else ctx.setLineDash([]);
+            ctx.stroke();
+          }
+          ctx.setLineDash([]);
+        }
+
+        // ---- 3. 画线段（橙色粗线）----
+        if (cl.seg_list) {
+          for (const seg of cl.seg_list) {
+            if (seg.end_x < visibleRange.from || seg.begin_x > visibleRange.to) continue;
+            const x1 = barToX(seg.begin_x);
+            const y1 = priceToY(seg.begin_y);
+            const x2 = barToX(seg.end_x);
+            const y2 = priceToY(seg.end_y);
+
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.strokeStyle = seg.is_sure ? '#FF9800' : 'rgba(255,152,0,0.5)';
+            ctx.lineWidth = 2;
+            if (!seg.is_sure) ctx.setLineDash([6, 4]);
+            else ctx.setLineDash([]);
+            ctx.stroke();
+
+            // 线段端点圆点
+            ctx.beginPath();
+            ctx.arc(x1, y1, 3, 0, Math.PI * 2);
+            ctx.fillStyle = '#FF9800';
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(x2, y2, 3, 0, Math.PI * 2);
+            ctx.fillStyle = '#FF9800';
+            ctx.fill();
+          }
+          ctx.setLineDash([]);
+        }
+
+        // ---- 4. 画买卖点标记 ----
+        if (cl.bsp_list) {
+          for (const bsp of cl.bsp_list) {
+            if (bsp.x < visibleRange.from || bsp.x > visibleRange.to) continue;
+            const x = barToX(bsp.x);
+            const y = priceToY(bsp.y);
+            const isSeg = bsp.type.startsWith('S');
+            const typeStr = isSeg ? bsp.type.substring(1) : bsp.type;
+            const size = isSeg ? 10 : 7;
+            const offset = bsp.is_buy ? size + 6 : -(size + 6);
+
+            if (bsp.is_buy) {
+              // 买点 - 红色向上三角
+              ctx.beginPath();
+              ctx.moveTo(x, y + offset - size);
+              ctx.lineTo(x - size, y + offset + size);
+              ctx.lineTo(x + size, y + offset + size);
+              ctx.closePath();
+              ctx.fillStyle = isSeg ? 'rgba(255,23,68,0.9)' : 'rgba(255,82,82,0.8)';
+              ctx.fill();
+            } else {
+              // 卖点 - 绿色向下三角
+              ctx.beginPath();
+              ctx.moveTo(x, y + offset + size);
+              ctx.lineTo(x - size, y + offset - size);
+              ctx.lineTo(x + size, y + offset - size);
+              ctx.closePath();
+              ctx.fillStyle = isSeg ? 'rgba(0,200,83,0.9)' : 'rgba(76,175,80,0.8)';
+              ctx.fill();
+            }
+
+            // 类型标签
+            ctx.font = `bold ${isSeg ? 10 : 9}px sans-serif`;
+            ctx.fillStyle = bsp.is_buy ? '#FF5252' : '#4CAF50';
+            ctx.textAlign = 'center';
+            const labelY = bsp.is_buy ? y + offset + size + 12 : y + offset - size - 4;
+            ctx.fillText(typeStr, x, labelY);
+            ctx.textAlign = 'left';
+          }
+        }
+
+        ctx.restore();
+        return false;
+      },
+      calc: (dataList) => dataList.map(() => ({})),
+    });
+    console.log('[Chart] 已注册缠论分析指标');
   } catch(e) {
     console.warn('[Chart] 注册缠论指标失败:', e);
   }
@@ -582,11 +734,59 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /* ---------- 缠论分析数据加载 ---------- */
+let _chanlunLoading = false;
 
+async function loadChanlun(symbol, interval, market) {
+  if (!chart || _chanlunLoading) return;
+  _chanlunLoading = true;
 
+  if (!symbol) symbol = window.currentSymbol;
+  if (!interval) interval = window.currentInterval || '1H';
+  if (!market) market = window.currentMarket || 'crypto';
+  const apiMarket = market === 'a' ? 'cn' : market;
 
+  try {
+    const resp = await fetch(
+      `/api/chanlun?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&market=${encodeURIComponent(apiMarket)}&limit=1000`
+    );
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
 
+    window._chanlunData = data;
 
+    // 确保 CHANLUN 指标已添加到主图
+    if (!window._chanlunAdded) {
+      chart.createIndicator('CHANLUN', true, { id: 'candle_pane' });
+      window._chanlunAdded = true;
+    }
+    // 触发重绘
+    chart.resize();
+
+    const stats = `笔:${data.bi_list?.length || 0} 段:${data.seg_list?.length || 0} 枢:${data.zs_list?.length || 0} 点:${data.bsp_list?.length || 0}`;
+    console.log(`[Chanlun] ${symbol} ${interval} 分析完成 - ${stats}`);
+    showToast(`缠论分析: ${stats}`, 'success', 3000);
+  } catch (err) {
+    console.error('[Chanlun] 加载失败:', err);
+    showToast(`缠论分析失败: ${err.message}`, 'error');
+  } finally {
+    _chanlunLoading = false;
+  }
+}
+
+function removeChanlun() {
+  window._chanlunData = null;
+  if (window._chanlunAdded && chart) {
+    try {
+      chart.removeIndicator('candle_pane', 'CHANLUN');
+    } catch(e) {}
+    window._chanlunAdded = false;
+  }
+  console.log('[Chanlun] 已移除缠论分析');
+}
+
+function isChanlunActive() {
+  return !!window._chanlunAdded;
+}
 
 /* ---------- 窗口大小响应 ---------- */
 window.addEventListener('resize', () => {
