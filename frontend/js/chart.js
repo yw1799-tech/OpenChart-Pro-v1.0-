@@ -184,7 +184,19 @@ function initChart() {
         if (!dataList || !dataList.length || !window._chanlunData) return false;
         const cl = window._chanlunData;
 
-        function barToX(barIdx) {
+        // 用timestamp在图表K线中查找正确的索引
+        const _tsToIdx = {};
+        for (let i = 0; i < dataList.length; i++) {
+          _tsToIdx[dataList[i].timestamp] = i;
+        }
+
+        function barToX(barIdx, ts) {
+          // 优先用timestamp精确匹配
+          if (ts) {
+            const idx = _tsToIdx[ts];
+            if (idx !== undefined) return xAxis.convertToPixel(idx);
+          }
+          // fallback用索引
           return xAxis.convertToPixel(barIdx);
         }
         function priceToY(price) {
@@ -196,8 +208,8 @@ function initChart() {
         // ---- 1. 画中枢（半透明矩形，放在最底层）----
         if (cl.zs_list) {
           for (const zs of cl.zs_list) {
-            const x1 = barToX(zs.begin_x);
-            const x2 = barToX(zs.end_x);
+            const x1 = barToX(zs.begin_x, zs.begin_ts);
+            const x2 = barToX(zs.end_x, zs.end_ts);
             if (x1 < -100 || x2 < -100) continue;
             const y1 = priceToY(zs.zg);
             const y2 = priceToY(zs.zd);
@@ -227,9 +239,9 @@ function initChart() {
         // ---- 2. 画笔（灰色细线）----
         if (cl.bi_list) {
           for (const bi of cl.bi_list) {
-            const x1 = barToX(bi.begin_x);
+            const x1 = barToX(bi.begin_x, bi.begin_ts);
             const y1 = priceToY(bi.begin_y);
-            const x2 = barToX(bi.end_x);
+            const x2 = barToX(bi.end_x, bi.end_ts);
             const y2 = priceToY(bi.end_y);
             if (x1 < -100 || x2 < -100) continue;
 
@@ -248,9 +260,9 @@ function initChart() {
         // ---- 3. 画线段（橙色粗线）----
         if (cl.seg_list) {
           for (const seg of cl.seg_list) {
-            const x1 = barToX(seg.begin_x);
+            const x1 = barToX(seg.begin_x, seg.begin_ts);
             const y1 = priceToY(seg.begin_y);
-            const x2 = barToX(seg.end_x);
+            const x2 = barToX(seg.end_x, seg.end_ts);
             const y2 = priceToY(seg.end_y);
             if (x1 < -100 || x2 < -100) continue;
 
@@ -279,7 +291,7 @@ function initChart() {
         // ---- 4. 画买卖点标记 ----
         if (cl.bsp_list) {
           for (const bsp of cl.bsp_list) {
-            const x = barToX(bsp.x);
+            const x = barToX(bsp.x, bsp.ts);
             if (x < -100) continue;
             const y = priceToY(bsp.y);
             const isSeg = bsp.type.startsWith('S');
@@ -744,27 +756,9 @@ async function loadChanlun(symbol, interval, market) {
   const apiMarket = market === 'a' ? 'cn' : market;
 
   try {
-    // 直接把图表已有的K线数据发给后端分析，确保数据100%一致
-    const chartData = chart.getDataList();
-    if (!chartData || chartData.length < 30) {
-      showToast('K线数据不足，无法分析', 'warning');
-      _chanlunLoading = false;
-      return;
-    }
-    const candles = chartData.map(k => ({
-      timestamp: k.timestamp,
-      open: k.open,
-      high: k.high,
-      low: k.low,
-      close: k.close,
-      volume: k.volume || 0,
-    }));
-
-    const resp = await fetch('/api/chanlun/analyze', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ candles }),
-    });
+    const resp = await fetch(
+      `/api/chanlun?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&market=${encodeURIComponent(apiMarket)}&limit=1000`
+    );
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     window._chanlunData = data;
