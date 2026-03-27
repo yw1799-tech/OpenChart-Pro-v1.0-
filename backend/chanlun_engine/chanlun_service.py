@@ -112,6 +112,24 @@ def _klu_to_bar_index(klu, ts_list: List[int]) -> int:
     return _find_bar_index(ts_ms, ts_list)
 
 
+def _find_extreme_bar(candles: List[Dict], center_idx: int, price: float, is_high: bool, search_range: int = 15) -> int:
+    """在center_idx附近找到价格最匹配的K线索引
+    同时检查high和low，取最接近price的那个"""
+    best_idx = center_idx
+    best_diff = float('inf')
+    start = max(0, center_idx - search_range)
+    end = min(len(candles), center_idx + search_range + 1)
+    for i in range(start, end):
+        # 同时检查high和low，找最接近目标价格的
+        diff_h = abs(candles[i].get('high', 0) - price)
+        diff_l = abs(candles[i].get('low', 0) - price)
+        diff = min(diff_h, diff_l)
+        if diff < best_diff:
+            best_diff = diff
+            best_idx = i
+    return best_idx
+
+
 def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     缠论完整分析
@@ -177,14 +195,20 @@ def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
         try:
             begin_klu = bi.get_begin_klu()
             end_klu = bi.get_end_klu()
-            begin_x = _klu_to_bar_index(begin_klu, ts_list)
-            end_x = _klu_to_bar_index(end_klu, ts_list)
+            begin_x_raw = _klu_to_bar_index(begin_klu, ts_list)
+            end_x_raw = _klu_to_bar_index(end_klu, ts_list)
+            begin_val = float(bi.get_begin_val())
+            end_val = float(bi.get_end_val())
+            is_up = bi.dir == BI_DIR.UP
+            # 上升笔：起点是低点，终点是高点；下降笔反之
+            begin_x = _find_extreme_bar(candles, begin_x_raw, begin_val, is_high=not is_up)
+            end_x = _find_extreme_bar(candles, end_x_raw, end_val, is_high=is_up)
             bi_list.append({
                 "begin_x": begin_x,
-                "begin_y": float(bi.get_begin_val()),
+                "begin_y": begin_val,
                 "end_x": end_x,
-                "end_y": float(bi.get_end_val()),
-                "dir": 1 if bi.dir == BI_DIR.UP else -1,
+                "end_y": end_val,
+                "dir": 1 if is_up else -1,
                 "is_sure": bi.is_sure,
             })
         except Exception as e:
@@ -196,14 +220,19 @@ def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
         try:
             begin_klu = seg.start_bi.get_begin_klu()
             end_klu = seg.end_bi.get_end_klu()
-            begin_x = _klu_to_bar_index(begin_klu, ts_list)
-            end_x = _klu_to_bar_index(end_klu, ts_list)
+            begin_x_raw = _klu_to_bar_index(begin_klu, ts_list)
+            end_x_raw = _klu_to_bar_index(end_klu, ts_list)
+            begin_val = float(seg.start_bi.get_begin_val())
+            end_val = float(seg.end_bi.get_end_val())
+            is_up = seg.dir == BI_DIR.UP
+            begin_x = _find_extreme_bar(candles, begin_x_raw, begin_val, is_high=not is_up)
+            end_x = _find_extreme_bar(candles, end_x_raw, end_val, is_high=is_up)
             seg_list.append({
                 "begin_x": begin_x,
-                "begin_y": float(seg.start_bi.get_begin_val()),
+                "begin_y": begin_val,
                 "end_x": end_x,
-                "end_y": float(seg.end_bi.get_end_val()),
-                "dir": 1 if seg.dir == BI_DIR.UP else -1,
+                "end_y": end_val,
+                "dir": 1 if is_up else -1,
                 "is_sure": seg.is_sure,
             })
         except Exception as e:
