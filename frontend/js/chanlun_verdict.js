@@ -261,7 +261,10 @@ const ChanlunVerdict = (() => {
             ${trendConclusion}
           </div>
 
-          <!-- 卡片3: 什么时候可以操作 -->
+          <!-- 卡片3: 中枢与买卖点 -->
+          ${_renderZhongshuCard(zhongshu, activeBsp, currentPrice)}
+
+          <!-- 卡片4: 什么时候可以操作 -->
           <div class="cv-card">
             <div class="cv-card-title">🎯 ${action === 'sell' || action === 'hold_short' ? '什么时候该卖？' : '什么时候可以买？'}</div>
             ${whenHtml}
@@ -287,6 +290,58 @@ const ChanlunVerdict = (() => {
   /**
    * 生成白话解读文字（返回对象 { summary }）
    */
+  function _renderZhongshuCard(zhongshu, activeBsp, price) {
+    let zsHtml = '';
+    if (zhongshu.length > 0) {
+      for (const zs of zhongshu) {
+        const posColor = zs.position.includes('上方') ? 'var(--color-up)' :
+                         zs.position.includes('下方') ? 'var(--color-down)' : 'var(--color-warning)';
+        const posIcon = zs.position.includes('上方') ? '📈' :
+                        zs.position.includes('下方') ? '📉' : '↔️';
+        // 白话解释中枢
+        const zsExplain = zs.position.includes('上方') ? '价格强势，在震荡区间上方运行' :
+                          zs.position.includes('远在') ? '价格已经跌破震荡区间较远，弱势明显' :
+                          zs.position.includes('下方') ? '价格跌破了震荡区间，偏弱' :
+                          '价格在震荡区间内来回波动，方向不明';
+        const tfName = {'1H':'1小时','4H':'4小时','1D':'日线','30m':'30分钟','1W':'周线'}[zs.tf] || zs.tf;
+        zsHtml += `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-primary);">
+            <span style="font-size:16px;">${posIcon}</span>
+            <div style="flex:1;">
+              <div style="font-size:13px;font-weight:500;">${tfName}震荡区间</div>
+              <div style="font-size:12px;color:var(--text-tertiary);">${_fmtPrice(zs.zd)} ~ ${_fmtPrice(zs.zg)}</div>
+            </div>
+            <div style="font-size:12px;color:${posColor};text-align:right;">
+              ${zsExplain}
+            </div>
+          </div>`;
+      }
+    } else {
+      zsHtml = '<div style="color:var(--text-tertiary);font-size:12px;padding:8px 0;">当前周期内无明显震荡区间</div>';
+    }
+
+    // 已发生的买卖点
+    let bspHtml = '';
+    if (activeBsp && activeBsp.length > 0) {
+      bspHtml = '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-primary);">';
+      bspHtml += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px;">近期信号回顾：</div>';
+      for (const bsp of activeBsp) {
+        const icon = bsp.is_buy ? '🟢' : '🔴';
+        const label = bsp.is_buy ? '买入信号' : '卖出信号';
+        const typeDesc = _simplifySignalDesc(bsp.desc || bsp.type || '');
+        bspHtml += `<div style="font-size:12px;padding:3px 0;">${icon} ${label} @ ${_fmtPrice(bsp.price)} — ${typeDesc}</div>`;
+      }
+      bspHtml += '</div>';
+    }
+
+    return `
+      <div class="cv-card">
+        <div class="cv-card-title">🏛 震荡区间与信号</div>
+        ${zsHtml}
+        ${bspHtml}
+      </div>`;
+  }
+
   function _getPlainExplanation(action, levels, zhongshu, price) {
     let summary = '';
 

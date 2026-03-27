@@ -188,18 +188,14 @@ function initChart() {
         const clDataLen = cl._dataLength || dataList.length;
         const clOffset = dataList.length - clDataLen;
 
-        // bar_index → 像素x：用timestamp查找精确位置
-        // KLineChart draw回调里 barSpace.bar 是单根K线宽度
-        // visibleRange.from/to 是可见的数据索引范围
+        // bar_index → 像素x
+        // 使用 barSpace 手动计算像素位置（最可靠的方式）
+        const halfBar = barSpace.bar / 2;
         function barToX(barIdx) {
           const idx = barIdx + clOffset;
-          // 用 barSpace 和 visibleRange 手动计算
-          if (idx >= 0 && idx < dataList.length && dataList[idx]) {
-            // 获取该bar的timestamp，让xAxis转换
-            const ts = dataList[idx].timestamp;
-            return xAxis.convertToPixel(ts);
-          }
-          return -999; // 不在范围内
+          // 基于可见范围和barSpace计算
+          const x = bounding.left + (idx - visibleRange.from) * barSpace.bar + halfBar;
+          return x;
         }
         function priceToY(price) {
           return yAxis.convertToPixel(price);
