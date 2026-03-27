@@ -184,6 +184,8 @@ def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "begin_y": float(bi.get_begin_val()),
                 "end_x": end_x,
                 "end_y": float(bi.get_end_val()),
+                "begin_ts": ts_list[begin_x] if 0 <= begin_x < len(ts_list) else 0,
+                "end_ts": ts_list[end_x] if 0 <= end_x < len(ts_list) else 0,
                 "dir": 1 if bi.dir == BI_DIR.UP else -1,
                 "is_sure": bi.is_sure,
             })
@@ -203,6 +205,8 @@ def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "begin_y": float(seg.start_bi.get_begin_val()),
                 "end_x": end_x,
                 "end_y": float(seg.end_bi.get_end_val()),
+                "begin_ts": ts_list[begin_x] if 0 <= begin_x < len(ts_list) else 0,
+                "end_ts": ts_list[end_x] if 0 <= end_x < len(ts_list) else 0,
                 "dir": 1 if seg.dir == BI_DIR.UP else -1,
                 "is_sure": seg.is_sure,
             })
@@ -222,8 +226,10 @@ def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
             zs_list.append({
                 "begin_x": begin_x,
                 "end_x": end_x,
-                "zg": float(zs.high),   # ZG: 中枢上沿
-                "zd": float(zs.low),    # ZD: 中枢下沿
+                "begin_ts": ts_list[begin_x] if 0 <= begin_x < len(ts_list) else 0,
+                "end_ts": ts_list[end_x] if 0 <= end_x < len(ts_list) else 0,
+                "zg": float(zs.high),
+                "zd": float(zs.low),
                 "dir": zs_dir,
                 "level": "bi",
             })
@@ -241,6 +247,8 @@ def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
             zs_list.append({
                 "begin_x": begin_x,
                 "end_x": end_x,
+                "begin_ts": ts_list[begin_x] if 0 <= begin_x < len(ts_list) else 0,
+                "end_ts": ts_list[end_x] if 0 <= end_x < len(ts_list) else 0,
                 "zg": float(zs.high),
                 "zd": float(zs.low),
                 "dir": zs_dir,
@@ -261,6 +269,7 @@ def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
                 bsp_list.append({
                     "x": x,
                     "y": y,
+                    "ts": ts_list[x] if 0 <= x < len(ts_list) else 0,
                     "type": bsp.type2str(),
                     "is_buy": bsp.is_buy,
                 })
@@ -280,7 +289,8 @@ def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
                 bsp_list.append({
                     "x": x,
                     "y": y,
-                    "type": "S" + bsp.type2str(),  # S前缀表示线段级别
+                    "ts": ts_list[x] if 0 <= x < len(ts_list) else 0,
+                    "type": "S" + bsp.type2str(),
                     "is_buy": bsp.is_buy,
                 })
             except Exception as e:
