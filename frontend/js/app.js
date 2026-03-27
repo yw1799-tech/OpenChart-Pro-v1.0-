@@ -50,6 +50,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   safeInit('Dashboard', () => typeof Dashboard !== 'undefined' && Dashboard.init());
   safeInit('Watchlist', () => typeof Watchlist !== 'undefined' && Watchlist.init());
   safeInit('Formula', () => typeof Formula !== 'undefined' && Formula.init());
+  safeInit('ChanlunVerdict', () => typeof ChanlunVerdict !== 'undefined' && ChanlunVerdict.init());
 
   // 绑定事件
   safeInit('bindToolbar', bindToolbar);
@@ -236,6 +237,10 @@ function bindBottomPanel() {
       // 切换到选股时自动刷新
       if (tabName === 'screener' && typeof Screener !== 'undefined') {
         Screener.autoRefreshIfNeeded();
+      }
+      // 切换到缠论研判时自动分析
+      if (tabName === 'chanlun-verdict' && typeof ChanlunVerdict !== 'undefined') {
+        ChanlunVerdict.analyze(window.currentSymbol, window.currentMarket === 'a' ? 'cn' : window.currentMarket);
       }
     });
   });
