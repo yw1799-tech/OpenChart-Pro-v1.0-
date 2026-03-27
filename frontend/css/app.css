@@ -1924,3 +1924,380 @@ table td.down { color: var(--color-down); }
 }
 .screener-card-action { font-size:11px; padding:2px 8px; border:1px solid; border-radius:3px; font-weight:600; }
 .screener-card-risk { font-size:11px; color:#f6465d; opacity:0.7; margin-top:4px; }
+
+/* ============================================================
+   缠论研判看板
+   ============================================================ */
+.cv-loading {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-secondary);
+}
+.cv-error {
+  color: var(--color-down);
+  padding: 20px;
+  text-align: center;
+}
+
+.cv-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 顶部栏 */
+.cv-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border-primary);
+  flex-shrink: 0;
+}
+.cv-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cv-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.cv-symbol {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-accent);
+}
+.cv-current-price {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+}
+.cv-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cv-refresh-btn {
+  font-size: 11px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.cv-updated {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* 主体三列布局 */
+.cv-body {
+  display: flex;
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  gap: 10px;
+}
+.cv-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cv-col-action {
+  flex: 0 0 300px;
+  min-width: 260px;
+}
+.cv-col-levels {
+  flex: 0 0 300px;
+  min-width: 240px;
+}
+.cv-col-signals {
+  flex: 1;
+  min-width: 240px;
+}
+
+/* 卡片 */
+.cv-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: 12px;
+}
+.cv-card-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+
+/* 操作建议卡片 */
+.cv-action-card {
+  border-width: 1px;
+}
+.cv-action-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.cv-action-icon {
+  font-size: 28px;
+}
+.cv-action-text {
+  letter-spacing: 1px;
+}
+
+/* 置信度 */
+.cv-confidence {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.cv-conf-label {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.cv-conf-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.cv-conf-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+.cv-conf-val {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  flex-shrink: 0;
+  width: 36px;
+  text-align: right;
+}
+
+/* 推理 */
+.cv-reasoning {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+
+/* 退出条件 */
+.cv-exit {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  padding-top: 8px;
+  border-top: 1px solid var(--border-primary);
+}
+.cv-exit-label {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* 买卖点标签 */
+.cv-bsp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.cv-bsp-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: var(--bg-tertiary);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* 三级别走势 */
+.cv-level-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-primary);
+  font-size: 12px;
+}
+.cv-level-row:last-child {
+  border-bottom: none;
+}
+.cv-level-tf {
+  font-weight: 700;
+  color: var(--text-primary);
+  width: 32px;
+  flex-shrink: 0;
+}
+.cv-level-dir {
+  font-size: 16px;
+  font-weight: 700;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.cv-level-trend {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  width: 64px;
+}
+.cv-level-price {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-secondary);
+  font-size: 11px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv-sure {
+  font-size: 10px;
+  color: var(--color-up);
+  flex-shrink: 0;
+}
+.cv-unsure {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+/* 中枢 */
+.cv-zs-item {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-primary);
+}
+.cv-zs-item:last-child {
+  border-bottom: none;
+}
+.cv-zs-tf {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 3px;
+}
+.cv-zs-range {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+}
+.cv-zs-pos {
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+/* 等待信号 */
+.cv-signal-item {
+  display: flex;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-primary);
+}
+.cv-signal-item:last-child {
+  border-bottom: none;
+}
+.cv-signal-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.cv-signal-body {
+  flex: 1;
+}
+.cv-signal-desc {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.cv-signal-cond {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-bottom: 3px;
+}
+.cv-signal-imp {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-weight: 600;
+}
+.cv-imp-primary {
+  background: rgba(41,98,255,0.15);
+  color: #5b8def;
+}
+.cv-imp-secondary {
+  background: rgba(245,158,11,0.15);
+  color: #f59e0b;
+}
+.cv-imp-major {
+  background: rgba(255,23,68,0.15);
+  color: #ff6b8a;
+}
+
+/* 关键价位 */
+.cv-prices-list {
+  max-height: 160px;
+  overflow-y: auto;
+}
+.cv-price-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-primary);
+  font-size: 11px;
+}
+.cv-price-item:last-child {
+  border-bottom: none;
+}
+.cv-price-current {
+  background: rgba(255,255,255,0.04);
+}
+.cv-price-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+}
+.cv-price-desc {
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+.cv-empty-hint {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  text-align: center;
+  padding: 12px 0;
+}
+
+/* 响应式 */
+@media (max-width: 1200px) {
+  .cv-body {
+    flex-wrap: wrap;
+  }
+  .cv-col-action,
+  .cv-col-levels,
+  .cv-col-signals {
+    flex: 1 1 100%;
+    min-width: unset;
+  }
+}
