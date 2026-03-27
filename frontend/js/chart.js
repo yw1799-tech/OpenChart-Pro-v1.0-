@@ -184,35 +184,8 @@ function initChart() {
         if (!dataList || !dataList.length || !window._chanlunData) return false;
         const cl = window._chanlunData;
 
-        // timestamp → dataList索引（二分查找）
-        // 构建timestamp→index映射（一次性构建，每帧复用）
-        const tsMap = new Map();
-        for (let i = 0; i < dataList.length; i++) {
-          tsMap.set(dataList[i].timestamp, i);
-        }
-
-        // 用timestamp精确定位，彻底解决偏移问题
-        function tsToX(ts) {
-          const idx = tsMap.get(ts);
-          if (idx !== undefined) {
-            return xAxis.convertToPixel(idx);
-          }
-          // 如果精确匹配不到，找最接近的
-          let closest = -1, minDiff = Infinity;
-          for (let i = 0; i < dataList.length; i++) {
-            const diff = Math.abs(dataList[i].timestamp - ts);
-            if (diff < minDiff) { minDiff = diff; closest = i; }
-          }
-          return closest >= 0 ? xAxis.convertToPixel(closest) : -999;
-        }
-
-        // bar_index → 像素x（兼容旧数据，优先用timestamp）
-        function barToX(barIdx, ts) {
-          if (ts && ts > 0) return tsToX(ts);
-          // fallback: 用偏移索引
-          const clDataLen = cl._dataLength || dataList.length;
-          const idx = barIdx + (dataList.length - clDataLen);
-          return xAxis.convertToPixel(Math.max(0, Math.min(idx, dataList.length - 1)));
+        function barToX(barIdx) {
+          return xAxis.convertToPixel(barIdx);
         }
         function priceToY(price) {
           return yAxis.convertToPixel(price);
@@ -223,8 +196,8 @@ function initChart() {
         // ---- 1. 画中枢（半透明矩形，放在最底层）----
         if (cl.zs_list) {
           for (const zs of cl.zs_list) {
-            const x1 = barToX(zs.begin_x, zs.begin_ts);
-            const x2 = barToX(zs.end_x, zs.end_ts);
+            const x1 = barToX(zs.begin_x);
+            const x2 = barToX(zs.end_x);
             if (x1 < -100 || x2 < -100) continue;
             const y1 = priceToY(zs.zg);
             const y2 = priceToY(zs.zd);
@@ -254,9 +227,9 @@ function initChart() {
         // ---- 2. 画笔（灰色细线）----
         if (cl.bi_list) {
           for (const bi of cl.bi_list) {
-            const x1 = barToX(bi.begin_x, bi.begin_ts);
+            const x1 = barToX(bi.begin_x);
             const y1 = priceToY(bi.begin_y);
-            const x2 = barToX(bi.end_x, bi.end_ts);
+            const x2 = barToX(bi.end_x);
             const y2 = priceToY(bi.end_y);
             if (x1 < -100 || x2 < -100) continue;
 
@@ -275,9 +248,9 @@ function initChart() {
         // ---- 3. 画线段（橙色粗线）----
         if (cl.seg_list) {
           for (const seg of cl.seg_list) {
-            const x1 = barToX(seg.begin_x, seg.begin_ts);
+            const x1 = barToX(seg.begin_x);
             const y1 = priceToY(seg.begin_y);
-            const x2 = barToX(seg.end_x, seg.end_ts);
+            const x2 = barToX(seg.end_x);
             const y2 = priceToY(seg.end_y);
             if (x1 < -100 || x2 < -100) continue;
 
@@ -306,7 +279,7 @@ function initChart() {
         // ---- 4. 画买卖点标记 ----
         if (cl.bsp_list) {
           for (const bsp of cl.bsp_list) {
-            const x = barToX(bsp.x, bsp.ts);
+            const x = barToX(bsp.x);
             if (x < -100) continue;
             const y = priceToY(bsp.y);
             const isSeg = bsp.type.startsWith('S');
