@@ -2199,6 +2199,23 @@ async def get_chanlun(
     return result
 
 
+@chanlun_router.post("/from-data")
+async def chanlun_from_data(req: Dict[str, Any]):
+    """直接用前端传来的K线数据做缠论分析，确保数据一致"""
+    import sys as _sys, os as _os
+    candles = req.get("candles", [])
+    if not candles or len(candles) < 30:
+        return {"bi_list": [], "seg_list": [], "zs_list": [], "bsp_list": []}
+    _engine_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "chanlun_engine")
+    if _engine_dir not in _sys.path:
+        _sys.path.insert(0, _engine_dir)
+    try:
+        from backend.chanlun_engine.chanlun_service import analyze
+        return analyze(candles)
+    except Exception as e:
+        return {"bi_list": [], "seg_list": [], "zs_list": [], "bsp_list": [], "error": str(e)}
+
+
 @chanlun_router.get("/verdict")
 async def chanlun_verdict(
     symbol: str = Query(...),

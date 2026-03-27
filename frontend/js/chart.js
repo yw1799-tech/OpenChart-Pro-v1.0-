@@ -746,9 +746,23 @@ async function loadChanlun(symbol, interval, market) {
   const apiMarket = market === 'a' ? 'cn' : market;
 
   try {
-    const resp = await fetch(
-      `/api/chanlun?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&market=${encodeURIComponent(apiMarket)}&limit=1000`
-    );
+    // 用图表已有的K线数据做缠论分析，确保bar_index完全一致
+    const chartData = chart.getDataList();
+    if (!chartData || chartData.length < 30) {
+      showToast('K线数据不足', 'warning');
+      _chanlunLoading = false;
+      return;
+    }
+
+    const resp = await fetch('/api/chanlun/from-data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        candles: chartData.map(function(k) {
+          return { timestamp: k.timestamp, open: k.open, high: k.high, low: k.low, close: k.close, volume: k.volume || 0 };
+        })
+      }),
+    });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
 
