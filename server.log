@@ -1,1060 +1,165 @@
 INFO:     Will watch for changes in these directories: ['D:\\OpenChart Pro']
 INFO:     Uvicorn running on http://0.0.0.0:8888 (Press CTRL+C to quit)
-INFO:     Started reloader process [21908] using WatchFiles
-INFO:     Started server process [23884]
+INFO:     Started reloader process [19488] using WatchFiles
+INFO:     Started server process [17048]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     127.0.0.1:64880 - "WebSocket /ws" [accepted]
+INFO:     127.0.0.1:61626 - "WebSocket /ws" [accepted]
 INFO:     connection open
-INFO:     127.0.0.1:60632 - "WebSocket /ws" [accepted]
+INFO:     127.0.0.1:52315 - "GET / HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:52315 - "GET /css/app.css?v=34 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56325 - "GET /js/chart.js?v=34 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:52315 - "GET /js/screener.js?v=34 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:52315 - "GET /js/app.js?v=34 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56325 - "GET /js/watchlist.js?v=34 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:61473 - "GET /api/symbols?market=cn HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65142 - "GET /api/symbols?market=us HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56608 - "GET /api/symbols?market=hk HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56325 - "GET /api/alerts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52315 - "GET /api/symbols?market=crypto HTTP/1.1" 200 OK
+FINNHUB_API_KEY 未设置，跳过Finnhub新闻采集
+INFO:     127.0.0.1:56325 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+采集 eastmoney 新闻失败: 'NoneType' object has no attribute 'get'
+INFO:     127.0.0.1:63412 - "WebSocket /ws" [accepted]
 INFO:     connection open
-INFO:     127.0.0.1:62127 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62127 - "GET / HTTP/1.1" 304 Not Modified
-INFO:     127.0.0.1:62127 - "GET /js/formula.js?v=26 HTTP/1.1" 304 Not Modified
-INFO:     127.0.0.1:62127 - "GET /api/alerts HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62127 - "GET /api/symbols?market=us HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62127 - "GET /api/symbols?market=hk HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62127 - "GET /api/symbols?market=cn HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55248 - "GET /api/symbols?market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55745 - "WebSocket /ws" [accepted]
-INFO:     connection open
-INFO:     127.0.0.1:55248 - "GET /api/klines?symbol=BTC-USDT&interval=1H&limit=500&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55248 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55747 - "POST /api/formula/execute HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55248 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55248 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55248 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55248 - "GET /api/alerts HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55248 - "POST /api/formula/execute HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55248 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55248 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55248 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55248 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55248 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55248 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55248 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55248 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55248 - "POST /api/formula/execute HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64562 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64562 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64562 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64562 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64562 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64562 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64562 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64562 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64562 - "POST /api/formula/execute HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65140 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65140 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65140 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65140 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65140 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65140 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65140 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65140 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55442 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55442 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55442 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55442 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55442 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55442 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55442 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55442 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50986 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50986 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50986 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50986 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50986 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50986 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50986 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50986 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49477 - "POST /api/formula/execute HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50986 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50986 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50986 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50986 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50986 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50986 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50986 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50986 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56952 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56952 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56952 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56952 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49987 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49987 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49987 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49987 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50060 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50060 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50060 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50060 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55779 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55779 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55779 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55779 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55779 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55779 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55779 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55779 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61773 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61773 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61773 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61773 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61773 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61773 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61773 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61773 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET / HTTP/1.1" 200 OK
-INFO:     connection closed
-INFO:     127.0.0.1:62881 - "GET /css/app.css HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /lib/klinecharts.min.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /lib/chart.umd.min.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /js/toast.js?v=28 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /js/websocket.js?v=28 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /js/chart.js?v=28 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /js/search.js?v=28 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /js/settings.js?v=28 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /js/indicators.js?v=28 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /js/formula.js?v=28 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /js/alerts.js?v=28 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /js/backtest.js?v=28 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /js/screener.js?v=28 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /js/dashboard.js?v=28 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /js/watchlist.js?v=28 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /js/aijudge.js?v=28 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /js/app.js?v=28 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /api/alerts HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58666 - "GET /api/symbols?market=us HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58666 - "GET /api/symbols?market=hk HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58666 - "GET /api/symbols?market=cn HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58666 - "GET /favicon.ico HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:62881 - "GET /api/symbols?market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62553 - "WebSocket /ws" [accepted]
-INFO:     connection open
-INFO:     127.0.0.1:62881 - "GET /api/klines?symbol=BTC-USDT&interval=1H&limit=500&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62881 - "GET /api/alerts HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58666 - "POST /api/formula/execute HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64044 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64044 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64044 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64044 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64044 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64044 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64044 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64044 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64044 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64044 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64044 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64044 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64044 - "POST /api/formula/execute HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64044 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64044 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64044 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64044 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64044 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:64044 - "GET /lib/chart.umd.min.js.map HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:63284 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63284 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63284 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63284 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64863 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64863 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64863 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64863 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52934 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52934 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52934 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52934 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61438 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61438 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61438 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61438 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64858 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64858 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64858 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64858 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64858 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64858 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64858 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64858 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54064 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54064 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54064 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54064 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52657 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52657 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52657 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52657 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56291 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56291 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56291 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56291 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58081 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58081 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58081 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58081 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56983 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56983 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56983 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56983 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56983 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56983 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56983 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56983 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56983 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56983 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56983 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56983 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59941 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59941 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59941 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59941 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61494 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61494 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61494 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61494 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60712 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60712 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60712 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60712 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62076 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62076 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62076 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62076 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50713 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50713 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50713 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50713 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50713 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50713 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50713 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50713 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50713 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50713 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50713 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50713 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54969 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54969 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54969 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54969 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55592 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55592 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55592 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55592 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55368 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55368 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55368 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55368 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57183 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57183 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57183 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57183 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49599 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49599 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49599 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49599 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49599 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49599 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49599 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49599 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49599 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49599 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49599 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49599 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64818 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64818 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64818 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64818 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52049 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52049 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52049 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52049 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54916 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54916 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54916 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54916 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59626 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59626 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59626 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59626 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59791 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59791 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59791 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59791 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59791 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59791 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59791 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59791 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59791 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59791 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59791 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59791 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59056 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59056 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59056 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59056 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59791 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59791 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59791 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59791 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62681 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62681 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62681 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62681 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50465 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50465 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50465 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50465 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56123 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56123 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56123 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56123 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56123 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56123 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56123 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56123 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56123 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56123 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56123 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56123 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55934 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55934 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55934 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55934 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62374 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62374 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62374 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62374 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50530 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50530 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50530 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50530 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59112 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59112 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59112 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59112 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65505 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65505 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65505 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65505 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65505 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65505 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65505 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65505 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65505 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65505 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65505 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65505 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61013 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61013 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61013 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61013 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50468 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50468 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50468 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50468 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51414 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51414 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51414 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51414 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55968 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55968 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55968 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55968 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62658 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62658 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62658 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62658 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62658 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62658 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62658 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62658 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62658 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62658 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62658 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62658 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63912 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63912 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63912 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63912 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65381 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65381 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65381 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65381 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57215 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57215 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57215 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57215 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55735 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55735 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55735 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55735 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49914 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49914 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49914 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49914 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49914 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49914 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49914 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49914 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49914 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49914 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49914 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49914 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51593 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51593 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51593 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51593 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62713 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62713 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62713 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62713 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56523 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56523 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56523 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56523 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57738 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57738 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57738 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57738 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55152 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55152 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55152 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55152 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55152 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55152 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55152 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55152 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55152 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55152 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55152 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55152 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59852 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59852 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59852 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59852 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56620 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56620 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56620 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56620 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58441 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58441 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58441 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58441 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49428 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49428 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49428 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49428 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62945 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62945 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62945 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62945 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62945 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62945 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62945 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62945 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62945 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62945 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62945 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62945 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53927 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53927 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53927 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53927 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55850 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55850 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55850 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55850 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59361 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59361 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59361 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59361 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64477 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64477 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64477 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64477 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52433 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52433 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52433 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52433 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52433 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53623 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53623 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53623 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53623 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53623 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53623 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53623 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51736 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51736 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51736 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51736 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63288 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63288 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63288 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63288 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63831 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63831 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63831 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63831 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51259 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51259 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51259 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51259 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63272 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63272 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63272 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63272 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63272 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63272 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63272 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63272 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63272 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63272 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63272 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63272 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51338 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51338 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51338 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51338 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64496 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64496 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64496 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64496 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60047 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60047 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60047 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60047 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62643 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62643 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62643 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62643 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52951 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52951 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52951 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52951 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52951 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52951 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52951 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52951 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52951 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52951 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52951 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52951 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53481 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53481 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53481 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53481 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49985 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49985 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49985 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49985 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49764 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49764 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49764 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49764 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53656 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53656 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53656 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53656 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50602 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50602 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50602 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50602 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50602 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50602 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50602 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50602 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50602 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50602 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50602 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50602 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50692 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50692 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50692 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50692 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63916 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63916 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63916 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63916 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64448 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64448 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64448 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64448 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63844 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63844 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63844 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63844 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49419 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49419 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49419 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49419 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49419 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49419 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49419 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49419 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49419 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49419 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49419 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49419 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55771 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55771 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55771 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55771 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63703 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63703 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63703 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63703 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET / HTTP/1.1" 200 OK
-INFO:     connection closed
-INFO:     127.0.0.1:59982 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:59982 - "GET /css/app.css HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /lib/klinecharts.min.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /lib/chart.umd.min.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /js/toast.js?v=29 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /js/websocket.js?v=29 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /js/chart.js?v=29 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /js/search.js?v=29 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /js/settings.js?v=29 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /js/indicators.js?v=29 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /js/formula.js?v=29 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /js/alerts.js?v=29 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /js/backtest.js?v=29 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /js/screener.js?v=29 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /js/dashboard.js?v=29 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /js/watchlist.js?v=29 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /js/aijudge.js?v=29 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /js/app.js?v=29 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /lib/chart.umd.min.js.map HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:59982 - "GET /api/alerts HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56522 - "GET /api/symbols?market=us HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56522 - "GET /api/symbols?market=hk HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56522 - "GET /api/symbols?market=cn HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56522 - "GET /favicon.ico HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:59982 - "GET /api/symbols?market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56563 - "WebSocket /ws" [accepted]
-INFO:     connection open
-INFO:     127.0.0.1:59982 - "GET /api/klines?symbol=BTC-USDT&interval=1H&limit=500&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59982 - "GET /api/alerts HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56522 - "POST /api/formula/execute HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65145 - "POST /api/formula/execute HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58810 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58810 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58810 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58810 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56555 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65079 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65079 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61345 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65079 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61345 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61345 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61345 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64853 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64853 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64853 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64853 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57462 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57462 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57462 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57462 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54399 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54399 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54399 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54399 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56469 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56469 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56469 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56469 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59077 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59077 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59077 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59077 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62707 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62707 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62707 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62707 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58893 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58893 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58893 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58893 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50060 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50060 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50060 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50060 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60190 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60190 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60190 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60190 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60311 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60311 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60311 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60311 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62140 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62140 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62140 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62140 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53948 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53948 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53948 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53948 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53948 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53948 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53948 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53948 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53948 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53948 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53948 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49783 - "GET / HTTP/1.1" 200 OK
-INFO:     connection closed
-INFO:     127.0.0.1:49783 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:49783 - "GET /css/app.css HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49783 - "GET /lib/klinecharts.min.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49783 - "GET /lib/chart.umd.min.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49783 - "GET /js/toast.js?v=30 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49783 - "GET /js/websocket.js?v=30 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49783 - "GET /js/chart.js?v=30 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49783 - "GET /js/search.js?v=30 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49783 - "GET /js/settings.js?v=30 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49783 - "GET /js/indicators.js?v=30 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49783 - "GET /js/formula.js?v=30 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49783 - "GET /js/alerts.js?v=30 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49783 - "GET /js/backtest.js?v=30 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49783 - "GET /js/screener.js?v=30 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49783 - "GET /js/dashboard.js?v=30 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49783 - "GET /js/watchlist.js?v=30 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49783 - "GET /js/aijudge.js?v=30 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49783 - "GET /js/app.js?v=30 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49783 - "GET /lib/chart.umd.min.js.map HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:49783 - "GET /api/alerts HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49783 - "GET /api/symbols?market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50597 - "GET /api/symbols?market=us HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60801 - "GET /api/symbols?market=cn HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56987 - "GET /api/symbols?market=hk HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54660 - "GET /favicon.ico HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:57900 - "WebSocket /ws" [accepted]
-INFO:     connection open
-INFO:     127.0.0.1:54660 - "GET /api/klines?symbol=BTC-USDT&interval=1H&limit=500&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54660 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54660 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54660 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54660 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54660 - "GET /api/alerts HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50098 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50098 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50098 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50098 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50098 - "POST /api/formula/execute HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50098 - "POST /api/formula/execute HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50098 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50098 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50098 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50098 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50477 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50477 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50477 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50477 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53954 - "GET /lib/klinecharts.min.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60305 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60305 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60305 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60305 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59120 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59120 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59120 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59120 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53815 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53815 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53815 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53815 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53611 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53611 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53611 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53611 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52264 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52264 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52264 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52264 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52427 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52427 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52427 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52427 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "POST /api/formula/execute HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63554 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63554 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63554 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63554 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63554 - "GET / HTTP/1.1" 200 OK
-INFO:     connection closed
-INFO:     127.0.0.1:63554 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:63554 - "GET /css/app.css HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /lib/klinecharts.min.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63554 - "GET /lib/chart.umd.min.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/toast.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/websocket.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63554 - "GET /js/chart.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/search.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63554 - "GET /js/settings.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/indicators.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63554 - "GET /js/formula.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/alerts.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63554 - "GET /js/backtest.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/screener.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63554 - "GET /js/dashboard.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/watchlist.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63554 - "GET /js/aijudge.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/app.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63554 - "GET /lib/chart.umd.min.js.map HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:63554 - "GET /api/alerts HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /api/symbols?market=us HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /api/symbols?market=hk HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /api/symbols?market=cn HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /favicon.ico HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:60381 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:60381 - "GET /css/app.css HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /lib/klinecharts.min.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /lib/chart.umd.min.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/toast.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/websocket.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/chart.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/search.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/settings.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/indicators.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/formula.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/alerts.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/backtest.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/screener.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/dashboard.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/watchlist.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/aijudge.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /js/app.js?v=31 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /lib/chart.umd.min.js.map HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:60381 - "GET /api/alerts HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55690 - "GET /api/symbols?market=us HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56086 - "GET /api/symbols?market=hk HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49678 - "GET /api/symbols?market=cn HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49252 - "GET /favicon.ico HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:60381 - "GET /api/symbols?market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63359 - "WebSocket /ws" [accepted]
-INFO:     connection open
-INFO:     127.0.0.1:60381 - "GET /api/klines?symbol=BTC-USDT&interval=1H&limit=500&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60381 - "GET /api/alerts HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49252 - "POST /api/formula/execute HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63754 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63754 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63754 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63754 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53076 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53076 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53076 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53076 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51591 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51591 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51591 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51591 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49705 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49705 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49705 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49705 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65171 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65171 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65171 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65171 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52761 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52761 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52761 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52761 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61655 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61655 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61655 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61655 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50784 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50784 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50784 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50784 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50784 - "GET / HTTP/1.1" 200 OK
-INFO:     connection closed
-INFO:     127.0.0.1:50784 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:50784 - "GET /css/app.css HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58041 - "GET /lib/klinecharts.min.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50784 - "GET /lib/chart.umd.min.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58041 - "GET /js/toast.js?v=32 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50784 - "GET /js/websocket.js?v=32 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58041 - "GET /js/chart.js?v=32 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50784 - "GET /js/search.js?v=32 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58041 - "GET /js/settings.js?v=32 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50784 - "GET /js/indicators.js?v=32 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58041 - "GET /js/formula.js?v=32 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50784 - "GET /js/alerts.js?v=32 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58041 - "GET /js/backtest.js?v=32 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50784 - "GET /js/screener.js?v=32 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58041 - "GET /js/dashboard.js?v=32 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50784 - "GET /js/watchlist.js?v=32 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58041 - "GET /js/aijudge.js?v=32 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50784 - "GET /js/app.js?v=32 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58041 - "GET /lib/chart.umd.min.js.map HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:58041 - "GET /api/alerts HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58041 - "GET /api/symbols?market=us HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58041 - "GET /api/symbols?market=hk HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58041 - "GET /api/symbols?market=cn HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58041 - "GET /favicon.ico HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:50784 - "GET /api/symbols?market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62085 - "WebSocket /ws" [accepted]
-INFO:     connection open
-INFO:     127.0.0.1:50784 - "GET /api/klines?symbol=BTC-USDT&interval=1H&limit=500&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50784 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50784 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50784 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50784 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50784 - "GET /api/alerts HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50784 - "POST /api/formula/execute HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58060 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58060 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58060 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58060 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50784 - "POST /api/formula/execute HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53190 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53190 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53190 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53190 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53725 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53725 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53725 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53725 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52118 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54239 - "GET /lib/klinecharts.min.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52118 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52118 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52118 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62120 - "GET /lib/klinecharts.min.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55062 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55062 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55062 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55062 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53953 - "GET /lib/klinecharts.min.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63934 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63934 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63934 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63934 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60045 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60045 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60045 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60045 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58381 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58381 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58381 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58381 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54515 - "GET / HTTP/1.1" 200 OK
-INFO:     connection closed
-INFO:     127.0.0.1:62446 - "GET /css/app.css HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /lib/klinecharts.min.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /lib/chart.umd.min.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /js/toast.js?v=33 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /js/websocket.js?v=33 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /js/chart.js?v=33 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /js/search.js?v=33 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /js/settings.js?v=33 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /js/indicators.js?v=33 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /js/formula.js?v=33 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /js/alerts.js?v=33 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /js/backtest.js?v=33 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /js/screener.js?v=33 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /js/dashboard.js?v=33 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /js/watchlist.js?v=33 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /js/aijudge.js?v=33 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /js/app.js?v=33 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:62446 - "GET /lib/chart.umd.min.js.map HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:62446 - "GET /api/alerts HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57003 - "GET /api/symbols?market=us HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57003 - "GET /api/symbols?market=hk HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57003 - "GET /api/symbols?market=cn HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57003 - "GET /favicon.ico HTTP/1.1" 404 Not Found
-INFO:     127.0.0.1:62446 - "GET /api/symbols?market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51428 - "WebSocket /ws" [accepted]
-INFO:     connection open
-INFO:     127.0.0.1:62446 - "GET /api/klines?symbol=BTC-USDT&interval=1H&limit=500&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62446 - "GET /api/alerts HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57003 - "POST /api/formula/execute HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58332 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58332 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58332 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58332 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63915 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63915 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63915 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63915 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55644 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55644 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55644 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55644 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58686 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58686 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58686 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58686 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62972 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62972 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62972 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62972 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61996 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61996 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61996 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61996 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58908 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58908 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58908 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58908 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50248 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50248 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50248 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50248 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61297 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61297 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61297 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61297 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57033 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57033 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57033 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57033 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60380 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60380 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60380 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:60380 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51217 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51217 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51217 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51217 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52890 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52890 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52890 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52890 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52749 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52749 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52749 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52749 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56325 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56325 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56325 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56608 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56608 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56608 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52315 - "GET /api/klines?symbol=BTC-USDT&interval=1H&limit=500&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56608 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56608 - "GET /api/alerts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49426 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49426 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49426 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49426 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49426 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49426 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49426 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49426 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59163 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59163 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59163 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59749 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59163 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59749 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59749 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59749 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51600 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51600 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53436 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51600 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53436 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51600 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53436 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51600 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51199 - "POST /api/screener/ai-recommend HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.scope, self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\uvicorn\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastapi\applications.py", line 1160, in __call__
+    await super().__call__(scope, receive, send)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\middleware\cors.py", line 87, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastapi\routing.py", line 130, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastapi\routing.py", line 116, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastapi\routing.py", line 711, in app
+    response = actual_response_class(content, **response_args)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\responses.py", line 189, in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\responses.py", line 46, in __init__
+    self.body = self.render(content)
+                ~~~~~~~~~~~^^^^^^^^^
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\responses.py", line 192, in render
+    return json.dumps(
+           ~~~~~~~~~~^
+        content,
+        ^^^^^^^^
+    ...<3 lines>...
+        separators=(",", ":"),
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ).encode("utf-8")
+    ^
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\json\__init__.py", line 242, in dumps
+    **kw).encode(obj)
+          ~~~~~~^^^^^
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\json\encoder.py", line 202, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\json\encoder.py", line 263, in iterencode
+    return _iterencode(o, 0)
+ValueError: Out of range float values are not JSON compliant: nan
+when serializing dict item 'price'
+when serializing list item 0
+when serializing dict item 'recommendations'
+INFO:     127.0.0.1:53559 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62365 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53559 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62365 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53559 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62365 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53559 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62365 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59122 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59122 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53401 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59122 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53401 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59122 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53401 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59122 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59533 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59533 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59533 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59533 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64533 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64533 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'backend\main.py'. Reloading...
+ INFO:     127.0.0.1:64533 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64533 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64533 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64533 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64533 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64533 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58394 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58394 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58394 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58394 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK

@@ -204,7 +204,7 @@ function bindToolbar() {
   document.getElementById('btn-drawing')?.addEventListener('click', toggleDrawingPanel);
   document.getElementById('btn-alerts')?.addEventListener('click', () => Alerts.open());
   document.getElementById('btn-backtest')?.addEventListener('click', () => { switchBottomTab('backtest'); expandBottomPanel(); });
-  document.getElementById('btn-screener')?.addEventListener('click', () => { switchBottomTab('screener'); expandBottomPanel(); });
+  document.getElementById('btn-screener')?.addEventListener('click', () => { switchBottomTab('screener'); expandBottomPanel(); if (typeof Screener !== 'undefined') Screener.autoRefreshIfNeeded(); });
   document.getElementById('btn-dashboard')?.addEventListener('click', () => { switchBottomTab('dashboard'); expandBottomPanel(); if (typeof Dashboard !== 'undefined') Dashboard.loadAll(); });
   document.getElementById('btn-settings')?.addEventListener('click', () => Settings.open());
 }
@@ -232,6 +232,10 @@ function bindBottomPanel() {
       // 切换到仪表盘时自动加载数据
       if (tabName === 'dashboard' && typeof Dashboard !== 'undefined') {
         Dashboard.loadAll();
+      }
+      // 切换到选股时自动刷新
+      if (tabName === 'screener' && typeof Screener !== 'undefined') {
+        Screener.autoRefreshIfNeeded();
       }
     });
   });

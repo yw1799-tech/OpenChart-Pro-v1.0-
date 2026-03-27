@@ -7,55 +7,62 @@ let mainPaneId = null;
 const subPanes = [];        // 副图 pane 列表 { id, name }
 const MAX_SUB_PANES = 4;
 
-/* ---------- 暗色主题配置 ---------- */
+/* ---------- 暗色主题配置 (参考TradingView Pro) ---------- */
 const darkTheme = {
   grid: {
     show: true,
-    horizontal: { show: true, size: 1, color: '#1C2333', style: 'dash', dashedValue: [2, 4] },
-    vertical:   { show: true, size: 1, color: '#1C2333', style: 'dash', dashedValue: [2, 4] },
+    horizontal: { show: true, size: 1, color: 'rgba(42,46,57,0.5)', style: 'dash', dashedValue: [3, 3] },
+    vertical:   { show: false },
   },
   candle: {
     type: 'candle_solid',
     bar: {
-      upColor: '#00C853',
-      downColor: '#FF1744',
-      noChangeColor: '#7D8590',
-      upBorderColor: '#00C853',
-      downBorderColor: '#FF1744',
-      noChangeBorderColor: '#7D8590',
-      upWickColor: '#00C853',
-      downWickColor: '#FF1744',
-      noChangeWickColor: '#7D8590',
+      upColor: 'rgba(14,203,129,0.9)',
+      downColor: 'rgba(246,70,93,0.9)',
+      noChangeColor: '#838D9E',
+      upBorderColor: '#0ecb81',
+      downBorderColor: '#f6465d',
+      noChangeBorderColor: '#838D9E',
+      upWickColor: '#0ecb81',
+      downWickColor: '#f6465d',
+      noChangeWickColor: '#838D9E',
     },
     priceMark: {
       show: true,
-      high: { show: true, color: '#7D8590', textSize: 10 },
-      low:  { show: true, color: '#7D8590', textSize: 10 },
+      high: { show: true, color: '#787b86', textSize: 10 },
+      low:  { show: true, color: '#787b86', textSize: 10 },
       last: {
         show: true,
-        upColor: '#00C853',
-        downColor: '#FF1744',
-        noChangeColor: '#7D8590',
-        line: { show: true, style: 'dash', dashedValue: [4, 4], size: 1 },
-        text: { show: true, size: 11, paddingLeft: 4, paddingTop: 3, paddingRight: 4, paddingBottom: 3, borderRadius: 2 },
+        upColor: '#0ecb81',
+        downColor: '#f6465d',
+        noChangeColor: '#838D9E',
+        line: { show: true, style: 'dash', dashedValue: [6, 4], size: 1 },
+        text: { show: true, size: 11, paddingLeft: 8, paddingTop: 4, paddingRight: 8, paddingBottom: 4, borderRadius: 2, fontFamily: 'JetBrains Mono, Consolas, monospace' },
       },
     },
     tooltip: {
       showRule: 'always',
       showType: 'standard',
-      text: { size: 11, color: '#7D8590', marginLeft: 8, marginTop: 6, marginRight: 8, marginBottom: 0 },
+      text: { size: 11, color: '#787b86', marginLeft: 8, marginTop: 6, marginRight: 8, marginBottom: 0 },
     },
   },
   indicator: {
-    lastValueMark: { show: true, text: { size: 10 } },
-    tooltip: { showRule: 'always', text: { size: 11 } },
+    lastValueMark: { show: false },
+    tooltip: { showRule: 'always', showType: 'standard', text: { size: 11 } },
+    lines: [
+      { color: '#2196F3', size: 1 },   // 蓝
+      { color: '#FF9800', size: 1 },   // 橙
+      { color: '#AB47BC', size: 1 },   // 紫
+      { color: '#26A69A', size: 1 },   // 青绿
+      { color: '#EF5350', size: 1 },   // 红
+    ],
   },
   xAxis: {
     show: true,
     size: 'auto',
-    axisLine: { show: true, color: '#30363D', size: 1 },
-    tickLine: { show: true, size: 1, length: 3, color: '#30363D' },
-    tickText: { show: true, color: '#7D8590', size: 11 },
+    axisLine: { show: false },
+    tickLine: { show: false },
+    tickText: { show: true, color: '#787b86', size: 11, fontFamily: 'JetBrains Mono, Consolas, monospace' },
   },
   yAxis: {
     show: true,
@@ -63,24 +70,24 @@ const darkTheme = {
     position: 'right',
     type: 'normal',
     inside: false,
-    axisLine: { show: true, color: '#30363D', size: 1 },
-    tickLine: { show: true, size: 1, length: 3, color: '#30363D' },
-    tickText: { show: true, color: '#7D8590', size: 11 },
+    axisLine: { show: false },
+    tickLine: { show: false },
+    tickText: { show: true, color: '#787b86', size: 11, fontFamily: 'JetBrains Mono, Consolas, monospace' },
   },
   crosshair: {
     show: true,
     horizontal: {
       show: true,
-      line: { show: true, style: 'dash', dashedValue: [4, 2], size: 1, color: '#4B5563' },
-      text: { show: true, size: 11, color: '#E6EDF3', borderRadius: 2, paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2, backgroundColor: '#30363D' },
+      line: { show: true, style: 'dash', dashedValue: [4, 4], size: 1, color: 'rgba(120,123,134,0.4)' },
+      text: { show: true, size: 11, color: '#D1D4DC', borderRadius: 2, paddingLeft: 8, paddingRight: 8, paddingTop: 4, paddingBottom: 4, backgroundColor: '#363A45', borderColor: '#505050', borderSize: 1, fontFamily: 'JetBrains Mono, Consolas, monospace' },
     },
     vertical: {
       show: true,
-      line: { show: true, style: 'dash', dashedValue: [4, 2], size: 1, color: '#4B5563' },
-      text: { show: true, size: 11, color: '#E6EDF3', borderRadius: 2, paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2, backgroundColor: '#30363D' },
+      line: { show: true, style: 'dash', dashedValue: [4, 4], size: 1, color: 'rgba(120,123,134,0.4)' },
+      text: { show: true, size: 11, color: '#D1D4DC', borderRadius: 2, paddingLeft: 8, paddingRight: 8, paddingTop: 4, paddingBottom: 4, backgroundColor: '#363A45', borderColor: '#505050', borderSize: 1, fontFamily: 'JetBrains Mono, Consolas, monospace' },
     },
   },
-  separator: { size: 2, color: '#30363D', activeBackgroundColor: 'rgba(33,150,243,0.15)' },
+  separator: { size: 1, color: 'rgba(42,46,57,0.8)', activeBackgroundColor: 'rgba(33,150,243,0.2)' },
 };
 
 /* ---------- 图表初始化 ---------- */
@@ -117,6 +124,58 @@ function initChart() {
     },
   });
 
+  // 注册BOLL指标 — 高级配色
+  try {
+    klinecharts.registerIndicator({
+      name: 'BOLL',
+      shortName: 'BOLL',
+      calcParams: [20, 2],
+      precision: 2,
+      figures: [
+        { key: 'up',   title: 'UP: ',   type: 'line' },
+        { key: 'mid',  title: 'MID: ',  type: 'line' },
+        { key: 'dn',   title: 'DN: ',   type: 'line' },
+      ],
+      styles: {
+        lines: [
+          { color: 'rgba(33,150,243,0.45)', size: 1 },   // 上轨 - 淡蓝
+          { color: 'rgba(255,152,0,0.6)', size: 1 },      // 中轨 - 暖橙
+          { color: 'rgba(33,150,243,0.45)', size: 1 },   // 下轨 - 淡蓝
+        ],
+      },
+      calc: (dataList, { calcParams }) => {
+        const period = calcParams[0];
+        const stdDevMultiplier = calcParams[1];
+        return dataList.map((kLineData, i) => {
+          if (i < period - 1) return {};
+          let sum = 0;
+          for (let j = i - period + 1; j <= i; j++) {
+            sum += dataList[j].close;
+          }
+          const mid = sum / period;
+          let devSum = 0;
+          for (let j = i - period + 1; j <= i; j++) {
+            const diff = dataList[j].close - mid;
+            devSum += diff * diff;
+          }
+          const stdDev = Math.sqrt(devSum / period);
+          return {
+            up:  mid + stdDevMultiplier * stdDev,
+            mid: mid,
+            dn:  mid - stdDevMultiplier * stdDev,
+          };
+        });
+      },
+    });
+    console.log('[Chart] 已注册自定义BOLL指标样式');
+  } catch(e) {
+    console.warn('[Chart] 注册BOLL样式失败:', e);
+  }
+
+  // 不再自定义RSI，使用KLineChart内置RSI但修改参数为只有1条线
+  // 内置RSI默认参数[6,12,24]改为[14]
+  // 通过覆盖注册实现
+
   // 默认添加成交量副图
   try {
     chart.createIndicator('VOL', false, { id: 'vol_pane', height: 80 });
@@ -141,7 +200,7 @@ async function loadKlines(symbol, interval, market) {
   if (loading) loading.classList.add('show');
 
   try {
-    const resp = await fetch(`/api/klines?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=500&market=${encodeURIComponent(apiMarket)}`);
+    const resp = await fetch(`/api/klines?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=1000&market=${encodeURIComponent(apiMarket)}`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
 
@@ -261,6 +320,7 @@ function addSubPane(name, indicatorName) {
 
   const paneId = chart.createIndicator(indicatorName || name, false, { id: name.toLowerCase() + '_pane' });
   subPanes.push({ id: paneId, name });
+
   return paneId;
 }
 
@@ -285,12 +345,38 @@ function registerCustomIndicator(config) {
 /* ---------- 添加主图/副图指标 ---------- */
 function addMainIndicator(name) {
   if (!chart) return;
-  chart.createIndicator(name, true);
+  // overlay类指标叠加到主图candle_pane，与K线共享Y轴
+  chart.createIndicator(name, false, { id: 'candle_pane' });
+  console.log(`[Chart] 已叠加主图指标: ${name} -> candle_pane`);
 }
 
 function addSubIndicator(name) {
   if (!chart) return;
-  return addSubPane(name, name);
+  const paneId = addSubPane(name, name);
+
+  // RSI: 添加30/50/70水平参考线overlay
+  if (name === 'RSI' && paneId) {
+    setTimeout(() => {
+      try {
+        [
+          { value: 70, color: 'rgba(239,83,80,0.5)' },
+          { value: 50, color: 'rgba(120,123,134,0.35)' },
+          { value: 30, color: 'rgba(38,166,154,0.5)' },
+        ].forEach(lv => {
+          chart.createOverlay({
+            name: 'horizontalStraightLine',
+            points: [{ value: lv.value }],
+            styles: {
+              line: { color: lv.color, size: 1, style: 'dashed', dashedValue: [4, 3] },
+              text: { show: false },
+            },
+            lock: true,
+          }, paneId);
+        });
+      } catch(e) { console.warn('[Chart] RSI参考线失败:', e); }
+    }, 300);
+  }
+  return paneId;
 }
 
 function removeIndicator(name, paneId) {
@@ -402,20 +488,47 @@ function updateIndicatorValues(klines) {
     return v.toFixed(4);
   }
 
+  // BOLL
+  const ma20b = sma(closes, 20);
+  let bollUp = null, bollDn = null;
+  if (ma20b && closes.length >= 20) {
+    let devSum = 0;
+    for (let i = n - 20; i < n; i++) devSum += (closes[i] - ma20b) ** 2;
+    const std = Math.sqrt(devSum / 20);
+    bollUp = ma20b + 2 * std;
+    bollDn = ma20b - 2 * std;
+  }
+
+  // ATR
+  let atr14 = null;
+  if (klines.length >= 15) {
+    let trSum = 0;
+    for (let i = n - 14; i < n; i++) {
+      const h = klines[i].high, l = klines[i].low, pc = klines[i-1].close;
+      trSum += Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
+    }
+    atr14 = trSum / 14;
+  }
+
   const indicators = [
-    { name: 'MA(5)', value: ma5, color: '#FF6B6B' },
-    { name: 'MA(10)', value: ma10, color: '#4ECDC4' },
-    { name: 'MA(20)', value: ma20, color: '#45B7D1' },
-    { name: 'RSI(14)', value: rsiVal, color: '#FFEAA7' },
-    { name: 'MACD', value: macdDif, color: '#A855F7' },
+    { name: 'MA5',    value: ma5,     color: '#2196F3' },
+    { name: 'MA10',   value: ma10,    color: '#FF9800' },
+    { name: 'MA20',   value: ma20,    color: '#AB47BC' },
+    { name: 'RSI',    value: rsiVal,  color: '#AB47BC' },
+    { name: 'MACD',   value: macdDif, color: '#2196F3' },
   ];
 
-  container.innerHTML = indicators.map(ind => `
-    <div class="info-indicator-row">
-      <span class="ind-name" style="color:${ind.color}">${ind.name}</span>
-      <span class="ind-value">${fmt(ind.value)}</span>
-    </div>
-  `).join('');
+  let html = '<div class="ind-grid">';
+  for (const ind of indicators) {
+    html += `<div class="ind-cell">
+      <span class="ind-dot" style="background:${ind.color}"></span>
+      <span class="ind-label">${ind.name}</span>
+      <span class="ind-val">${fmt(ind.value)}</span>
+    </div>`;
+  }
+  html += '</div>';
+
+  container.innerHTML = html;
 }
 
 /* ---------- 加载活跃警报到右侧面板 ---------- */

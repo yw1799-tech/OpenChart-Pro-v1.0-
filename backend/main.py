@@ -9,6 +9,7 @@ import time
 import asyncio
 import logging
 import aiosqlite
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
 
@@ -89,6 +90,14 @@ class ScreenerAIRequest(BaseModel):
     market: str = "crypto"
     hours: int = 24
     min_score: int = 60
+
+class ScreenerAIRecommendRequest(BaseModel):
+    market: str = "crypto"
+
+class ScreenerTechSignalsRequest(BaseModel):
+    market: str = "crypto"
+    signals: List[str] = ["macd_cross", "rsi_oversold", "volume_breakout"]
+    symbols: List[str] = []  # 前端可传入指定品种列表
 
 class WatchlistAddRequest(BaseModel):
     symbol: str
@@ -323,6 +332,9 @@ def _guess_market(symbol: str, market_hint: str) -> str:
     # A股: 纯6位数字
     if symbol.isdigit() and len(symbol) == 6:
         return "cn"
+    # 港股: 纯4-5位数字（00700, 09988等）
+    if symbol.isdigit() and len(symbol) in (4, 5):
+        return "hk"
     # 美股: 纯字母
     if symbol.isalpha() and symbol.isupper() and len(symbol) <= 5:
         return "us"
@@ -951,6 +963,602 @@ async def screener_ai_status(task_id: str):
         return {"task_id": task_id, "status": "not_found", "result": None}
     return {"task_id": task_id, **task}
 
+
+# ---- AI 驱动推荐 (新版选股) ----
+
+# 缓存：避免频繁调用 LLM
+_ai_recommend_cache: Dict[str, Dict] = {}  # {market: {data, timestamp}}
+
+@screener_router.post("/ai-recommend")
+async def screener_ai_recommend(req: ScreenerAIRecommendRequest):
+    """
+    AI 驱动推荐 — 根据新闻/政策自动推荐品种。
+    如果有 LLM Key 则调用 AI 分析；否则返回基于新闻关键词的基础推荐。
+    结果缓存 5 分钟。
+    """
+    import time as _time
+    market = req.market
+
+    # 检查缓存
+    cached = _ai_recommend_cache.get(market)
+    if cached and (_time.time() - cached.get("timestamp", 0)) < 1800:  # 30分钟缓存
+        return cached["data"]
+
+    try:
+        # 读取 LLM 配置
+        llm_settings = {}
+        try:
+            db = await get_db()
+            cursor = await db.execute(
+                "SELECT key, value FROM settings WHERE key LIKE 'deepseek_%' OR key LIKE 'qwen_%' OR key = 'llm_provider'"
+            )
+            rows = await cursor.fetchall()
+            for row in rows:
+                llm_settings[row[0]] = row[1].strip('"') if row[1].startswith('"') else row[1]
+            await db.close()
+        except Exception:
+            pass
+
+        provider = llm_settings.get('llm_provider', 'deepseek')
+        if provider == 'qwen':
+            api_key = llm_settings.get('qwen_api_key', '')
+            base_url = llm_settings.get('qwen_base_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1')
+            model = llm_settings.get('qwen_model', 'qwen-turbo')
+        else:
+            api_key = llm_settings.get('deepseek_api_key', '')
+            base_url = llm_settings.get('deepseek_base_url', 'https://api.deepseek.com')
+            model = llm_settings.get('deepseek_model', 'deepseek-chat')
+
+        has_llm = bool(api_key and len(api_key) > 5)
+
+        # 1. 采集新闻（根据市场类型选择新闻源）
+        news_items = []
+        try:
+            from backend.screener.news import NewsCollector
+            collector = NewsCollector()
+            news_items = await collector.fetch_all(market=market)
+            await collector.close()
+        except Exception as e:
+            logger.warning(f"新闻采集失败: {e}")
+
+        # 策略：先用默认热门品种，获取实时价格，然后用AI给推荐理由和评分
+        recommendations = _get_default_hot_symbols(market)
+        source = "热门品种推荐"
+
+        # 并行获取实时价格（asyncio.gather加速）
+        from backend.data.models import Market as MktEnum, Interval
+        from backend.data.fetcher import get_fetcher
+        market_enum = MktEnum.CRYPTO if market == 'crypto' else MktEnum.US if market == 'us' else MktEnum.HK if market == 'hk' else MktEnum.CN
+        fetcher = get_fetcher(market_enum)
+
+        async def _fetch_price(symbol, market, fetcher):
+            try:
+                fetch_sym = symbol
+                if market == 'hk' and not symbol.endswith('.HK'):
+                    code = symbol.lstrip('0') or '0'
+                    fetch_sym = code.zfill(4) + '.HK'
+                klines = await fetcher.get_klines(fetch_sym, Interval.D1, limit=2)
+                if klines and len(klines) >= 2:
+                    chg = round((klines[-1].close - klines[-2].close) / klines[-2].close * 100, 2) if klines[-2].close else 0
+                    return symbol, round(klines[-1].close, 2), chg
+                elif klines and len(klines) == 1:
+                    return symbol, round(klines[-1].close, 2), 0
+            except Exception:
+                pass
+            return symbol, None, 0
+
+        # 分批获取价格（每批5个，间隔0.5秒，避免被限流）
+        price_map = {}
+        batch_size = 5
+        for i in range(0, len(recommendations), batch_size):
+            batch = recommendations[i:i+batch_size]
+            tasks = [_fetch_price(rec["symbol"], market, fetcher) for rec in batch]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for result in results:
+                if isinstance(result, Exception):
+                    continue
+                sym, price, chg = result
+                price_map[sym] = (price, chg)
+            if i + batch_size < len(recommendations):
+                await asyncio.sleep(0.5)
+
+        for rec in recommendations:
+            price, chg = price_map.get(rec["symbol"], (None, 0))
+            if price is not None:
+                rec["price"] = price
+                rec["change_pct"] = chg
+
+        # 如果有LLM Key + 有新闻 → AI做真正的初筛
+        if has_llm and news_items:
+            try:
+                from openai import AsyncOpenAI
+                client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+
+                market_names = {"crypto": "加密货币", "us": "美股", "hk": "港股", "cn": "A股"}
+                market_name = market_names.get(market, market)
+                symbols_str = ", ".join([f"{r['symbol']}({r['name']})" for r in recommendations])
+                news_str = "\n".join([f"- {n.get('title','')}" for n in news_items[:25]])
+
+                # 获取价格信息
+                price_info = []
+                for r in recommendations:
+                    if r.get("price"):
+                        price_info.append(f"{r['symbol']}({r['name']}): 现价{r['price']}, 涨跌{r['change_pct']}%")
+                price_str = "\n".join(price_info) if price_info else "暂无价格数据"
+
+                prompt = f"""你是专业的金融分析师和交易顾问。请根据以下信息，从{market_name}市场中筛选出**当前最值得关注和可能有操作机会**的品种。
+
+## 你的任务
+你不是推荐热门股，而是帮用户做**第一轮初筛**——从候选品种中找出**当前有操作机会、值得进一步研究**的标的。
+用户只想看到"可能可以买入"或"值得密切关注"的品种，**不要推荐需要回避的品种**。
+
+筛选标准（按优先级）：
+1. 政策利好直接受益的板块龙头
+2. 近期有正面催化事件（财报超预期、产品发布、行业政策等）
+3. 技术面出现买入信号（超跌反弹、突破关键位、放量上攻等）
+4. 估值合理或被低估，有安全边际
+
+**排除标准**：面临重大利空、监管风险、业绩暴雷、高位滞涨的品种不要推荐。
+
+## 候选品种池（含当前价格和涨跌）
+{price_str}
+
+## 最新市场新闻
+{news_str}
+
+## 输出要求
+从候选品种中筛选出3-6个最有操作价值的，按推荐优先级排序。
+返回JSON数组，每个元素：
+- symbol: 品种代码
+- score: 0-100综合评分（80+强烈推荐，60-79值得关注，<60观望）
+- action: 只能是"buy"(建议买入)或"watch"(关注等待机会)，不推荐就不要列出
+- reason: 推荐/回避理由（结合具体新闻和盘面，30字以内）
+- hot_topic: 核心催化因素（如"AI政策利好"、"财报超预期"等，8字以内）
+- risk: 主要风险（10字以内）
+
+只返回JSON数组，不要其他文字。"""
+
+                resp = await asyncio.wait_for(
+                    client.chat.completions.create(
+                        model=model,
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=1500,
+                        temperature=0.3,
+                    ),
+                    timeout=20
+                )
+                import json as _json
+                content = resp.choices[0].message.content.strip()
+                if "```" in content:
+                    content = content.split("```")[1].replace("json","").strip()
+                ai_results = _json.loads(content)
+
+                # 用AI结果更新推荐，并过滤只保留AI选出的
+                ai_map = {r["symbol"]: r for r in ai_results}
+                rec_map = {r["symbol"]: r for r in recommendations}
+
+                filtered = []
+                for ai_rec in ai_results:
+                    sym = ai_rec.get("symbol", "")
+                    base = rec_map.get(sym, {})
+                    filtered.append({
+                        "symbol": sym,
+                        "name": base.get("name", ""),
+                        "market": market,
+                        "price": base.get("price"),
+                        "change_pct": base.get("change_pct", 0),
+                        "score": ai_rec.get("score", 50),
+                        "hot_topic": ai_rec.get("hot_topic", ""),
+                        "reason": ai_rec.get("reason", ""),
+                        "action": ai_rec.get("action", "watch"),
+                        "risk": ai_rec.get("risk", ""),
+                        "signals": [],
+                    })
+
+                if filtered:
+                    # 过滤掉action=avoid/sell的，只保留有操作价值的
+                    recommendations = [r for r in filtered if r.get("action") not in ("avoid", "sell")]
+                    if not recommendations:
+                        recommendations = filtered  # 如果全被过滤了，保留原始结果
+                    source = f"{provider.upper()} AI 初筛"
+                else:
+                    # AI没返回有效结果，用默认排序
+                    recommendations.sort(key=lambda x: abs(x.get("change_pct", 0)), reverse=True)
+                    source = f"{provider.upper()} AI 分析"
+            except Exception as e:
+                logger.warning(f"AI初筛失败(降级为基础推荐): {e}")
+
+        # 清理NaN/None值，防止JSON序列化错误
+        import math
+        for rec in recommendations:
+            for k in ("price", "change_pct", "score"):
+                v = rec.get(k)
+                if v is not None and isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                    rec[k] = 0
+            if rec.get("price") is None:
+                rec["price"] = 0
+            if rec.get("change_pct") is None:
+                rec["change_pct"] = 0
+
+        result = {
+            "recommendations": recommendations[:12],
+            "updated_at": datetime.now().isoformat(),
+            "source": source,
+        }
+
+        _ai_recommend_cache[market] = {"data": result, "timestamp": _time.time()}
+        return result
+
+    except Exception as e:
+        import traceback
+        print(f"[AI推荐] 异常: {e}")
+        traceback.print_exc()
+        fallback = _get_default_hot_symbols(market)
+        return {
+            "recommendations": fallback,
+            "updated_at": datetime.now().isoformat(),
+            "source": "默认热门品种",
+        }
+
+
+@screener_router.post("/tech-signals")
+async def screener_tech_signals(req: ScreenerTechSignalsRequest):
+    """
+    技术面信号扫描 — 自动扫描该市场热门品种，返回有技术信号的品种。
+    """
+    import numpy as np
+    from backend.screener.rules import _rsi, _macd, _sma
+    from backend.data.models import Market as MktEnum, Interval
+    from backend.data.fetcher import get_fetcher
+
+    try:
+        symbol_list = req.symbols if req.symbols else _get_hot_symbol_list(req.market)
+        market_enum = MktEnum.CRYPTO if req.market == 'crypto' else MktEnum.US if req.market == 'us' else MktEnum.HK if req.market == 'hk' else MktEnum.CN
+        fetcher = get_fetcher(market_enum)
+
+        signals = []
+        for idx, symbol in enumerate(symbol_list[:15]):  # 限制扫描数量避免超时
+            if idx > 0 and idx % 5 == 0:
+                await asyncio.sleep(0.5)  # 每5个请求暂停0.5秒避免限流
+            try:
+                # 港股加.HK后缀
+                fetch_sym = symbol
+                if req.market == 'hk' and not symbol.endswith('.HK'):
+                    code = symbol.lstrip('0') or '0'
+                    while len(code) < 4:
+                        code = '0' + code
+                    fetch_sym = code + '.HK'
+                klines = await fetcher.get_klines(fetch_sym, Interval.D1, limit=50)
+                print(f"[TechScan] {fetch_sym}: {len(klines) if klines else 0} klines")
+                if not klines or len(klines) < 20:
+                    continue
+
+                close = np.array([k.close for k in klines], dtype=np.float64)
+                volume = np.array([k.volume for k in klines], dtype=np.float64)
+                latest = float(close[-1])
+                prev = float(close[-2]) if len(close) > 1 else latest
+                change_pct = round((latest / prev - 1) * 100, 2) if prev > 0 else 0
+
+                # RSI
+                rsi_val = _rsi(close, 14)
+                rsi_val = round(float(rsi_val), 1) if not np.isnan(rsi_val) else None
+
+                # MACD
+                dif, dea = _macd(close)
+                macd_trend = "--"
+                signal_type = None
+
+                if not np.isnan(dif[-1]) and not np.isnan(dif[-2]):
+                    # MACD金叉
+                    if dif[-2] <= dea[-2] and dif[-1] > dea[-1]:
+                        signal_type = "MACD金叉"
+                        macd_trend = "多"
+                    # MACD死叉
+                    elif dif[-2] >= dea[-2] and dif[-1] < dea[-1]:
+                        signal_type = "MACD死叉"
+                        macd_trend = "空"
+                    elif dif[-1] > dea[-1]:
+                        macd_trend = "多"
+                    else:
+                        macd_trend = "空"
+
+                # RSI 超卖/超买
+                if rsi_val is not None:
+                    if rsi_val <= 30:
+                        signal_type = signal_type or "RSI超卖"
+                    elif rsi_val >= 70:
+                        signal_type = signal_type or "RSI超买"
+
+                # 量比
+                vol_ma = _sma(volume, 20)
+                vol_ratio = round(float(volume[-1] / vol_ma[-1]), 1) if not np.isnan(vol_ma[-1]) and vol_ma[-1] > 0 else 1.0
+
+                # 放量突破
+                if vol_ratio >= 2.0 and change_pct > 0:
+                    if signal_type:
+                        signal_type += "+放量"
+                    else:
+                        signal_type = "放量突破"
+
+                # 均线突破
+                ma20 = _sma(close, 20)
+                if not np.isnan(ma20[-1]) and not np.isnan(ma20[-2]):
+                    if close[-2] <= ma20[-2] and close[-1] > ma20[-1]:
+                        signal_type = (signal_type + "+突破MA20") if signal_type else "突破MA20"
+
+                # 趋势判断：连涨/连跌
+                if len(close) >= 3:
+                    if close[-1] > close[-2] > close[-3]:
+                        signal_type = signal_type or "连续上涨"
+                    elif close[-1] < close[-2] < close[-3]:
+                        signal_type = signal_type or "连续下跌"
+
+                # MA5/MA10金叉死叉
+                if len(close) >= 10:
+                    ma5 = _sma(close, 5)
+                    ma10 = _sma(close, 10)
+                    if not np.isnan(ma5[-1]) and not np.isnan(ma10[-1]) and not np.isnan(ma5[-2]) and not np.isnan(ma10[-2]):
+                        if ma5[-2] <= ma10[-2] and ma5[-1] > ma10[-1]:
+                            signal_type = (signal_type + "+MA金叉") if signal_type else "MA5/10金叉"
+                        elif ma5[-2] >= ma10[-2] and ma5[-1] < ma10[-1]:
+                            signal_type = (signal_type + "+MA死叉") if signal_type else "MA5/10死叉"
+
+                # 如果没有信号，标记为"--"但仍然显示
+                if not signal_type:
+                    signal_type = "暂无明显信号"
+
+                if True:  # 始终添加（让用户看到所有品种的技术面状态）
+                    signals.append({
+                        "symbol": symbol,
+                        "price": round(latest, 4),
+                        "change_pct": change_pct,
+                        "signal_type": signal_type,
+                        "rsi": rsi_val,
+                        "macd_trend": macd_trend,
+                        "volume_ratio": vol_ratio,
+                        "market": req.market,
+                    })
+
+            except Exception as e:
+                logger.debug(f"技术扫描 {symbol} 异常: {e}")
+                continue
+
+        # 按信号重要性排序（有多个信号的优先）
+        signals.sort(key=lambda x: len(x.get("signal_type", "")), reverse=True)
+        return {"signals": signals[:20]}
+
+    except Exception as e:
+        logger.error(f"技术信号扫描失败: {e}")
+        return {"signals": [], "error": str(e)}
+
+
+def _build_keyword_recommendations(market: str, news_items: list) -> list:
+    """基于新闻关键词匹配生成基础推荐（不依赖 LLM）"""
+    # 市场对应的热门品种和关键词映射
+    keyword_map = {
+        "crypto": {
+            "BTC": ["比特币", "bitcoin", "btc", "加密", "数字货币", "矿", "减半"],
+            "ETH": ["以太坊", "ethereum", "eth", "智能合约", "defi"],
+            "SOL": ["solana", "sol", "高性能"],
+            "BNB": ["binance", "bnb", "币安"],
+            "XRP": ["ripple", "xrp", "跨境支付"],
+            "DOGE": ["dogecoin", "doge", "马斯克", "meme"],
+        },
+        "us": {
+            "NVDA": ["英伟达", "nvidia", "ai芯片", "gpu", "算力", "人工智能"],
+            "TSLA": ["特斯拉", "tesla", "电动车", "自动驾驶", "马斯克"],
+            "AAPL": ["苹果", "apple", "iphone"],
+            "MSFT": ["微软", "microsoft", "azure", "copilot"],
+            "GOOGL": ["谷歌", "google", "alphabet", "搜索"],
+            "AMZN": ["亚马逊", "amazon", "aws", "电商"],
+            "META": ["meta", "facebook", "元宇宙", "社交"],
+            "AMD": ["amd", "芯片", "处理器"],
+        },
+        "hk": {
+            "00700": ["腾讯", "微信", "游戏"],
+            "09988": ["阿里巴巴", "淘宝", "电商"],
+            "09888": ["百度", "搜索", "AI"],
+            "01810": ["小米", "手机"],
+            "09618": ["京东", "电商"],
+            "03690": ["美团", "外卖"],
+        },
+        "cn": {
+            "600519": ["茅台", "白酒"],
+            "000858": ["五粮液", "白酒"],
+            "300750": ["宁德时代", "电池", "新能源"],
+            "601012": ["隆基", "光伏", "太阳能"],
+            "002594": ["比亚迪", "电动车", "新能源"],
+            "000001": ["平安", "金融", "银行"],
+        },
+    }
+
+    market_symbols = keyword_map.get(market, keyword_map.get("crypto", {}))
+    scores = {sym: 0 for sym in market_symbols}
+
+    # 扫描新闻标题匹配关键词
+    for news in (news_items or []):
+        title = (news.get("title", "") + " " + news.get("summary", "")).lower()
+        for sym, keywords in market_symbols.items():
+            for kw in keywords:
+                if kw.lower() in title:
+                    scores[sym] += 10
+                    break
+
+    # 按得分排序，未匹配的也包含（作为热门品种）
+    sorted_syms = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+
+    recs = []
+    for sym, score in sorted_syms:
+        base_score = max(50, min(90, 50 + score))
+        recs.append({
+            "symbol": sym,
+            "name": "",
+            "market": market,
+            "price": None,
+            "change_pct": 0,
+            "score": base_score,
+            "hot_topic": "热门品种" if score == 0 else "新闻热点",
+            "reason": "基于新闻关键词匹配" if score > 0 else "市场热门品种",
+            "action": "watch",
+            "signals": [],
+        })
+
+    return recs
+
+
+def _get_default_hot_symbols(market: str) -> list:
+    """返回默认热门品种列表（覆盖主要行业龙头，30+品种供AI筛选）"""
+    defaults = {
+        "crypto": [
+            {"symbol": "BTC-USDT", "name": "比特币", "hot_topic": "数字黄金"},
+            {"symbol": "ETH-USDT", "name": "以太坊", "hot_topic": "智能合约"},
+            {"symbol": "SOL-USDT", "name": "Solana", "hot_topic": "高性能链"},
+            {"symbol": "BNB-USDT", "name": "币安币", "hot_topic": "交易所"},
+            {"symbol": "XRP-USDT", "name": "瑞波", "hot_topic": "跨境支付"},
+            {"symbol": "DOGE-USDT", "name": "狗狗币", "hot_topic": "Meme"},
+            {"symbol": "ADA-USDT", "name": "艾达币", "hot_topic": "PoS公链"},
+            {"symbol": "AVAX-USDT", "name": "雪崩", "hot_topic": "DeFi生态"},
+            {"symbol": "DOT-USDT", "name": "波卡", "hot_topic": "跨链"},
+            {"symbol": "MATIC-USDT", "name": "Polygon", "hot_topic": "L2扩容"},
+            {"symbol": "LINK-USDT", "name": "Chainlink", "hot_topic": "预言机"},
+            {"symbol": "UNI-USDT", "name": "Uniswap", "hot_topic": "DEX龙头"},
+            {"symbol": "ATOM-USDT", "name": "Cosmos", "hot_topic": "跨链生态"},
+            {"symbol": "FIL-USDT", "name": "Filecoin", "hot_topic": "存储"},
+            {"symbol": "APT-USDT", "name": "Aptos", "hot_topic": "Move公链"},
+        ],
+        "us": [
+            {"symbol": "NVDA", "name": "英伟达", "hot_topic": "AI芯片"},
+            {"symbol": "TSLA", "name": "特斯拉", "hot_topic": "电动车"},
+            {"symbol": "AAPL", "name": "苹果", "hot_topic": "消费电子"},
+            {"symbol": "MSFT", "name": "微软", "hot_topic": "云+AI"},
+            {"symbol": "GOOGL", "name": "谷歌", "hot_topic": "搜索+AI"},
+            {"symbol": "AMZN", "name": "亚马逊", "hot_topic": "电商+云"},
+            {"symbol": "META", "name": "Meta", "hot_topic": "社交+AI"},
+            {"symbol": "AMD", "name": "AMD", "hot_topic": "芯片"},
+            {"symbol": "NFLX", "name": "奈飞", "hot_topic": "流媒体"},
+            {"symbol": "JPM", "name": "摩根大通", "hot_topic": "银行龙头"},
+            {"symbol": "BAC", "name": "美国银行", "hot_topic": "金融"},
+            {"symbol": "V", "name": "Visa", "hot_topic": "支付"},
+            {"symbol": "MA", "name": "万事达", "hot_topic": "支付"},
+            {"symbol": "UNH", "name": "联合健康", "hot_topic": "医疗保险"},
+            {"symbol": "JNJ", "name": "强生", "hot_topic": "医药"},
+            {"symbol": "PFE", "name": "辉瑞", "hot_topic": "制药"},
+            {"symbol": "WMT", "name": "沃尔玛", "hot_topic": "零售"},
+            {"symbol": "HD", "name": "家得宝", "hot_topic": "家居零售"},
+            {"symbol": "CRM", "name": "Salesforce", "hot_topic": "SaaS"},
+            {"symbol": "ORCL", "name": "甲骨文", "hot_topic": "数据库+云"},
+            {"symbol": "AVGO", "name": "博通", "hot_topic": "AI芯片"},
+            {"symbol": "MU", "name": "美光", "hot_topic": "存储芯片"},
+            {"symbol": "INTC", "name": "英特尔", "hot_topic": "CPU"},
+            {"symbol": "COIN", "name": "Coinbase", "hot_topic": "加密交易所"},
+            {"symbol": "PLTR", "name": "Palantir", "hot_topic": "大数据+AI"},
+            {"symbol": "SNOW", "name": "Snowflake", "hot_topic": "数据云"},
+            {"symbol": "SQ", "name": "Block", "hot_topic": "金融科技"},
+            {"symbol": "SHOP", "name": "Shopify", "hot_topic": "电商SaaS"},
+        ],
+        "hk": [
+            {"symbol": "00700", "name": "腾讯", "hot_topic": "社交+游戏"},
+            {"symbol": "09988", "name": "阿里巴巴", "hot_topic": "电商+云"},
+            {"symbol": "09888", "name": "百度", "hot_topic": "搜索+AI"},
+            {"symbol": "01810", "name": "小米", "hot_topic": "手机+IoT"},
+            {"symbol": "09618", "name": "京东", "hot_topic": "电商"},
+            {"symbol": "03690", "name": "美团", "hot_topic": "本地生活"},
+            {"symbol": "02318", "name": "中国平安", "hot_topic": "保险"},
+            {"symbol": "00388", "name": "港交所", "hot_topic": "交易所"},
+            {"symbol": "01024", "name": "快手", "hot_topic": "短视频"},
+            {"symbol": "02015", "name": "理想汽车", "hot_topic": "新能源车"},
+            {"symbol": "09866", "name": "蔚来", "hot_topic": "新能源车"},
+            {"symbol": "00941", "name": "中国移动", "hot_topic": "电信"},
+            {"symbol": "01211", "name": "比亚迪股份", "hot_topic": "电动车"},
+            {"symbol": "02269", "name": "药明生物", "hot_topic": "生物医药"},
+            {"symbol": "09999", "name": "网易", "hot_topic": "游戏"},
+            {"symbol": "01299", "name": "友邦保险", "hot_topic": "保险"},
+            {"symbol": "00175", "name": "吉利汽车", "hot_topic": "汽车"},
+            {"symbol": "09868", "name": "小鹏汽车", "hot_topic": "新能源车"},
+            {"symbol": "02020", "name": "安踏体育", "hot_topic": "运动消费"},
+            {"symbol": "00005", "name": "汇丰控股", "hot_topic": "银行"},
+        ],
+        "cn": [
+            {"symbol": "600519", "name": "贵州茅台", "hot_topic": "白酒龙头"},
+            {"symbol": "000858", "name": "五粮液", "hot_topic": "白酒"},
+            {"symbol": "000568", "name": "泸州老窖", "hot_topic": "白酒"},
+            {"symbol": "300750", "name": "宁德时代", "hot_topic": "新能源电池"},
+            {"symbol": "002594", "name": "比亚迪", "hot_topic": "电动车"},
+            {"symbol": "601012", "name": "隆基绿能", "hot_topic": "光伏"},
+            {"symbol": "600438", "name": "通威股份", "hot_topic": "光伏+饲料"},
+            {"symbol": "000001", "name": "平安银行", "hot_topic": "金融"},
+            {"symbol": "601318", "name": "中国平安", "hot_topic": "保险"},
+            {"symbol": "601398", "name": "工商银行", "hot_topic": "银行"},
+            {"symbol": "600036", "name": "招商银行", "hot_topic": "银行"},
+            {"symbol": "002415", "name": "海康威视", "hot_topic": "安防+AI"},
+            {"symbol": "300059", "name": "东方财富", "hot_topic": "券商+互联网"},
+            {"symbol": "688981", "name": "中芯国际", "hot_topic": "半导体"},
+            {"symbol": "002230", "name": "科大讯飞", "hot_topic": "AI语音"},
+            {"symbol": "600276", "name": "恒瑞医药", "hot_topic": "创新药"},
+            {"symbol": "300760", "name": "迈瑞医疗", "hot_topic": "医疗器械"},
+            {"symbol": "603259", "name": "药明康德", "hot_topic": "CXO"},
+            {"symbol": "000651", "name": "格力电器", "hot_topic": "家电"},
+            {"symbol": "000333", "name": "美的集团", "hot_topic": "家电"},
+            {"symbol": "600887", "name": "伊利股份", "hot_topic": "乳业"},
+            {"symbol": "600048", "name": "保利发展", "hot_topic": "地产"},
+            {"symbol": "601668", "name": "中国建筑", "hot_topic": "基建"},
+            {"symbol": "002371", "name": "北方华创", "hot_topic": "半导体设备"},
+            {"symbol": "688008", "name": "澜起科技", "hot_topic": "芯片"},
+            {"symbol": "300274", "name": "阳光电源", "hot_topic": "光伏储能"},
+            {"symbol": "002459", "name": "晶澳科技", "hot_topic": "光伏组件"},
+            {"symbol": "600893", "name": "航发动力", "hot_topic": "军工"},
+            {"symbol": "002179", "name": "中航光电", "hot_topic": "军工电子"},
+            {"symbol": "300033", "name": "同花顺", "hot_topic": "金融IT"},
+        ],
+    }
+
+    result = []
+    for item in defaults.get(market, defaults["crypto"]):
+        result.append({
+            "symbol": item["symbol"],
+            "name": item["name"],
+            "market": market,
+            "price": None,
+            "change_pct": 0,
+            "score": 60,
+            "hot_topic": item["hot_topic"],
+            "reason": "市场热门品种",
+            "action": "watch",
+            "signals": [],
+        })
+    return result
+
+
+def _get_hot_symbol_list(market: str) -> list:
+    """返回热门品种代码列表（用于技术扫描）"""
+    lists = {
+        "crypto": [
+            "BTC-USDT", "ETH-USDT", "SOL-USDT", "BNB-USDT", "XRP-USDT",
+            "DOGE-USDT", "ADA-USDT", "AVAX-USDT", "DOT-USDT", "MATIC-USDT",
+            "LINK-USDT", "UNI-USDT", "ATOM-USDT", "FIL-USDT", "APT-USDT",
+        ],
+        "us": [
+            "NVDA", "TSLA", "AAPL", "MSFT", "GOOGL", "AMZN", "META", "AMD",
+            "NFLX", "JPM", "BAC", "V", "MA", "UNH", "JNJ", "PFE", "WMT",
+            "HD", "CRM", "ORCL", "AVGO", "MU", "INTC", "COIN", "PLTR",
+            "SNOW", "SQ", "SHOP",
+        ],
+        "hk": [
+            "00700", "09988", "09888", "01810", "09618", "03690", "02318",
+            "00388", "01024", "02015", "09866", "00941", "01211", "02269",
+            "09999", "01299", "00175", "09868", "02020", "00005",
+        ],
+        "cn": [
+            "600519", "000858", "000568", "300750", "002594", "601012",
+            "600438", "000001", "601318", "601398", "600036", "002415",
+            "300059", "688981", "002230", "600276", "300760", "603259",
+            "000651", "000333", "600887", "600048", "601668", "002371",
+            "688008", "300274", "002459", "600893", "002179", "300033",
+        ],
+    }
+    return lists.get(market, lists["crypto"])
+
+
 # ---------------------------------------------------------------------------
 # Router: AI Judge (AI研判)
 # ---------------------------------------------------------------------------
@@ -972,17 +1580,22 @@ async def ai_judge_analyze(req: AIJudgeRequest):
     # 自动推断market
     market = _guess_market(req.symbol, req.market)
 
-    # 1. 获取K线数据
+    # 1. 获取K线数据（港股需要转换symbol: 00700→0700.HK）
+    fetch_symbol = req.symbol
+    if market == 'hk' and not req.symbol.endswith('.HK'):
+        code = req.symbol.lstrip('0') or '0'
+        fetch_symbol = code.zfill(4) + '.HK'
+
     try:
         mkt = MktEnum(market)
         iv = IntEnum(req.interval)
         fetcher = get_fetcher(mkt)
-        candles = await fetcher.get_klines(req.symbol, iv, 200)
+        candles = await fetcher.get_klines(fetch_symbol, iv, 500)
     except Exception as e:
         return {"error": f"获取K线失败: {e}"}
 
-    if not candles or len(candles) < 30:
-        return {"error": "K线数据不足，至少需要30根"}
+    if not candles or len(candles) < 20:
+        return {"error": f"K线数据不足（仅{len(candles) if candles else 0}根），请尝试更大周期"}
 
     # 2. 计算技术指标
     close = np.array([c.close for c in candles], dtype=np.float64)
@@ -1043,16 +1656,46 @@ async def ai_judge_analyze(req: AIJudgeRequest):
         "7日涨跌": f"{change_7d:+.2f}%",
     }
 
-    # 3. 获取新闻
+    # 3. 获取新闻（分层筛选：品种相关 > 行业相关 > 市场通用）
     news_summary = []
     try:
         from backend.screener.news import NewsCollector
         collector = NewsCollector()
-        news = await collector.fetch_all(hours=48)
-        symbol_lower = req.symbol.lower().replace("-usdt","").replace("-usd","")
-        relevant = [n for n in news if symbol_lower in (n.get("title","")+" "+n.get("content","")).lower()][:5]
-        if not relevant:
-            relevant = news[:5]
+        news = await collector.fetch_all(market=market)
+        await collector.close()
+
+        symbol_lower = req.symbol.lower().replace("-usdt","").replace("-usd","").replace(".hk","")
+        # 品种名称映射（用于关键词匹配）
+        name_map = {
+            "00700": ["腾讯","tencent"], "09988": ["阿里","alibaba"], "09888": ["百度","baidu"],
+            "01810": ["小米","xiaomi"], "02015": ["理想","li auto","lixiang"], "09866": ["蔚来","nio"],
+            "01211": ["比亚迪","byd"], "03690": ["美团","meituan"], "09618": ["京东","jd"],
+            "600519": ["茅台","maotai"], "300750": ["宁德","catl"], "002594": ["比亚迪","byd"],
+            "000001": ["平安","pingan"], "601398": ["工商银行","icbc"],
+            "nvda": ["nvidia","英伟达"], "tsla": ["tesla","特斯拉"], "aapl": ["apple","苹果"],
+            "msft": ["microsoft","微软"], "googl": ["google","谷歌"], "meta": ["facebook","meta"],
+            "btc": ["bitcoin","比特币"], "eth": ["ethereum","以太坊"], "sol": ["solana"],
+        }
+        keywords = name_map.get(symbol_lower, [symbol_lower])
+
+        # 分层筛选
+        direct_match = []   # 直接提到品种的
+        market_news = []     # 同市场的通用新闻
+
+        for n in news:
+            text = (n.get("title","") + " " + n.get("content","")).lower()
+            # 品种/公司名直接匹配
+            if any(kw in text for kw in keywords):
+                direct_match.append(n)
+            else:
+                market_news.append(n)
+
+        # 组合：先放品种相关(最多5条)，再补市场通用(补到10条)
+        relevant = direct_match[:5]
+        remaining = 10 - len(relevant)
+        if remaining > 0:
+            relevant.extend(market_news[:remaining])
+
         news_summary = [{"title": n.get("title",""), "source": n.get("source","")} for n in relevant]
     except Exception:
         pass

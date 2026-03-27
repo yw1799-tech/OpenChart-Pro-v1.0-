@@ -35,11 +35,18 @@ const AIJudge = (() => {
       <div style="margin-top:16px;"><div class="chart-spinner" style="margin:auto;"></div></div>
     </div>`;
 
+    // 港股symbol转换：00700 → 0700.HK
+    let fetchSymbol = symbol;
+    if (market === 'hk' && !symbol.endsWith('.HK')) {
+      const code = symbol.replace(/^0+/, '') || '0';
+      fetchSymbol = code.padStart(4, '0') + '.HK';
+    }
+
     try {
       const resp = await fetch('/api/aijudge/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, market, interval }),
+        body: JSON.stringify({ symbol: fetchSymbol, market, interval }),
       });
       const data = await resp.json();
 

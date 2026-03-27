@@ -5,6 +5,16 @@
 const Indicators = (() => {
   let overlay = null;
 
+  // 叠加主图的指标（与K线价格同比例尺）
+  const OVERLAY_INDICATORS = ['MA', 'EMA', 'SMA', 'BOLL', 'SAR', 'VWAP', 'ICHIMOKU', 'DONCHIAN', 'ENVELOPE'];
+
+  // 附图指标（有自己的Y轴，显示在独立pane）
+  const SUB_INDICATORS = ['MACD', 'RSI', 'KDJ', 'CCI', 'DMI', 'TRIX', 'OBV', 'ATR', 'WILLIAMS', 'STOCH', 'MFI', 'CMF', 'VOL', 'WR', 'BIAS', 'BRAR', 'CR', 'PSY', 'DMA', 'VR', 'MTM', 'EMV', 'AO'];
+
+  function isOverlay(name) {
+    return OVERLAY_INDICATORS.includes(name.toUpperCase());
+  }
+
   const BUILTIN = [
     { category: '趋势', items: [
       { name: 'MA',   title: '均线 MA',           desc: '简单移动平均线', main: true },
@@ -24,13 +34,35 @@ const Indicators = (() => {
     { category: '自定义', items: [] },
   ];
 
-  const activeIndicators = new Set(['VOL']);
+  // 从localStorage恢复，默认VOL
+  const saved = localStorage.getItem('oc_indicators');
+  const activeIndicators = new Set(saved ? JSON.parse(saved) : ['VOL']);
+
+  function saveActive() {
+    localStorage.setItem('oc_indicators', JSON.stringify([...activeIndicators]));
+  }
 
   function init() {
     overlay = document.getElementById('indicator-modal');
     if (!overlay) return;
     overlay.querySelector('.modal-close')?.addEventListener('click', close);
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+    // 恢复上次的指标（延迟等chart初始化完成）
+    setTimeout(() => {
+      for (const name of activeIndicators) {
+        if (name === 'VOL') continue; // VOL已在initChart中添加
+        const ind = BUILTIN.flatMap(c => c.items).find(i => i.name === name);
+        if (!ind) continue;
+        try {
+          if (isOverlay(name)) {
+            addMainIndicator(name);
+          } else {
+            addSubIndicator(name);
+          }
+        } catch(e) { console.warn('[Indicators] 恢复指标失败:', name, e); }
+      }
+    }, 500);
   }
 
   function open() {
@@ -74,22 +106,25 @@ const Indicators = (() => {
   function toggle(ind) {
     if (activeIndicators.has(ind.name)) {
       activeIndicators.delete(ind.name);
-      if (ind.main) {
+      if (isOverlay(ind.name)) {
+        // overlay指标：从主图pane移除
         removeIndicator(ind.name, 'candle_pane');
       } else {
+        // 副图指标：移除整个pane
         const pane = subPanes.find(p => p.name === ind.name);
         if (pane) removeSubPane(pane.id);
       }
       showToast(`已移除 ${ind.title}`, 'info', 2000);
     } else {
       activeIndicators.add(ind.name);
-      if (ind.main) {
+      if (isOverlay(ind.name)) {
         addMainIndicator(ind.name);
       } else {
         addSubIndicator(ind.name);
       }
       showToast(`已添加 ${ind.title}`, 'success', 2000);
     }
+    saveActive();
     render();
   }
 
@@ -99,5 +134,5 @@ const Indicators = (() => {
     registerCustomIndicator(config);
   }
 
-  return { init, open, close, addCustom };
+  return { init, open, close, addCustom, isOverlay, OVERLAY_INDICATORS, SUB_INDICATORS };
 })();

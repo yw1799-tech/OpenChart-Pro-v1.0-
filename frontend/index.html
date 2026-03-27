@@ -8,8 +8,13 @@
   <meta http-equiv="Expires" content="0">
   <title>OpenChart Pro</title>
 
+  <!-- 等宽字体 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
   <!-- CSS -->
-  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/app.css?v=34">
 
   <!-- KLineChart (本地) -->
   <script src="lib/klinecharts.min.js"></script>
@@ -37,7 +42,7 @@
 
     <!-- 搜索框 -->
     <div class="toolbar-search">
-      <span class="search-icon">🔍</span>
+      <span class="search-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
       <input id="toolbar-search-input" type="text" placeholder="搜索品种..." readonly>
       <span class="search-shortcut">/</span>
     </div>
@@ -263,71 +268,24 @@
       </div>
       <!-- 选股结果（左栏配置 + 右栏结果） -->
       <div class="bottom-pane" data-pane="screener">
-        <div class="screener-layout">
-          <!-- 左栏：筛选条件 35% -->
-          <div class="screener-left">
-            <h4 style="margin:0 0 8px;font-size:13px;color:var(--text-primary);">市场范围</h4>
-            <div class="screener-markets">
-              <label><input type="checkbox" value="crypto" checked> 加密货币</label>
-              <label><input type="checkbox" value="us"> 美股</label>
-              <label><input type="checkbox" value="hk"> 港股</label>
-              <label><input type="checkbox" value="cn"> A股</label>
-            </div>
-
-            <h4 style="margin:12px 0 8px;font-size:13px;color:var(--text-primary);">规则条件</h4>
-            <div id="screener-rules"></div>
-            <button id="screener-add-rule" class="btn btn-sm" style="margin-top:6px;">+ 添加规则</button>
-
-            <h4 style="margin:12px 0 8px;font-size:13px;color:var(--text-primary);">AI 智能模式</h4>
-            <div class="form-group" style="margin-bottom:6px;">
-              <label style="font-size:12px;"><input type="checkbox" id="screener-enable-ai"> 启用AI新闻分析</label>
-            </div>
-            <div class="form-group" style="display:flex;gap:8px;align-items:center;">
-              <label class="form-label" style="font-size:11px;min-width:50px;">分析范围</label>
-              <select id="screener-ai-hours" class="select" style="width:120px;font-size:11px;">
-                <option value="6">最近6小时</option>
-                <option value="12">最近12小时</option>
-                <option value="24" selected>最近24小时</option>
-                <option value="48">最近48小时</option>
-              </select>
-            </div>
-            <div class="form-group" style="display:flex;gap:8px;align-items:center;margin-top:4px;">
-              <label class="form-label" style="font-size:11px;min-width:50px;">最低评分</label>
-              <input type="number" id="screener-ai-min-score" class="input" style="width:60px;font-size:11px;" value="60" min="0" max="100">
-              <span style="font-size:11px;color:var(--text-tertiary);">/ 100</span>
-            </div>
-
-            <h4 style="margin:12px 0 8px;font-size:13px;color:var(--text-primary);">排序方式</h4>
-            <div style="display:flex;gap:6px;">
-              <select id="screener-sort" class="select" style="width:100px;font-size:11px;">
-                <option value="change_pct">涨跌幅</option>
-                <option value="volume">成交量</option>
-                <option value="price">价格</option>
-              </select>
-              <select id="screener-order" class="select" style="width:80px;font-size:11px;">
-                <option value="desc">降序</option>
-                <option value="asc">升序</option>
-              </select>
-            </div>
-
-            <div style="display:flex;gap:8px;margin-top:12px;">
-              <button id="screener-run" class="btn btn-primary btn-sm" style="flex:1;">🔍 开始筛选</button>
-              <button id="screener-ai-run" class="btn btn-sm" style="flex:1;background:var(--color-purple);color:#fff;">🤖 AI分析</button>
-            </div>
+        <div class="screener-header">
+          <div class="screener-markets">
+            <button class="screener-market-btn active" data-market="crypto">加密货币</button>
+            <button class="screener-market-btn" data-market="us">美股</button>
+            <button class="screener-market-btn" data-market="hk">港股</button>
+            <button class="screener-market-btn" data-market="cn">A股</button>
           </div>
-
-          <!-- 右栏：结果 65% -->
-          <div class="screener-right">
-            <!-- 规则筛选结果（上方） -->
-            <div class="screener-filter-results" id="screener-filter-results">
-              <div style="color:var(--text-tertiary);padding:30px;text-align:center;font-size:12px;">配置左侧条件后点击 🔍 开始筛选</div>
-            </div>
-            <!-- 分割线 -->
-            <div style="padding:6px 0;text-align:center;color:var(--text-tertiary);font-size:11px;border-top:1px solid var(--border-secondary);border-bottom:1px solid var(--border-secondary);margin:8px 0;">── AI 智能推荐 ──</div>
-            <!-- AI推荐结果（下方） -->
-            <div class="screener-ai-results" id="screener-ai-results">
-              <div style="color:var(--text-tertiary);padding:30px;text-align:center;font-size:12px;">点击 🤖AI分析 获取基于新闻的AI推荐</div>
-            </div>
+          <div class="screener-actions">
+            <button id="screener-refresh" class="btn btn-sm">🔄 刷新</button>
+            <span id="screener-updated" class="screener-time"></span>
+          </div>
+        </div>
+        <div class="screener-body">
+          <div id="screener-ai-section">
+            <div class="screener-empty">切换到此面板后自动加载 AI 推荐</div>
+          </div>
+          <div id="screener-tech-section">
+            <div class="screener-empty">切换到此面板后自动扫描技术信号</div>
           </div>
         </div>
       </div>
@@ -720,20 +678,20 @@
 <!-- ============================================================
      JavaScript 文件（按依赖顺序加载）
      ============================================================ -->
-<script src="js/toast.js?v=33"></script>
-<script src="js/websocket.js?v=33"></script>
-<script src="js/chart.js?v=33"></script>
-<script src="js/search.js?v=33"></script>
-<script src="js/settings.js?v=33"></script>
-<script src="js/indicators.js?v=33"></script>
-<script src="js/formula.js?v=33"></script>
-<script src="js/alerts.js?v=33"></script>
-<script src="js/backtest.js?v=33"></script>
-<script src="js/screener.js?v=33"></script>
-<script src="js/dashboard.js?v=33"></script>
-<script src="js/watchlist.js?v=33"></script>
-<script src="js/aijudge.js?v=33"></script>
-<script src="js/app.js?v=33"></script>
+<script src="js/toast.js?v=34"></script>
+<script src="js/websocket.js?v=34"></script>
+<script src="js/chart.js?v=34"></script>
+<script src="js/search.js?v=34"></script>
+<script src="js/settings.js?v=34"></script>
+<script src="js/indicators.js?v=34"></script>
+<script src="js/formula.js?v=34"></script>
+<script src="js/alerts.js?v=34"></script>
+<script src="js/backtest.js?v=34"></script>
+<script src="js/screener.js?v=34"></script>
+<script src="js/dashboard.js?v=34"></script>
+<script src="js/watchlist.js?v=34"></script>
+<script src="js/aijudge.js?v=34"></script>
+<script src="js/app.js?v=34"></script>
 
 </body>
 </html>

@@ -118,9 +118,11 @@ const Watchlist = (() => {
       const changeAmtStr = pc.changeAmt != null ? ((pc.changeAmt >= 0 ? '+' : '') + fmtPrice(pc.changeAmt)) : '';
       const changePctStr = pc.changePct != null ? ((pc.changePct >= 0 ? '+' : '') + pc.changePct.toFixed(2) + '%') : '';
 
+      const market = window.currentMarket || 'crypto';
+      const showName = market !== 'crypto' && item.name;
       el.innerHTML = `
         <div style="flex:1;min-width:0;">
-          <div class="symbol-name">${item.symbol}</div>
+          <div class="symbol-name">${item.symbol}${showName ? '<span style="color:var(--text-tertiary);font-size:11px;margin-left:6px;font-weight:400;">' + item.name + '</span>' : ''}</div>
           <div style="display:flex;align-items:baseline;gap:6px;margin-top:2px;">
             <span class="symbol-price ${changeClass}">${priceStr}</span>
             <span class="symbol-change ${changeClass}">${changeAmtStr} ${changePctStr}</span>
