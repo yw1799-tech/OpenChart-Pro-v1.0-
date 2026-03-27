@@ -6,7 +6,7 @@ const Indicators = (() => {
   let overlay = null;
 
   // 叠加主图的指标（与K线价格同比例尺）
-  const OVERLAY_INDICATORS = ['MA', 'EMA', 'SMA', 'BOLL', 'SAR', 'VWAP', 'ICHIMOKU', 'DONCHIAN', 'ENVELOPE', 'CHANLUN'];
+  const OVERLAY_INDICATORS = ['MA', 'EMA', 'SMA', 'BOLL', 'SAR', 'VWAP', 'ICHIMOKU', 'DONCHIAN', 'ENVELOPE'];
 
   // 附图指标（有自己的Y轴，显示在独立pane）
   const SUB_INDICATORS = ['MACD', 'RSI', 'KDJ', 'CCI', 'DMI', 'TRIX', 'OBV', 'ATR', 'WILLIAMS', 'STOCH', 'MFI', 'CMF', 'VOL', 'WR', 'BIAS', 'BRAR', 'CR', 'PSY', 'DMA', 'VR', 'MTM', 'EMV', 'AO'];
@@ -31,10 +31,7 @@ const Indicators = (() => {
       { name: 'VOL',  title: '成交量 VOL',         desc: '成交量柱状图', main: false },
       { name: 'OBV',  title: '能量潮 OBV',         desc: '能量潮指标',   main: false },
     ]},
-    { category: '缠论', items: [
-      { name: 'CHANLUN', title: '缠论分析', desc: '笔/线段/中枢/买卖点', main: true },
-    ]},
-    { category: '自定义', items: [] },
+        { category: '自定义', items: [] },
   ];
 
   // 从localStorage恢复，默认VOL
