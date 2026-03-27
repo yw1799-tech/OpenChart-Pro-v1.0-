@@ -744,14 +744,29 @@ async function loadChanlun(symbol, interval, market) {
   const apiMarket = market === 'a' ? 'cn' : market;
 
   try {
-    const resp = await fetch(
-      `/api/chanlun?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&market=${encodeURIComponent(apiMarket)}&limit=1000`
-    );
+    // 直接把图表已有的K线数据发给后端分析，确保数据100%一致
+    const chartData = chart.getDataList();
+    if (!chartData || chartData.length < 30) {
+      showToast('K线数据不足，无法分析', 'warning');
+      _chanlunLoading = false;
+      return;
+    }
+    const candles = chartData.map(k => ({
+      timestamp: k.timestamp,
+      open: k.open,
+      high: k.high,
+      low: k.low,
+      close: k.close,
+      volume: k.volume || 0,
+    }));
+
+    const resp = await fetch('/api/chanlun/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ candles }),
+    });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
-
-    // 记录缠论数据对应的K线数量，用于前端对齐
-    data._dataLength = data._kline_count || chart.getDataList().length;
     window._chanlunData = data;
 
     // 确保 CHANLUN 指标已添加到主图

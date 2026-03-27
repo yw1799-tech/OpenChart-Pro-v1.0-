@@ -2200,6 +2200,32 @@ async def get_chanlun(
     return result
 
 
+@chanlun_router.post("/analyze")
+async def chanlun_analyze_post(req: Dict[str, Any]):
+    """
+    接收前端发来的K线数据，直接用这些数据做缠论分析。
+    确保前端图表和缠论分析用的是完全相同的数据。
+    """
+    import sys as _sys
+    import os as _os
+
+    candles = req.get("candles", [])
+    if not candles or len(candles) < 30:
+        return {"bi_list": [], "seg_list": [], "zs_list": [], "bsp_list": []}
+
+    _engine_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "chanlun_engine")
+    if _engine_dir not in _sys.path:
+        _sys.path.insert(0, _engine_dir)
+
+    try:
+        from backend.chanlun_engine.chanlun_service import analyze
+        result = analyze(candles)
+        return result
+    except Exception as e:
+        logger.error(f"[Chanlun] 分析失败: {e}", exc_info=True)
+        return {"bi_list": [], "seg_list": [], "zs_list": [], "bsp_list": [], "error": str(e)}
+
+
 @chanlun_router.get("/verdict")
 async def chanlun_verdict(
     symbol: str = Query(...),
