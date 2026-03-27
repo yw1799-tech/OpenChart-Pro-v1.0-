@@ -6,7 +6,7 @@ const Indicators = (() => {
   let overlay = null;
 
   // 叠加主图的指标（与K线价格同比例尺）
-  const OVERLAY_INDICATORS = ['MA', 'EMA', 'SMA', 'BOLL', 'SAR', 'VWAP', 'ICHIMOKU', 'DONCHIAN', 'ENVELOPE', 'CHANLUN'];
+  const OVERLAY_INDICATORS = ['MA', 'EMA', 'SMA', 'BOLL', 'SAR', 'VWAP', 'ICHIMOKU', 'DONCHIAN', 'ENVELOPE', 'CHANLUN', 'FIB_RET', 'FIB_EXT'];
 
   // 附图指标（有自己的Y轴，显示在独立pane）
   const SUB_INDICATORS = ['MACD', 'RSI', 'KDJ', 'CCI', 'DMI', 'TRIX', 'OBV', 'ATR', 'WILLIAMS', 'STOCH', 'MFI', 'CMF', 'VOL', 'WR', 'BIAS', 'BRAR', 'CR', 'PSY', 'DMA', 'VR', 'MTM', 'EMV', 'AO'];
@@ -34,6 +34,10 @@ const Indicators = (() => {
     { category: '缠论', items: [
       { name: 'CHANLUN', title: '缠论分析', desc: '笔/线段/中枢/买卖点', main: true },
     ]},
+    { category: '斐波那契', items: [
+      { name: 'FIB_RET', title: '斐波那契回撤', desc: '自动识别ZigZag+回撤水平', main: true },
+      { name: 'FIB_EXT', title: '斐波那契扩展', desc: '三点法投射扩展目标', main: true },
+    ]},
     { category: '自定义', items: [] },
   ];
 
@@ -60,6 +64,10 @@ const Indicators = (() => {
         try {
           if (name === 'CHANLUN') {
             loadChanlun(window.currentSymbol, window.currentInterval, window.currentMarket);
+          } else if (name === 'FIB_RET') {
+            loadFibonacci('retracement');
+          } else if (name === 'FIB_EXT') {
+            loadFibonacci('extension');
           } else if (isOverlay(name)) {
             addMainIndicator(name);
           } else {
@@ -114,6 +122,10 @@ const Indicators = (() => {
       if (ind.name === 'CHANLUN') {
         // 缠论特殊处理
         removeChanlun();
+      } else if (ind.name === 'FIB_RET') {
+        removeFibonacci('retracement');
+      } else if (ind.name === 'FIB_EXT') {
+        removeFibonacci('extension');
       } else if (isOverlay(ind.name)) {
         // overlay指标：从主图pane移除
         removeIndicator(ind.name, 'candle_pane');
@@ -128,6 +140,10 @@ const Indicators = (() => {
       if (ind.name === 'CHANLUN') {
         // 缠论特殊处理：从后端获取分析数据
         loadChanlun(window.currentSymbol, window.currentInterval, window.currentMarket);
+      } else if (ind.name === 'FIB_RET') {
+        loadFibonacci('retracement');
+      } else if (ind.name === 'FIB_EXT') {
+        loadFibonacci('extension');
       } else if (isOverlay(ind.name)) {
         addMainIndicator(ind.name);
       } else {

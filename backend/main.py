@@ -2632,6 +2632,101 @@ app.include_router(settings_router)
 app.include_router(chanlun_router)
 
 # ---------------------------------------------------------------------------
+# 斐波那契分析路由
+# ---------------------------------------------------------------------------
+fibonacci_router = APIRouter(prefix="/api/fibonacci", tags=["斐波那契"])
+
+@fibonacci_router.post("/analyze")
+async def fibonacci_analyze(req: Dict[str, Any]):
+    """
+    自动斐波那契回撤/扩展分析 — 接收前端POST的K线数据，确保bar_index一致。
+
+    请求体:
+        candles: K线数据数组
+        mode: "retracement" 或 "extension"
+        deviation: ZigZag偏差乘数（默认3.0）
+        depth: pivot检测深度（默认10）
+    """
+    import numpy as np
+    import pandas as pd
+    from backend.indicators.auto_fibonacci import AutoFibonacci
+
+    candles = req.get("candles", [])
+    mode = req.get("mode", "retracement")
+    deviation = float(req.get("deviation", 3.0))
+    depth = int(req.get("depth", 10))
+
+    if not candles or len(candles) < 30:
+        return {"error": "K线数据不足（至少需要30根）", "levels": [], "pivots": []}
+
+    # 构建DataFrame
+    df = pd.DataFrame(candles)
+    # 确保列名统一
+    col_map = {}
+    for col in df.columns:
+        cl = col.lower()
+        if cl in ("high", "h"):
+            col_map["high"] = col
+        elif cl in ("low", "l"):
+            col_map["low"] = col
+        elif cl in ("close", "c"):
+            col_map["close"] = col
+        elif cl in ("open", "o"):
+            col_map["open"] = col
+
+    high_col = col_map.get("high", "high")
+    low_col = col_map.get("low", "low")
+    close_col = col_map.get("close", "close")
+
+    try:
+        fib = AutoFibonacci(deviation=deviation, depth=depth, dynamic_deviation=True)
+        fib.fit(df, high_col=high_col, low_col=low_col, close_col=close_col)
+
+        # 序列化pivot点
+        pivots_out = [
+            {"x": p.index, "y": p.price, "is_high": p.is_high}
+            for p in fib.pivots
+        ]
+
+        if mode == "extension":
+            ext = fib.get_extension()
+            if ext is None:
+                return {"mode": "extension", "error": "ZigZag枢轴点不足（至少需要3个）", "levels": [], "pivots": pivots_out}
+            levels = [{"ratio": lv.ratio, "price": lv.price, "label": lv.label} for lv in ext.levels]
+            return {
+                "mode": "extension",
+                "trend": ext.trend.value,
+                "point_a": {"x": ext.point_a.index, "y": ext.point_a.price},
+                "point_b": {"x": ext.point_b.index, "y": ext.point_b.price},
+                "point_c": {"x": ext.point_c.index, "y": ext.point_c.price},
+                "start": {"x": ext.point_a.index, "y": ext.point_a.price},
+                "end": {"x": ext.point_b.index, "y": ext.point_b.price},
+                "trend_range": ext.trend_range,
+                "retracement_ratio": ext.retracement_ratio,
+                "levels": levels,
+                "pivots": pivots_out,
+            }
+        else:
+            ret = fib.get_retracement()
+            if ret is None:
+                return {"mode": "retracement", "error": "ZigZag枢轴点不足（至少需要2个）", "levels": [], "pivots": pivots_out}
+            levels = [{"ratio": lv.ratio, "price": lv.price, "label": lv.label} for lv in ret.levels]
+            return {
+                "mode": "retracement",
+                "trend": ret.trend.value,
+                "start": {"x": ret.start_point.index, "y": ret.start_point.price},
+                "end": {"x": ret.end_point.index, "y": ret.end_point.price},
+                "price_range": ret.price_range,
+                "levels": levels,
+                "pivots": pivots_out,
+            }
+    except Exception as e:
+        logger.error(f"[Fibonacci] 分析失败: {e}", exc_info=True)
+        return {"error": f"斐波那契分析失败: {str(e)}", "levels": [], "pivots": []}
+
+app.include_router(fibonacci_router)
+
+# ---------------------------------------------------------------------------
 # WebSocket 端点
 # ---------------------------------------------------------------------------
 @app.websocket("/ws")

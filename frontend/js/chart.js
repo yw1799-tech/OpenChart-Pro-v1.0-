@@ -329,6 +329,191 @@ function initChart() {
     console.warn('[Chart] 注册缠论指标失败:', e);
   }
 
+  // 注册斐波那契回撤指标（自定义绘制）
+  try {
+    const FIB_COLORS = {
+      0.0:   'rgba(128,128,128,0.8)',
+      0.236: 'rgba(244,67,54,0.6)',
+      0.382: 'rgba(255,152,0,0.6)',
+      0.5:   'rgba(76,175,80,0.7)',
+      0.618: 'rgba(33,150,243,0.7)',
+      0.786: 'rgba(156,39,176,0.6)',
+      1.0:   'rgba(128,128,128,0.8)',
+    };
+    const FIB_FILL_ALPHA = 0.04;
+
+    function _fibGetColor(ratio, mode) {
+      if (FIB_COLORS[ratio]) return FIB_COLORS[ratio];
+      // 扩展水平用蓝紫色系
+      if (ratio > 1.0) return 'rgba(103,58,183,0.6)';
+      // 插值
+      return 'rgba(158,158,158,0.5)';
+    }
+
+    function _drawFibLevels(ctx, bounding, visibleRange, xAxis, yAxis, fibData, mode) {
+      if (!fibData || !fibData.levels || fibData.levels.length === 0) return;
+      if (fibData.error) return;
+
+      const dataList = chart.getDataList();
+      if (!dataList || !dataList.length) return;
+
+      const trend = fibData.trend;
+      const levels = fibData.levels;
+      const startPt = fibData.start;
+      const endPt = fibData.end;
+
+      // 画布边界
+      const leftX = bounding.left || 0;
+      const rightX = bounding.width - (bounding.right || 0);
+      const topY = bounding.top || 0;
+      const bottomY = bounding.height - (bounding.bottom || 0);
+
+      ctx.save();
+
+      // 1. 半透明填充各层之间
+      for (let i = 0; i < levels.length - 1; i++) {
+        const y1 = yAxis.convertToPixel(levels[i].price);
+        const y2 = yAxis.convertToPixel(levels[i + 1].price);
+        if (y1 === y2) continue;
+
+        let fillColor;
+        if (mode === 'extension') {
+          fillColor = 'rgba(103,58,183,' + FIB_FILL_ALPHA + ')';
+        } else if (trend === 'up') {
+          fillColor = 'rgba(244,67,54,' + FIB_FILL_ALPHA + ')';
+        } else {
+          fillColor = 'rgba(76,175,80,' + FIB_FILL_ALPHA + ')';
+        }
+        ctx.fillStyle = fillColor;
+        ctx.fillRect(leftX, Math.min(y1, y2), rightX - leftX, Math.abs(y2 - y1));
+      }
+
+      // 2. 画趋势线（start到end虚线）
+      if (startPt && endPt) {
+        const sx = xAxis.convertToPixel(startPt.x);
+        const sy = yAxis.convertToPixel(startPt.y);
+        const ex = xAxis.convertToPixel(endPt.x);
+        const ey = yAxis.convertToPixel(endPt.y);
+
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(ex, ey);
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // pivot圆点
+        ctx.beginPath();
+        ctx.arc(sx, sy, 4, 0, Math.PI * 2);
+        ctx.fillStyle = trend === 'up' ? '#f44336' : '#4CAF50';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(ex, ey, 4, 0, Math.PI * 2);
+        ctx.fillStyle = trend === 'up' ? '#f44336' : '#4CAF50';
+        ctx.fill();
+      }
+
+      // 扩展模式画第三个点（C点）
+      if (mode === 'extension' && fibData.point_c) {
+        const cx = xAxis.convertToPixel(fibData.point_c.x);
+        const cy = yAxis.convertToPixel(fibData.point_c.y);
+        ctx.beginPath();
+        ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#7C4DFF';
+        ctx.fill();
+
+        // B->C 虚线
+        if (endPt) {
+          const bx = xAxis.convertToPixel(endPt.x);
+          const by = yAxis.convertToPixel(endPt.y);
+          ctx.beginPath();
+          ctx.moveTo(bx, by);
+          ctx.lineTo(cx, cy);
+          ctx.strokeStyle = 'rgba(124,77,255,0.4)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 3]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
+
+      // 3. 画斐波那契水平线 + 标签
+      const startBarX = startPt ? xAxis.convertToPixel(startPt.x) : leftX;
+
+      for (const lv of levels) {
+        const y = yAxis.convertToPixel(lv.price);
+        if (y < topY - 20 || y > bottomY + 20) continue;
+
+        const color = _fibGetColor(lv.ratio, mode);
+
+        // 水平线：从趋势起点画到最右侧
+        ctx.beginPath();
+        ctx.moveTo(Math.min(startBarX, leftX), y);
+        ctx.lineTo(rightX, y);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = (lv.ratio === 0.5 || lv.ratio === 0.618) ? 1.5 : 1;
+        if (lv.ratio === 0.0 || lv.ratio === 1.0) {
+          ctx.setLineDash([]);
+        } else {
+          ctx.setLineDash([5, 3]);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 右侧标签
+        const priceStr = lv.price >= 1000 ? lv.price.toLocaleString('en-US', {maximumFractionDigits: 0})
+                       : lv.price >= 1 ? lv.price.toFixed(2) : lv.price.toFixed(6);
+        const labelText = `${lv.label} (${priceStr})`;
+
+        ctx.font = '10px JetBrains Mono, Consolas, monospace';
+        const textWidth = ctx.measureText(labelText).width;
+
+        // 标签背景
+        const labelX = rightX - textWidth - 12;
+        const labelY = y - 7;
+        ctx.fillStyle = 'rgba(30,33,40,0.85)';
+        ctx.fillRect(labelX - 4, labelY - 1, textWidth + 8, 14);
+
+        // 标签文字
+        ctx.fillStyle = color;
+        ctx.textAlign = 'left';
+        ctx.fillText(labelText, labelX, y + 3);
+      }
+
+      ctx.restore();
+    }
+
+    klinecharts.registerIndicator({
+      name: 'FIB_RETRACEMENT',
+      shortName: 'Fib回撤',
+      calcParams: [],
+      figures: [],
+      draw: ({ ctx, bounding, barSpace, visibleRange, indicator, xAxis, yAxis }) => {
+        _drawFibLevels(ctx, bounding, visibleRange, xAxis, yAxis, window._fibRetData, 'retracement');
+        return false;
+      },
+      calc: (dataList) => dataList.map(() => ({})),
+    });
+
+    klinecharts.registerIndicator({
+      name: 'FIB_EXTENSION',
+      shortName: 'Fib扩展',
+      calcParams: [],
+      figures: [],
+      draw: ({ ctx, bounding, barSpace, visibleRange, indicator, xAxis, yAxis }) => {
+        _drawFibLevels(ctx, bounding, visibleRange, xAxis, yAxis, window._fibExtData, 'extension');
+        return false;
+      },
+      calc: (dataList) => dataList.map(() => ({})),
+    });
+
+    console.log('[Chart] 已注册斐波那契回撤/扩展指标');
+  } catch(e) {
+    console.warn('[Chart] 注册斐波那契指标失败:', e);
+  }
+
   // 不再自定义RSI，使用KLineChart内置RSI但修改参数为只有1条线
   // 内置RSI默认参数[6,12,24]改为[14]
   // 通过覆盖注册实现
@@ -398,6 +583,9 @@ async function loadKlines(symbol, interval, market) {
     if (isChanlunActive()) {
       loadChanlun(symbol, interval, market);
     }
+    // 如果斐波那契已启用，自动刷新
+    if (isFibActive('FIB_RET')) loadFibonacci('retracement');
+    if (isFibActive('FIB_EXT')) loadFibonacci('extension');
   } catch (err) {
     console.error('[Chart] 加载K线失败:', err);
     showToast(`加载K线数据失败: ${err.message}`, 'error');
@@ -800,6 +988,89 @@ function removeChanlun() {
 
 function isChanlunActive() {
   return !!window._chanlunAdded;
+}
+
+/* ---------- 斐波那契分析数据加载 ---------- */
+let _fibLoading = false;
+
+async function loadFibonacci(mode) {
+  if (!chart || _fibLoading) return;
+  _fibLoading = true;
+
+  const modeLabel = mode === 'extension' ? '扩展' : '回撤';
+
+  try {
+    const chartData = chart.getDataList();
+    if (!chartData || chartData.length < 30) {
+      showToast('K线数据不足（至少需要30根）', 'warning');
+      _fibLoading = false;
+      return;
+    }
+
+    const resp = await fetch('/api/fibonacci/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        candles: chartData.map(function(k) {
+          return { timestamp: k.timestamp, open: k.open, high: k.high, low: k.low, close: k.close, volume: k.volume || 0 };
+        }),
+        mode: mode,
+      }),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    if (data.error) {
+      console.warn('[Fibonacci] ' + data.error);
+      showToast(`斐波那契${modeLabel}: ${data.error}`, 'warning', 3000);
+      _fibLoading = false;
+      return;
+    }
+
+    const indicatorName = mode === 'extension' ? 'FIB_EXTENSION' : 'FIB_RETRACEMENT';
+    const dataKey = mode === 'extension' ? '_fibExtData' : '_fibRetData';
+    const addedKey = mode === 'extension' ? '_fibExtAdded' : '_fibRetAdded';
+
+    window[dataKey] = data;
+
+    if (!window[addedKey]) {
+      chart.createIndicator(indicatorName, true, { id: 'candle_pane' });
+      window[addedKey] = true;
+    }
+    chart.resize();
+
+    const lvCount = data.levels ? data.levels.length : 0;
+    const trendLabel = data.trend === 'up' ? '上升' : '下降';
+    console.log(`[Fibonacci] ${modeLabel} 分析完成 - ${trendLabel}趋势, ${lvCount}个水平`);
+    showToast(`斐波那契${modeLabel}: ${trendLabel}趋势, ${lvCount}个水平`, 'success', 3000);
+  } catch (err) {
+    console.error('[Fibonacci] 加载失败:', err);
+    showToast(`斐波那契${modeLabel}失败: ${err.message}`, 'error');
+  } finally {
+    _fibLoading = false;
+  }
+}
+
+function removeFibonacci(mode) {
+  const indicatorName = mode === 'extension' ? 'FIB_EXTENSION' : 'FIB_RETRACEMENT';
+  const dataKey = mode === 'extension' ? '_fibExtData' : '_fibRetData';
+  const addedKey = mode === 'extension' ? '_fibExtAdded' : '_fibRetAdded';
+
+  window[dataKey] = null;
+  if (window[addedKey] && chart) {
+    try {
+      chart.removeIndicator('candle_pane', indicatorName);
+    } catch(e) {}
+    window[addedKey] = false;
+  }
+  const modeLabel = mode === 'extension' ? '扩展' : '回撤';
+  console.log(`[Fibonacci] 已移除斐波那契${modeLabel}`);
+}
+
+function isFibActive(name) {
+  if (name === 'FIB_RET') return !!window._fibRetAdded;
+  if (name === 'FIB_EXT') return !!window._fibExtAdded;
+  return false;
 }
 
 /* ---------- 窗口大小响应 ---------- */
