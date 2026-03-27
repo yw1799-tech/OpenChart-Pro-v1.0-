@@ -2196,6 +2196,7 @@ async def get_chanlun(
         logger.error(f"[Chanlun] 缠论分析失败: {e}", exc_info=True)
         raise HTTPException(500, f"缠论分析失败: {e}")
 
+    result["_kline_count"] = len(candle_dicts)
     return result
 
 

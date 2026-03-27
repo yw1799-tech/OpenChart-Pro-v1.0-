@@ -184,11 +184,23 @@ function initChart() {
         if (!dataList || !dataList.length || !window._chanlunData) return false;
         const cl = window._chanlunData;
 
-        // 工具函数：bar_index -> 像素x坐标
+        // 偏移量修正
+        const clDataLen = cl._dataLength || dataList.length;
+        const clOffset = dataList.length - clDataLen;
+
+        // bar_index → 像素x：用timestamp查找精确位置
+        // KLineChart draw回调里 barSpace.bar 是单根K线宽度
+        // visibleRange.from/to 是可见的数据索引范围
         function barToX(barIdx) {
-          return xAxis.convertToPixel(barIdx);
+          const idx = barIdx + clOffset;
+          // 用 barSpace 和 visibleRange 手动计算
+          if (idx >= 0 && idx < dataList.length && dataList[idx]) {
+            // 获取该bar的timestamp，让xAxis转换
+            const ts = dataList[idx].timestamp;
+            return xAxis.convertToPixel(ts);
+          }
+          return -999; // 不在范围内
         }
-        // 价格 -> 像素y坐标
         function priceToY(price) {
           return yAxis.convertToPixel(price);
         }
@@ -752,6 +764,8 @@ async function loadChanlun(symbol, interval, market) {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
 
+    // 记录缠论数据对应的K线数量，用于前端对齐
+    data._dataLength = data._kline_count || chart.getDataList().length;
     window._chanlunData = data;
 
     // 确保 CHANLUN 指标已添加到主图
