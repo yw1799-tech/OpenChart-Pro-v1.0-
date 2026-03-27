@@ -6,7 +6,7 @@ const Indicators = (() => {
   let overlay = null;
 
   // 叠加主图的指标（与K线价格同比例尺）
-  const OVERLAY_INDICATORS = ['MA', 'EMA', 'SMA', 'BOLL', 'SAR', 'VWAP', 'ICHIMOKU', 'DONCHIAN', 'ENVELOPE', 'CHANLUN'];
+  const OVERLAY_INDICATORS = ['MA', 'EMA', 'SMA', 'BOLL', 'SAR', 'VWAP', 'ICHIMOKU', 'DONCHIAN', 'ENVELOPE'];
 
   // 附图指标（有自己的Y轴，显示在独立pane）
   const SUB_INDICATORS = ['MACD', 'RSI', 'KDJ', 'CCI', 'DMI', 'TRIX', 'OBV', 'ATR', 'WILLIAMS', 'STOCH', 'MFI', 'CMF', 'VOL', 'WR', 'BIAS', 'BRAR', 'CR', 'PSY', 'DMA', 'VR', 'MTM', 'EMV', 'AO'];
@@ -30,9 +30,6 @@ const Indicators = (() => {
     { category: '成交量', items: [
       { name: 'VOL',  title: '成交量 VOL',         desc: '成交量柱状图', main: false },
       { name: 'OBV',  title: '能量潮 OBV',         desc: '能量潮指标',   main: false },
-    ]},
-    { category: '缠论', items: [
-      { name: 'CHANLUN', title: '缠论分析', desc: '笔/线段/中枢/买卖点', main: true },
     ]},
     { category: '自定义', items: [] },
   ];
@@ -58,9 +55,7 @@ const Indicators = (() => {
         const ind = BUILTIN.flatMap(c => c.items).find(i => i.name === name);
         if (!ind) continue;
         try {
-          if (name === 'CHANLUN') {
-            loadChanlun(window.currentSymbol, window.currentInterval, window.currentMarket);
-          } else if (isOverlay(name)) {
+          if (isOverlay(name)) {
             addMainIndicator(name);
           } else {
             addSubIndicator(name);
@@ -111,10 +106,7 @@ const Indicators = (() => {
   function toggle(ind) {
     if (activeIndicators.has(ind.name)) {
       activeIndicators.delete(ind.name);
-      if (ind.name === 'CHANLUN') {
-        // 缠论特殊处理
-        removeChanlun();
-      } else if (isOverlay(ind.name)) {
+      if (isOverlay(ind.name)) {
         // overlay指标：从主图pane移除
         removeIndicator(ind.name, 'candle_pane');
       } else {
@@ -125,10 +117,7 @@ const Indicators = (() => {
       showToast(`已移除 ${ind.title}`, 'info', 2000);
     } else {
       activeIndicators.add(ind.name);
-      if (ind.name === 'CHANLUN') {
-        // 缠论特殊处理：从后端获取分析数据
-        loadChanlun(window.currentSymbol, window.currentInterval, window.currentMarket);
-      } else if (isOverlay(ind.name)) {
+      if (isOverlay(ind.name)) {
         addMainIndicator(ind.name);
       } else {
         addSubIndicator(ind.name);
@@ -145,9 +134,5 @@ const Indicators = (() => {
     registerCustomIndicator(config);
   }
 
-  function isActive(name) {
-    return activeIndicators.has(name);
-  }
-
-  return { init, open, close, addCustom, isOverlay, isActive, OVERLAY_INDICATORS, SUB_INDICATORS };
+  return { init, open, close, addCustom, isOverlay, OVERLAY_INDICATORS, SUB_INDICATORS };
 })();

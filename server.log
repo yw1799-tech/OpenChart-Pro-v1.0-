@@ -1,0 +1,165 @@
+INFO:     Will watch for changes in these directories: ['D:\\OpenChart Pro']
+INFO:     Uvicorn running on http://0.0.0.0:8888 (Press CTRL+C to quit)
+INFO:     Started reloader process [19488] using WatchFiles
+INFO:     Started server process [17048]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:61626 - "WebSocket /ws" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:52315 - "GET / HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:52315 - "GET /css/app.css?v=34 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56325 - "GET /js/chart.js?v=34 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:52315 - "GET /js/screener.js?v=34 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:52315 - "GET /js/app.js?v=34 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56325 - "GET /js/watchlist.js?v=34 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:61473 - "GET /api/symbols?market=cn HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65142 - "GET /api/symbols?market=us HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56608 - "GET /api/symbols?market=hk HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56325 - "GET /api/alerts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52315 - "GET /api/symbols?market=crypto HTTP/1.1" 200 OK
+FINNHUB_API_KEY 未设置，跳过Finnhub新闻采集
+INFO:     127.0.0.1:56325 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+采集 eastmoney 新闻失败: 'NoneType' object has no attribute 'get'
+INFO:     127.0.0.1:63412 - "WebSocket /ws" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:56325 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56325 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56325 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56608 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56608 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56608 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52315 - "GET /api/klines?symbol=BTC-USDT&interval=1H&limit=500&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56608 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56608 - "GET /api/alerts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49426 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49426 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49426 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49426 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49426 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49426 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49426 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49426 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59163 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59163 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59163 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59749 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59163 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59749 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59749 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59749 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51600 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51600 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53436 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51600 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53436 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51600 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53436 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51600 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51199 - "POST /api/screener/ai-recommend HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.scope, self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\uvicorn\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastapi\applications.py", line 1160, in __call__
+    await super().__call__(scope, receive, send)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\middleware\cors.py", line 87, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastapi\routing.py", line 130, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastapi\routing.py", line 116, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastapi\routing.py", line 711, in app
+    response = actual_response_class(content, **response_args)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\responses.py", line 189, in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\responses.py", line 46, in __init__
+    self.body = self.render(content)
+                ~~~~~~~~~~~^^^^^^^^^
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\starlette\responses.py", line 192, in render
+    return json.dumps(
+           ~~~~~~~~~~^
+        content,
+        ^^^^^^^^
+    ...<3 lines>...
+        separators=(",", ":"),
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ).encode("utf-8")
+    ^
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\json\__init__.py", line 242, in dumps
+    **kw).encode(obj)
+          ~~~~~~^^^^^
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\json\encoder.py", line 202, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+  File "C:\Users\Administrator\AppData\Local\Python\pythoncore-3.14-64\Lib\json\encoder.py", line 263, in iterencode
+    return _iterencode(o, 0)
+ValueError: Out of range float values are not JSON compliant: nan
+when serializing dict item 'price'
+when serializing list item 0
+when serializing dict item 'recommendations'
+INFO:     127.0.0.1:53559 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62365 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53559 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62365 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53559 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62365 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53559 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62365 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59122 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59122 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53401 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59122 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53401 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59122 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53401 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59122 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59533 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59533 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59533 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59533 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64533 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64533 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'backend\main.py'. Reloading...
+ INFO:     127.0.0.1:64533 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64533 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64533 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64533 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64533 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64533 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58394 - "GET /api/klines?symbol=BTC-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58394 - "GET /api/klines?symbol=ETH-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58394 - "GET /api/klines?symbol=SOL-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58394 - "GET /api/klines?symbol=DOGE-USDT&interval=1D&limit=2&market=crypto HTTP/1.1" 200 OK
