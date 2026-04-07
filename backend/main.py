@@ -346,9 +346,9 @@ async def get_klines(
     interval: str = Query("1H"),
     limit: int = Query(500, ge=1, le=5000),
     market: str = Query("crypto"),
+    end_time: Optional[int] = Query(None, description="毫秒时间戳，返回此时间戳之前的K线（用于向左懒加载）"),
 ):
-    """获取K线数据"""
-    # 自动推断market，防止前端没传正确的market
+    """获取K线数据，支持 end_time 参数向历史分页"""
     market = _guess_market(symbol, market)
 
     from backend.data.models import Market as MktEnum, Interval as IntEnum
@@ -365,7 +365,7 @@ async def get_klines(
     try:
         from backend.data.fetcher import get_fetcher
         fetcher = get_fetcher(mkt)
-        candles = await fetcher.get_klines(symbol, iv, limit)
+        candles = await fetcher.get_klines(symbol, iv, limit, end_time_ms=end_time)
         return {
             "symbol": symbol,
             "market": market,
@@ -2214,6 +2214,25 @@ async def chanlun_from_data(req: Dict[str, Any]):
         return analyze(candles)
     except Exception as e:
         return {"bi_list": [], "seg_list": [], "zs_list": [], "bsp_list": [], "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# 艾略特波浪分析端点
+# ---------------------------------------------------------------------------
+
+@chanlun_router.post("/elliott-wave/from-data")
+async def elliott_wave_from_data(req: Dict[str, Any]):
+    """用前端传来的可见区域K线数据做艾略特波浪分析"""
+    candles    = req.get("candles", [])
+    bar_offset = int(req.get("bar_offset", 0))
+    if not candles or len(candles) < 30:
+        return {"patterns": [], "predictions": []}
+    try:
+        from backend.elliott_wave.service import analyze
+        return analyze(candles, bar_offset=bar_offset)
+    except Exception as e:
+        logger.error(f"艾略特波浪分析失败: {e}", exc_info=True)
+        return {"patterns": [], "predictions": [], "error": str(e)}
 
 
 @chanlun_router.get("/verdict")

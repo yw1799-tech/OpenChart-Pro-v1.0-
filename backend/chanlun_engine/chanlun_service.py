@@ -8,7 +8,7 @@ import sys
 import os
 import logging
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 # 确保 chan.py 库在 sys.path 中
 _engine_dir = os.path.dirname(os.path.abspath(__file__))
@@ -19,51 +19,17 @@ from collections import defaultdict
 
 from Chan import CChan
 from ChanConfig import CChanConfig
-from Common.CEnum import DATA_FIELD, KL_TYPE, BI_DIR, BSP_TYPE, AUTYPE
+from Common.CEnum import DATA_FIELD, KL_TYPE, BI_DIR, AUTYPE
 from Common.CTime import CTime
 from KLine.KLine_Unit import CKLine_Unit
-from DataAPI.CommonStockAPI import CCommonStockApi
 
 logger = logging.getLogger(__name__)
 
 
-class MemoryStockAPI(CCommonStockApi):
-    """内存数据源 - 直接从K线列表提供数据给 CChan"""
-
-    _kline_data: List[CKLine_Unit] = []
-
-    def __init__(self, code, k_type=KL_TYPE.K_DAY, begin_date=None, end_date=None, autype=None):
-        self.code = code
-        self.name = code
-        self.is_stock = False
-        self.k_type = k_type
-        self.begin_date = begin_date
-        self.end_date = end_date
-        self.autype = autype
-
-    def get_kl_data(self):
-        for klu in self.__class__._kline_data:
-            yield klu
-
-    def SetBasciInfo(self):
-        pass
-
-    @classmethod
-    def do_init(cls):
-        pass
-
-    @classmethod
-    def do_close(cls):
-        pass
-
-    @classmethod
-    def set_data(cls, data: List[CKLine_Unit]):
-        cls._kline_data = data
-
 
 def _ts_to_ctime(ts_ms: int) -> CTime:
-    """毫秒时间戳转 CTime"""
-    dt = datetime.utcfromtimestamp(ts_ms / 1000)
+    """毫秒时间戳转 CTime（使用本地时间，与CTime.ts的timestamp()保持一致）"""
+    dt = datetime.fromtimestamp(ts_ms / 1000)
     return CTime(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, auto=False)
 
 
@@ -112,22 +78,6 @@ def _klu_to_bar_index(klu, ts_list: List[int]) -> int:
     return _find_bar_index(ts_ms, ts_list)
 
 
-def _find_extreme_bar(candles: List[Dict], center_idx: int, price: float, is_high: bool, search_range: int = 15) -> int:
-    """在center_idx附近找到价格最匹配的K线索引
-    同时检查high和low，取最接近price的那个"""
-    best_idx = center_idx
-    best_diff = float('inf')
-    start = max(0, center_idx - search_range)
-    end = min(len(candles), center_idx + search_range + 1)
-    for i in range(start, end):
-        # 同时检查high和low，找最接近目标价格的
-        diff_h = abs(candles[i].get('high', 0) - price)
-        diff_l = abs(candles[i].get('low', 0) - price)
-        diff = min(diff_h, diff_l)
-        if diff < best_diff:
-            best_diff = diff
-            best_idx = i
-    return best_idx
 
 
 def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -155,12 +105,35 @@ def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
     # 构建 CKLine_Unit 列表
     kline_units = _build_kline_units(candles)
 
-    # 配置：使用trigger_load模式直接灌入数据
+    # ── 缠论参数配置（自适应级别）──
+    # K线数量少（周线/月线）→ 笔少、下降段快速完成 → 需要宽松中枢条件才能检测买点
+    # K线数量多（小时线）  → 笔多、结构丰富 → 严格标准就足够
+    n = len(candles)
+    # 判断依据：笔密度（K线数/笔数预估）。大级别K线少但每笔跨度大，小级别反之
+    # 周线444根 → 约28笔（每笔16根），1H 1000根 → 约47笔（每笔21根）
+    # 关键：下降段笔数是否够形成中枢（≥5笔=2笔反向）
+    # 实测：周线下降段只有3笔，1H下降段有5-9笔
+    if n <= 500:
+        # 大级别（周线/月线/日线少量数据）：下跌段笔数少，需要宽松中枢
+        one_bi_zs = True
+        divergence_rate = 5.0
+        bsp1_only_multibi_zs = False
+    else:
+        # 小级别（小时线等大量数据）：笔数足够，用严格标准
+        one_bi_zs = False
+        divergence_rate = 10.0
+        bsp1_only_multibi_zs = True
+
     config = CChanConfig({
         "bi_strict": True,
-        "divergence_rate": 9999,
+        "bi_fx_check": "half",
+        "divergence_rate": divergence_rate,
         "min_zs_cnt": 1,
         "zs_combine": True,
+        "zs_combine_mode": "zs",
+        "one_bi_zs": one_bi_zs,
+        "macd_algo": "area",
+        "bsp1_only_multibi_zs": bsp1_only_multibi_zs,
         "trigger_step": False,
     })
 
@@ -195,14 +168,11 @@ def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
         try:
             begin_klu = bi.get_begin_klu()
             end_klu = bi.get_end_klu()
-            begin_x_raw = _klu_to_bar_index(begin_klu, ts_list)
-            end_x_raw = _klu_to_bar_index(end_klu, ts_list)
+            begin_x = _klu_to_bar_index(begin_klu, ts_list)
+            end_x = _klu_to_bar_index(end_klu, ts_list)
             begin_val = float(bi.get_begin_val())
             end_val = float(bi.get_end_val())
             is_up = bi.dir == BI_DIR.UP
-            # 上升笔：起点是低点，终点是高点；下降笔反之
-            begin_x = _find_extreme_bar(candles, begin_x_raw, begin_val, is_high=not is_up)
-            end_x = _find_extreme_bar(candles, end_x_raw, end_val, is_high=is_up)
             bi_list.append({
                 "begin_x": begin_x,
                 "begin_y": begin_val,
@@ -220,13 +190,11 @@ def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
         try:
             begin_klu = seg.start_bi.get_begin_klu()
             end_klu = seg.end_bi.get_end_klu()
-            begin_x_raw = _klu_to_bar_index(begin_klu, ts_list)
-            end_x_raw = _klu_to_bar_index(end_klu, ts_list)
+            begin_x = _klu_to_bar_index(begin_klu, ts_list)
+            end_x = _klu_to_bar_index(end_klu, ts_list)
             begin_val = float(seg.start_bi.get_begin_val())
             end_val = float(seg.end_bi.get_end_val())
             is_up = seg.dir == BI_DIR.UP
-            begin_x = _find_extreme_bar(candles, begin_x_raw, begin_val, is_high=not is_up)
-            end_x = _find_extreme_bar(candles, end_x_raw, end_val, is_high=is_up)
             seg_list.append({
                 "begin_x": begin_x,
                 "begin_y": begin_val,
@@ -309,7 +277,7 @@ def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
                 bsp_list.append({
                     "x": x,
                     "y": y,
-                    "type": "S" + bsp.type2str(),  # S前缀表示线段级别
+                    "type": "S" + bsp.type2str(),
                     "is_buy": bsp.is_buy,
                 })
             except Exception as e:

@@ -217,10 +217,11 @@ class YahooFetcher(DataFetcher):
         return results
 
     async def get_klines(
-        self, symbol: str, interval: Interval, limit: int = 500
+        self, symbol: str, interval: Interval, limit: int = 500, end_time_ms: Optional[int] = None
     ) -> List[Candle]:
         """
         获取历史 K 线。
+        end_time_ms: 毫秒时间戳，只返回早于此时间的K线（向左懒加载）。
         注意：免费版有 15 分钟延迟。
         """
         yf_interval = _INTERVAL_MAP.get(interval)
@@ -235,7 +236,18 @@ class YahooFetcher(DataFetcher):
 
         def _fetch():
             ticker = yf.Ticker(symbol)
-            df = ticker.history(period=yf_period, interval=yf_interval)
+            if end_time_ms is not None:
+                # 指定结束时间，往前取足够宽的范围
+                end_dt = datetime.fromtimestamp(end_time_ms / 1000, tz=timezone.utc)
+                # 根据interval估算需要往前多久
+                interval_seconds = {
+                    "1m": 60, "5m": 300, "15m": 900, "30m": 1800,
+                    "1h": 3600, "1d": 86400, "1wk": 604800, "1mo": 2592000,
+                }.get(yf_interval, 3600)
+                start_dt = end_dt - timedelta(seconds=interval_seconds * fetch_limit * 2)
+                df = ticker.history(start=start_dt, end=end_dt, interval=yf_interval)
+            else:
+                df = ticker.history(period=yf_period, interval=yf_interval)
             return df
 
         df = await loop.run_in_executor(None, _fetch)

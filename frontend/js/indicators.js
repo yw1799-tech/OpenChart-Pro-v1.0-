@@ -6,7 +6,7 @@ const Indicators = (() => {
   let overlay = null;
 
   // 叠加主图的指标（与K线价格同比例尺）
-  const OVERLAY_INDICATORS = ['MA', 'EMA', 'SMA', 'BOLL', 'SAR', 'VWAP', 'ICHIMOKU', 'DONCHIAN', 'ENVELOPE', 'CHANLUN', 'FIB_RET', 'FIB_EXT'];
+  const OVERLAY_INDICATORS = ['MA', 'EMA', 'SMA', 'BOLL', 'SAR', 'VWAP', 'ICHIMOKU', 'DONCHIAN', 'ENVELOPE', 'CHANLUN', 'ELLIOTT_WAVE', 'FIB_RET', 'FIB_EXT'];
 
   // 附图指标（有自己的Y轴，显示在独立pane）
   const SUB_INDICATORS = ['MACD', 'RSI', 'KDJ', 'CCI', 'DMI', 'TRIX', 'OBV', 'ATR', 'WILLIAMS', 'STOCH', 'MFI', 'CMF', 'VOL', 'WR', 'BIAS', 'BRAR', 'CR', 'PSY', 'DMA', 'VR', 'MTM', 'EMV', 'AO'];
@@ -32,7 +32,8 @@ const Indicators = (() => {
       { name: 'OBV',  title: '能量潮 OBV',         desc: '能量潮指标',   main: false },
     ]},
     { category: '缠论', items: [
-      { name: 'CHANLUN', title: '缠论分析', desc: '笔/线段/中枢/买卖点', main: true },
+      { name: 'CHANLUN',      title: '缠论分析',    desc: '笔/线段/中枢/买卖点',            main: true },
+      { name: 'ELLIOTT_WAVE', title: '艾略特波浪',  desc: '自动识别推动浪/调整浪/预测目标',  main: true },
     ]},
     { category: '斐波那契', items: [
       { name: 'FIB_RET', title: '斐波那契回撤', desc: '自动识别ZigZag+回撤水平', main: true },
@@ -64,6 +65,8 @@ const Indicators = (() => {
         try {
           if (name === 'CHANLUN') {
             loadChanlun(window.currentSymbol, window.currentInterval, window.currentMarket);
+          } else if (name === 'ELLIOTT_WAVE') {
+            loadElliottWave(window.currentSymbol, window.currentInterval, window.currentMarket);
           } else if (name === 'FIB_RET') {
             loadFibonacci('retracement');
           } else if (name === 'FIB_EXT') {
@@ -120,8 +123,9 @@ const Indicators = (() => {
     if (activeIndicators.has(ind.name)) {
       activeIndicators.delete(ind.name);
       if (ind.name === 'CHANLUN') {
-        // 缠论特殊处理
         removeChanlun();
+      } else if (ind.name === 'ELLIOTT_WAVE') {
+        removeElliottWave();
       } else if (ind.name === 'FIB_RET') {
         removeFibonacci('retracement');
       } else if (ind.name === 'FIB_EXT') {
@@ -138,8 +142,9 @@ const Indicators = (() => {
     } else {
       activeIndicators.add(ind.name);
       if (ind.name === 'CHANLUN') {
-        // 缠论特殊处理：从后端获取分析数据
         loadChanlun(window.currentSymbol, window.currentInterval, window.currentMarket);
+      } else if (ind.name === 'ELLIOTT_WAVE') {
+        loadElliottWave(window.currentSymbol, window.currentInterval, window.currentMarket);
       } else if (ind.name === 'FIB_RET') {
         loadFibonacci('retracement');
       } else if (ind.name === 'FIB_EXT') {

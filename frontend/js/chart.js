@@ -184,9 +184,12 @@ function initChart() {
         if (!dataList || !dataList.length || !window._chanlunData) return false;
         const cl = window._chanlunData;
 
-        // 工具函数：bar_index -> 像素x坐标
+        // loadMore 后旧缠论数据的 bar_index 需要加偏移（新K线插入开头导致索引右移）
+        // loadChanlun 重新分析后 offset 自动归零
+        const indexOffset = dataList.length - (window._chanlunBarCount || dataList.length);
+
         function barToX(barIdx) {
-          return xAxis.convertToPixel(barIdx);
+          return xAxis.convertToPixel(barIdx + indexOffset);
         }
         // 价格 -> 像素y坐标
         function priceToY(price) {
@@ -195,41 +198,46 @@ function initChart() {
 
         ctx.save();
 
-        // ---- 1. 画中枢（半透明矩形，放在最底层）----
+        const adjFrom = visibleRange.from - indexOffset;
+        const adjTo   = visibleRange.to - indexOffset;
+
+        // ---- 1. 画中枢（TradingView风格：绿色半透明矩形）----
         if (cl.zs_list) {
           for (const zs of cl.zs_list) {
-            if (zs.end_x < visibleRange.from || zs.begin_x > visibleRange.to) continue;
+            if (zs.end_x < adjFrom || zs.begin_x > adjTo) continue;
             const x1 = barToX(zs.begin_x);
             const x2 = barToX(zs.end_x);
             const y1 = priceToY(zs.zg);
             const y2 = priceToY(zs.zd);
 
             if (zs.level === 'seg') {
-              // 线段中枢 - 更大更明显
-              ctx.fillStyle = zs.dir > 0 ? 'rgba(255,23,68,0.06)' : 'rgba(0,200,83,0.06)';
-              ctx.strokeStyle = zs.dir > 0 ? 'rgba(255,23,68,0.25)' : 'rgba(0,200,83,0.25)';
+              // 线段中枢 - 绿色（与TradingView一致）
+              ctx.fillStyle = 'rgba(0,200,83,0.08)';
+              ctx.strokeStyle = 'rgba(0,200,83,0.30)';
               ctx.lineWidth = 1.5;
             } else {
-              // 笔中枢
-              ctx.fillStyle = zs.dir > 0 ? 'rgba(255,152,0,0.08)' : 'rgba(33,150,243,0.08)';
-              ctx.strokeStyle = zs.dir > 0 ? 'rgba(255,152,0,0.35)' : 'rgba(33,150,243,0.35)';
+              // 笔中枢 - 浅绿色
+              ctx.fillStyle = 'rgba(0,200,83,0.05)';
+              ctx.strokeStyle = 'rgba(0,200,83,0.20)';
               ctx.lineWidth = 1;
             }
             ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
             ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
 
-            // 中枢标签
+            // 中枢上下沿价格标注
             ctx.font = '9px sans-serif';
-            ctx.fillStyle = zs.level === 'seg' ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.3)';
-            const label = zs.level === 'seg' ? 'ZS-S' : 'ZS';
-            ctx.fillText(label, x1 + 3, y1 + 11);
+            ctx.fillStyle = 'rgba(0,200,83,0.5)';
+            const zgStr = zs.zg >= 1000 ? zs.zg.toFixed(1) : zs.zg.toFixed(2);
+            const zdStr = zs.zd >= 1000 ? zs.zd.toFixed(1) : zs.zd.toFixed(2);
+            ctx.fillText(zgStr, x1 + 3, y1 + 10);
+            ctx.fillText(zdStr, x1 + 3, y2 - 3);
           }
         }
 
         // ---- 2. 画笔（灰色细线）----
         if (cl.bi_list) {
           for (const bi of cl.bi_list) {
-            if (bi.end_x < visibleRange.from || bi.begin_x > visibleRange.to) continue;
+            if (bi.end_x < adjFrom || bi.begin_x > adjTo) continue;
             const x1 = barToX(bi.begin_x);
             const y1 = priceToY(bi.begin_y);
             const x2 = barToX(bi.end_x);
@@ -247,10 +255,10 @@ function initChart() {
           ctx.setLineDash([]);
         }
 
-        // ---- 3. 画线段（橙色粗线）----
+        // ---- 3. 画线段（橙色虚线，与TradingView一致）----
         if (cl.seg_list) {
           for (const seg of cl.seg_list) {
-            if (seg.end_x < visibleRange.from || seg.begin_x > visibleRange.to) continue;
+            if (seg.end_x < adjFrom || seg.begin_x > adjTo) continue;
             const x1 = barToX(seg.begin_x);
             const y1 = priceToY(seg.begin_y);
             const x2 = barToX(seg.end_x);
@@ -261,9 +269,10 @@ function initChart() {
             ctx.lineTo(x2, y2);
             ctx.strokeStyle = seg.is_sure ? '#FF9800' : 'rgba(255,152,0,0.5)';
             ctx.lineWidth = 2;
-            if (!seg.is_sure) ctx.setLineDash([6, 4]);
-            else ctx.setLineDash([]);
+            // 确认线段用虚线（与TradingView一致），未确认用更疏的虚线
+            ctx.setLineDash(seg.is_sure ? [8, 5] : [4, 6]);
             ctx.stroke();
+            ctx.setLineDash([]);
 
             // 线段端点圆点
             ctx.beginPath();
@@ -275,47 +284,93 @@ function initChart() {
             ctx.fillStyle = '#FF9800';
             ctx.fill();
           }
-          ctx.setLineDash([]);
         }
 
-        // ---- 4. 画买卖点标记 ----
+        // ---- 4. 画买卖点标记（TradingView风格：中文标签 + 底色块）----
+        // 买卖点类型转中文：
+        //   笔级复合(如"2s,3b"): 取三类（中枢结构优先）
+        //   线段级复合(如"S2,3b"): 取首要类型（S2=标准二类更核心）
+        function bspTypeToCN(rawType, isSeg) {
+          const parts = rawType.split(',').map(s => s.trim());
+          const map = { '1':'一', '1p':'一', '2':'二', '2s':'类二', '3':'三', '3a':'三', '3b':'三' };
+          if (isSeg) {
+            // 线段级：取首要类型（如"2,3b"→"2"→"二"）
+            return map[parts[0]] || parts[0];
+          }
+          // 笔级：三类(中枢) > 标准二类 > 类二 > 一类
+          const priority = { '3a':4, '3b':4, '3':4, '2':3, '1':2, '1p':2, '2s':1 };
+          let best = parts[0], bestP = priority[parts[0]] || 0;
+          for (const p of parts) {
+            const pp = priority[p] || 0;
+            if (pp > bestP) { bestP = pp; best = p; }
+          }
+          return map[best] || best;
+        }
         if (cl.bsp_list) {
           for (const bsp of cl.bsp_list) {
-            if (bsp.x < visibleRange.from || bsp.x > visibleRange.to) continue;
+            if (bsp.x < adjFrom || bsp.x > adjTo) continue;
             const x = barToX(bsp.x);
             const y = priceToY(bsp.y);
             const isSeg = bsp.type.startsWith('S');
-            const typeStr = isSeg ? bsp.type.substring(1) : bsp.type;
-            const size = isSeg ? 10 : 7;
-            const offset = bsp.is_buy ? size + 6 : -(size + 6);
+            const rawType = isSeg ? bsp.type.substring(1) : bsp.type;
 
+            // 构建中文标签：一买/二买/三买/一卖/二卖/三卖
+            const numCN = bspTypeToCN(rawType, isSeg);
+            // 线段级加后缀区分：如"二卖" vs "二卖(段)"
+            const suffix = isSeg ? '(段)' : '';
+            const labelText = bsp.is_buy ? `${numCN}买${suffix}` : `${numCN}卖${suffix}`;
+
+            // 颜色：买=绿，卖=红（与TradingView一致）
+            const bgColor = bsp.is_buy ? 'rgba(0,200,83,0.85)' : 'rgba(255,23,68,0.85)';
+            const textColor = '#FFFFFF';
+
+            // 标签位置：买点在K线下方，卖点在K线上方
+            const fontSize = isSeg ? 11 : 9;
+            ctx.font = `bold ${fontSize}px sans-serif`;
+            const tw = ctx.measureText(labelText).width;
+            const padX = 4, padY = 3;
+            const boxW = tw + padX * 2;
+            const boxH = fontSize + padY * 2;
+            const gap = isSeg ? 12 : 8;
+
+            let boxY;
             if (bsp.is_buy) {
-              // 买点 - 红色向上三角
-              ctx.beginPath();
-              ctx.moveTo(x, y + offset - size);
-              ctx.lineTo(x - size, y + offset + size);
-              ctx.lineTo(x + size, y + offset + size);
-              ctx.closePath();
-              ctx.fillStyle = isSeg ? 'rgba(255,23,68,0.9)' : 'rgba(255,82,82,0.8)';
-              ctx.fill();
+              // 买点标签在下方
+              boxY = y + gap;
             } else {
-              // 卖点 - 绿色向下三角
-              ctx.beginPath();
-              ctx.moveTo(x, y + offset + size);
-              ctx.lineTo(x - size, y + offset - size);
-              ctx.lineTo(x + size, y + offset - size);
-              ctx.closePath();
-              ctx.fillStyle = isSeg ? 'rgba(0,200,83,0.9)' : 'rgba(76,175,80,0.8)';
-              ctx.fill();
+              // 卖点标签在上方
+              boxY = y - gap - boxH;
             }
 
-            // 类型标签
-            ctx.font = `bold ${isSeg ? 10 : 9}px sans-serif`;
-            ctx.fillStyle = bsp.is_buy ? '#FF5252' : '#4CAF50';
+            // 画圆角背景
+            const boxX = x - boxW / 2;
+            ctx.fillStyle = bgColor;
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(boxX, boxY, boxW, boxH, 3);
+            else ctx.rect(boxX, boxY, boxW, boxH);
+            ctx.fill();
+
+            // 画文字
+            ctx.fillStyle = textColor;
             ctx.textAlign = 'center';
-            const labelY = bsp.is_buy ? y + offset + size + 12 : y + offset - size - 4;
-            ctx.fillText(typeStr, x, labelY);
+            ctx.textBaseline = 'middle';
+            ctx.fillText(labelText, x, boxY + boxH / 2);
             ctx.textAlign = 'left';
+            ctx.textBaseline = 'alphabetic';
+
+            // 连接线：从标签到K线价格点
+            ctx.beginPath();
+            ctx.strokeStyle = bgColor;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([]);
+            if (bsp.is_buy) {
+              ctx.moveTo(x, y);
+              ctx.lineTo(x, boxY);
+            } else {
+              ctx.moveTo(x, y);
+              ctx.lineTo(x, boxY + boxH);
+            }
+            ctx.stroke();
           }
         }
 
@@ -327,6 +382,297 @@ function initChart() {
     console.log('[Chart] 已注册缠论分析指标');
   } catch(e) {
     console.warn('[Chart] 注册缠论指标失败:', e);
+  }
+
+  // 注册艾略特波浪指标（自定义绘制：推动浪/调整浪/预测目标）
+  try {
+    klinecharts.registerIndicator({
+      name: 'ELLIOTT_WAVE',
+      shortName: '艾略特',
+      calcParams: [],
+      figures: [],
+      draw: ({ ctx, bounding, barSpace, visibleRange, indicator, xAxis, yAxis }) => {
+        const dataList = chart.getDataList();
+        if (!dataList || !dataList.length || !window._elliottData) return false;
+        const ed = window._elliottData;
+        if (!ed.patterns || !ed.patterns.length) return false;
+
+        // 用时间戳反查 dataList 中的真实 bar index，彻底避免 offset 计算错误
+        const _tsIndexMap = new Map();
+        dataList.forEach((d, i) => _tsIndexMap.set(d.timestamp, i));
+        function tsToIndex(ts) {
+          if (_tsIndexMap.has(ts)) return _tsIndexMap.get(ts);
+          // 找最近的时间戳
+          let best = -1, bestDiff = Infinity;
+          _tsIndexMap.forEach((idx, t) => {
+            const diff = Math.abs(t - ts);
+            if (diff < bestDiff) { bestDiff = diff; best = idx; }
+          });
+          return best;
+        }
+        function barToX(ts) { return xAxis.convertToPixel(tsToIndex(ts)); }
+        function priceToY(p) { return yAxis.convertToPixel(p); }
+
+        // DEBUG
+        if (window._elliottDebugOnce !== ed) {
+          window._elliottDebugOnce = ed;
+          const p0 = ed.patterns[0];
+          console.log('[Elliott DEBUG] patterns=', ed.patterns.length,
+            'dataList=', dataList.length,
+            p0 ? `degree=${p0.degree} waves=${p0.waves?.length} start_ts=${p0.start_ts} end_ts=${p0.end_ts}` : 'no pattern');
+          if (p0 && p0.waves && p0.waves[0]) {
+            const w = p0.waves[0];
+            const idx = tsToIndex(w.begin_ts);
+            console.log('[Elliott DEBUG] begin_ts=', w.begin_ts, '-> index=', idx,
+              '-> pixelX=', xAxis.convertToPixel(idx), 'begin_y=', w.begin_y,
+              '-> pixelY=', yAxis.convertToPixel(w.begin_y));
+          }
+        }
+
+        // ── 颜色定义（TV风格）──
+        const COLOR_MAJOR   = '#2962FF';   // 主浪：蓝色
+        const COLOR_SUB     = '#FF6D00';   // 子浪：橙色
+        const COLOR_PREDICT = '#26A69A';   // 预测：青绿
+
+        // ── 格式化价格 ──
+        function fmtPrice(p) {
+          if (p >= 10000) return p.toFixed(0);
+          if (p >= 100)   return p.toFixed(1);
+          if (p >= 1)     return p.toFixed(2);
+          return p.toFixed(5);
+        }
+
+        // ── 绘制一层波浪（支持主浪/子浪两种样式）──
+        // degree=0: 主浪（蓝色，粗线，大圆圈，括号标签）
+        // degree=1: 子浪（橙色，细线，小圆圈，无括号）
+        function drawWaveLayer(waves, is_motive, degree) {
+          if (!waves || !waves.length) return;
+          const isMajor  = degree === 0;
+          const color    = isMajor ? COLOR_MAJOR : COLOR_SUB;
+          const lineW    = isMajor ? 2.0 : 1.5;
+          const R        = isMajor ? 10 : 7;
+          const fontSize = isMajor ? 10 : 9;
+
+          // 收集节点（用时间戳查真实像素坐标）
+          const pts = [];
+          pts.push({ x: barToX(waves[0].begin_ts), y: priceToY(waves[0].begin_y),
+                     price: waves[0].begin_y, lbl: null });
+          for (const w of waves) {
+            pts.push({ x: barToX(w.end_ts), y: priceToY(w.end_y),
+                       price: w.end_y, lbl: w.label });
+          }
+
+          ctx.save();
+
+          // 折线（只从可视区域内画，起始点在屏幕外时跳过）
+          ctx.beginPath();
+          ctx.setLineDash([]);
+          ctx.lineWidth = lineW;
+          ctx.strokeStyle = color;
+          let started = false;
+          for (let i = 0; i < pts.length; i++) {
+            const inView = pts[i].x >= -50 && pts[i].x <= bounding.width + 50;
+            if (!started) {
+              ctx.moveTo(pts[i].x, pts[i].y);
+              if (inView) started = true;
+            } else {
+              ctx.lineTo(pts[i].x, pts[i].y);
+            }
+          }
+          ctx.stroke();
+
+          // 节点圆圈 + 标签（起始点在屏幕外时不画圆点）
+          for (let i = 0; i < pts.length; i++) {
+            const pt  = pts[i];
+            const lbl = pt.lbl;
+            const inView = pt.x >= -20 && pt.x <= bounding.width + 20;
+
+            if (!lbl) {
+              if (!inView) continue;   // 起点不在可视区域则跳过
+              // 起点小圆
+              ctx.beginPath();
+              ctx.arc(pt.x, pt.y, isMajor ? 4 : 3, 0, Math.PI * 2);
+              ctx.fillStyle = color;
+              ctx.fill();
+              continue;
+            }
+            if (!inView) continue;    // 标签点不在可视区域则跳过
+
+            // 标签显示：主浪 (1)(2)(3)(4)(5)，子浪 (a)(b)(c) 小写括号
+            let dispLbl;
+            if (isMajor) {
+              dispLbl = `(${lbl})`;
+            } else {
+              // ABC 修正浪用小写括号，数字子浪用小写括号
+              const isLetter = /^[A-Z]$/.test(lbl);
+              dispLbl = isLetter ? `(${lbl.toLowerCase()})` : `(${lbl})`;
+            }
+            const above   = i > 0 && pt.y <= pts[i - 1].y;
+            const cy      = above ? pt.y - R - 5 : pt.y + R + 5;
+
+            // 圆圈
+            ctx.beginPath();
+            ctx.arc(pt.x, cy, R, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+
+            // 标签文字
+            ctx.font = `bold ${fontSize}px sans-serif`;
+            ctx.fillStyle = '#FFFFFF';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(dispLbl, pt.x, cy);
+            ctx.textBaseline = 'alphabetic';
+
+            // 细竖线连接 K 线点与圆圈
+            ctx.beginPath();
+            ctx.globalAlpha = 0.45;
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = color;
+            ctx.setLineDash([2, 2]);
+            ctx.moveTo(pt.x, pt.y);
+            ctx.lineTo(pt.x, above ? cy + R : cy - R);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.globalAlpha = 1.0;
+
+            // 价格注释（仅主浪）
+            if (isMajor) {
+              ctx.font = '9px sans-serif';
+              ctx.fillStyle = 'rgba(180,200,220,0.8)';
+              ctx.textAlign = 'center';
+              ctx.fillText(fmtPrice(pt.price), pt.x, above ? cy - R - 3 : cy + R + 11);
+            }
+          }
+
+          ctx.restore();
+        }
+
+        // ── 绘制预测目标（TV风格：从终点出发的斜线扇形，延伸到右边界）──
+        function drawPrediction(pred, endTs) {
+          if (!pred || !pred.targets) return;
+          const x0 = barToX(endTs);
+          // 预测线终点：在价格轴左侧留出标签空间（价格轴约80px宽）
+          const x1 = bounding.width - 90;
+          // 只有当起点在终点右侧时跳过（无空间画线）
+          if (x0 >= x1 - 10) return;
+
+          // 起点 y：优先用预测数据里的 origin_price（如 (b) 顶），兜底用主浪最后一浪终点
+          const endPrice = pred.origin_price
+            || (majorPat && majorPat.waves && majorPat.waves.length
+                ? majorPat.waves[majorPat.waves.length - 1].end_y : null);
+          if (!endPrice) { ctx.restore(); return; }
+          const startY = priceToY(endPrice);
+
+          const clr = '#2962FF';
+          const nextWave = pred.next_wave || '';
+
+          ctx.save();
+          ctx.setLineDash([3, 4]);
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = clr;
+          ctx.fillStyle = clr;
+          ctx.font = '11px sans-serif';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+
+          Object.entries(pred.targets).slice(0, 6).forEach(([name, price]) => {
+            const targetY = priceToY(price);
+            if (targetY < -50 || targetY > bounding.height + 50) return;
+
+            // 从终点(x0, startY)画斜线到(x1, targetY)
+            ctx.globalAlpha = 0.55;
+            ctx.beginPath();
+            ctx.moveTo(x0, startY);
+            ctx.lineTo(x1, targetY);
+            ctx.stroke();
+
+            // 末端小圆点
+            ctx.globalAlpha = 0.8;
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.arc(x1, targetY, 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = clr;
+            ctx.fill();
+            ctx.setLineDash([3, 4]);
+
+            // 右侧标签：(A) 0.618 (442.79)
+            // 从 key 中提取：等号前 = 浪标签，等号后第一个数 = 比率
+            const eqIdx = name.indexOf('=');
+            const waveLabel = eqIdx > 0 ? name.substring(0, eqIdx) : (nextWave || name);
+            const afterEq = eqIdx >= 0 ? name.substring(eqIdx + 1) : '';
+            const ratioMatch = afterEq.match(/^(\d+\.?\d*)/);
+            const ratio = ratioMatch ? parseFloat(ratioMatch[1]).toFixed(3).replace(/\.?0+$/, '') : '';
+            const label = ratio
+              ? `(${waveLabel}) ${ratio} (${fmtPrice(price)})`
+              : `(${waveLabel}) (${fmtPrice(price)})`;
+            ctx.globalAlpha = 1.0;
+            ctx.fillStyle = clr;
+            // 标签画在端点左侧，避开右侧价格轴
+            ctx.textAlign = 'right';
+            ctx.fillText(label, x1 - 6, targetY - 5);
+            ctx.textAlign = 'left';
+          });
+
+          ctx.restore();
+        }
+
+        // ── 绘制模式名 badge ──
+        function drawBadge(pat, pts, color) {
+          const confPct = Math.round(pat.confidence * 100);
+          const txt = `${pat.pattern_name}  ${confPct}%`;
+          ctx.save();
+          ctx.font = 'bold 11px sans-serif';
+          const tw = ctx.measureText(txt).width;
+          // badge 锚定到可视区域内的第一个有标签的波浪点（避免跑到顶部或左上角）
+          const visiblePts = pts.filter(p => p.x >= 10 && p.x <= bounding.width - 10);
+          const anchorPt = visiblePts.length > 0 ? visiblePts[0] : pts[1] || pts[0];
+          const bx = Math.max(10, anchorPt.x - tw / 2);
+          // y 锚定到第一个可见点的上方（而不是最高价点上方，避免跑到顶部）
+          const by = anchorPt.y - 30;
+          ctx.fillStyle = 'rgba(10,14,26,0.75)';
+          if (ctx.roundRect) ctx.roundRect(bx - 4, by - 13, tw + 10, 18, 3);
+          else ctx.rect(bx - 4, by - 13, tw + 10, 18);
+          ctx.fill();
+          ctx.fillStyle = color;
+          ctx.textAlign = 'left';
+          ctx.fillText(txt, bx + 1, by);
+          ctx.restore();
+        }
+
+        // ── 主绘制逻辑（degree=0主浪蓝色，degree=1子浪橙色）──
+        const majorPat = ed.patterns.find(p => p.degree === 0);
+        const minorPat = ed.patterns.find(p => p.degree === 1);
+
+        // 1. 先画子浪（橙色，在下层）
+        if (minorPat) drawWaveLayer(minorPat.waves, minorPat.is_motive, 1);
+
+        // 2. 再画主浪（蓝色，在上层）
+        if (majorPat) {
+          drawWaveLayer(majorPat.waves, majorPat.is_motive, 0);
+
+          // badge
+          const pts = [];
+          if (majorPat.waves.length) {
+            pts.push({ x: barToX(majorPat.waves[0].begin_ts), y: priceToY(majorPat.waves[0].begin_y) });
+            for (const w of majorPat.waves) pts.push({ x: barToX(w.end_ts), y: priceToY(w.end_y) });
+          }
+          if (pts.length) drawBadge(majorPat, pts, COLOR_MAJOR);
+
+          // 预测目标
+          if (ed.predictions && ed.predictions[0]) {
+            const pred = ed.predictions[0];
+            drawPrediction(pred, pred.end_ts || majorPat.end_ts);
+          }
+        }
+
+        return false;
+      },
+      calc: (dataList) => dataList.map(() => ({})),
+    });
+    console.log('[Chart] 已注册艾略特波浪指标');
+  } catch(e) {
+    console.warn('[Chart] 注册艾略特波浪指标失败:', e);
   }
 
   // 注册斐波那契回撤指标（自定义绘制）
@@ -526,6 +872,88 @@ function initChart() {
     console.warn('[Chart] 添加成交量副图失败:', e);
   }
 
+  // 缩放/滚动后自动刷新艾略特波浪（防抖800ms，避免频繁请求）
+  let _elliottDebounce = null;
+  function _onViewChange() {
+    if (!isElliottActive()) return;
+    clearTimeout(_elliottDebounce);
+    _elliottDebounce = setTimeout(() => {
+      loadElliottWave(window.currentSymbol, window.currentInterval, window.currentMarket);
+    }, 800);
+  }
+  try {
+    chart.subscribeAction(klinecharts.ActionType.OnZoom,   _onViewChange);
+    chart.subscribeAction(klinecharts.ActionType.OnScroll, _onViewChange);
+  } catch(e) {
+    console.warn('[Chart] 无法订阅缩放/滚动事件:', e);
+  }
+
+  // 懒加载历史K线：监听滚动事件，当可视范围接近左边界时自动加载
+  window._loadMoreReady = false;
+  window._loadMoreNoMore = false;
+  window._loadMoreFetching = false;
+
+  async function fetchMoreHistory() {
+    if (!window._loadMoreReady || window._loadMoreFetching || window._loadMoreNoMore) return;
+
+    // 检查是否滚动到了左边界附近
+    const visRange = chart.getVisibleRange();
+    if (!visRange || visRange.from > 20) return;  // 距左边界还有20根以上，不触发
+
+    window._loadMoreFetching = true;
+    try {
+      const s   = window.currentSymbol;
+      const iv  = window.currentInterval;
+      const mkt = window.currentMarket === 'a' ? 'cn' : (window.currentMarket || 'crypto');
+      const dataList = chart.getDataList();
+      if (!dataList || !dataList.length) return;
+      const endTs = dataList[0].timestamp;
+
+      const resp = await fetch(
+        `/api/klines?symbol=${encodeURIComponent(s)}&interval=${encodeURIComponent(iv)}&limit=500&market=${encodeURIComponent(mkt)}&end_time=${endTs}`
+      );
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const d = await resp.json();
+      const raw = d.candles || d.data || d;
+      if (!Array.isArray(raw) || raw.length === 0) {
+        window._loadMoreNoMore = true;
+        console.log('[Chart] 无更多历史K线');
+        return;
+      }
+      const more = raw.map(k => ({
+        timestamp: k.timestamp || k.time || k.t,
+        open:      parseFloat(k.open  || k.o),
+        high:      parseFloat(k.high  || k.h),
+        low:       parseFloat(k.low   || k.l),
+        close:     parseFloat(k.close || k.c),
+        volume:    parseFloat(k.volume || k.v || 0),
+        turnover:  parseFloat(k.turnover || k.amount || 0),
+      }));
+      if (more.length < 500) window._loadMoreNoMore = true;
+      chart.applyMoreData(more, more.length < 500);
+      console.log(`[Chart] 懒加载 ${more.length} 根历史K线，总计: ${chart.getDataList().length}`);
+
+      // 加载更多K线后，重新运行缠论分析（等图表数据稳定后再跑）
+      if (typeof isChanlunActive === 'function' && isChanlunActive()) {
+        setTimeout(() => {
+          console.log(`[Chart] loadMore后重新分析缠论，当前K线数: ${chart.getDataList().length}`);
+          loadChanlun();
+        }, 800);
+      }
+    } catch (e) {
+      console.error('[Chart] 懒加载历史K线失败:', e);
+    } finally {
+      window._loadMoreFetching = false;
+    }
+  }
+
+  // 用滚动事件触发（500ms防抖），替代 loadMore 回调
+  let _loadMoreTimer = null;
+  chart.subscribeAction(klinecharts.ActionType.OnScroll, () => {
+    if (_loadMoreTimer) clearTimeout(_loadMoreTimer);
+    _loadMoreTimer = setTimeout(fetchMoreHistory, 500);
+  });
+
   console.log('[Chart] 初始化完成');
 }
 
@@ -564,6 +992,12 @@ async function loadKlines(symbol, interval, market) {
 
     chart.applyNewData(klines);
 
+    // 初始数据加载完毕，500ms后解锁懒加载（等图表渲染稳定）
+    window._loadMoreReady = false;
+    window._loadMoreFetching = false;
+    window._loadMoreNoMore = false;   // 重置：新周期可能有更多历史数据
+    setTimeout(() => { window._loadMoreReady = true; }, 500);
+
     // 更新水印
     const wm = document.getElementById('chart-watermark');
     if (wm) wm.textContent = symbol;
@@ -582,6 +1016,10 @@ async function loadKlines(symbol, interval, market) {
     // 如果缠论分析已启用，自动刷新
     if (isChanlunActive()) {
       loadChanlun(symbol, interval, market);
+    }
+    // 如果艾略特波浪已启用，自动刷新
+    if (isElliottActive()) {
+      loadElliottWave(symbol, interval, market);
     }
     // 如果斐波那契已启用，自动刷新
     if (isFibActive('FIB_RET')) loadFibonacci('retracement');
@@ -955,6 +1393,7 @@ async function loadChanlun(symbol, interval, market) {
     const data = await resp.json();
 
     window._chanlunData = data;
+    window._chanlunBarCount = chartData.length;
 
     // 确保 CHANLUN 指标已添加到主图
     if (!window._chanlunAdded) {
@@ -988,6 +1427,85 @@ function removeChanlun() {
 
 function isChanlunActive() {
   return !!window._chanlunAdded;
+}
+
+/* ---------- 艾略特波浪数据加载 ---------- */
+let _elliottLoading = false;
+
+async function loadElliottWave(symbol, interval, market) {
+  if (!chart || _elliottLoading) return;
+  _elliottLoading = true;
+
+  if (!symbol) symbol = window.currentSymbol;
+  if (!interval) interval = window.currentInterval || '1H';
+  if (!market) market = window.currentMarket === 'a' ? 'cn' : (window.currentMarket || 'crypto');
+
+  try {
+    const chartData = chart.getDataList();
+    if (!chartData || chartData.length < 30) {
+      showToast('K线数据不足，至少需要30根K线', 'warning');
+      _elliottLoading = false;
+      return;
+    }
+
+    // 只发送可见区域的K线，bar_offset=from 确保后端返回的索引映射到完整图表坐标
+    const visRange = chart.getVisibleRange();
+    const from = visRange ? Math.max(0, Math.floor(visRange.from)) : 0;
+    const to   = visRange ? Math.min(chartData.length - 1, Math.ceil(visRange.to)) : chartData.length - 1;
+    const visibleSlice = chartData.slice(from, to + 1);
+
+    if (visibleSlice.length < 30) {
+      showToast('可见K线不足30根，请缩小视图', 'warning');
+      _elliottLoading = false;
+      return;
+    }
+
+    const candles = visibleSlice.map(d => ({
+      timestamp: d.timestamp, open: d.open, high: d.high,
+      low: d.low, close: d.close, volume: d.volume || 0,
+    }));
+
+    const resp = await fetch('/api/chanlun/elliott-wave/from-data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ candles, bar_offset: from }),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    window._elliottData = data;
+
+    if (!window._elliottAdded) {
+      chart.createIndicator('ELLIOTT_WAVE', true, { id: 'candle_pane' });
+      window._elliottAdded = true;
+    }
+    chart.resize();
+
+    const cnt = data.patterns ? data.patterns.length : 0;
+    if (cnt > 0) {
+      const best = data.patterns[0];
+      showToast(`艾略特: ${best.pattern_name} 置信度 ${Math.round(best.confidence * 100)}%`, 'success', 3000);
+    } else {
+      showToast('艾略特波浪: 未识别到有效模式', 'warning', 3000);
+    }
+  } catch (err) {
+    showToast(`艾略特波浪分析失败: ${err.message}`, 'error');
+  } finally {
+    _elliottLoading = false;
+  }
+}
+
+function removeElliottWave() {
+  window._elliottData = null;
+  if (window._elliottAdded && chart) {
+    try { chart.removeIndicator('candle_pane', 'ELLIOTT_WAVE'); } catch(e) {}
+    window._elliottAdded = false;
+  }
+  console.log('[Elliott] 已移除艾略特波浪');
+}
+
+function isElliottActive() {
+  return !!window._elliottAdded;
 }
 
 /* ---------- 斐波那契分析数据加载 ---------- */

@@ -2,7 +2,7 @@
 数据源工厂，根据 market 类型自动选择对应的数据源。
 """
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Optional
 from backend.data.models import Symbol, Candle, Market, Interval
 
 class DataFetcher(ABC):
@@ -14,7 +14,7 @@ class DataFetcher(ABC):
         pass
 
     @abstractmethod
-    async def get_klines(self, symbol: str, interval: Interval, limit: int = 500) -> List[Candle]:
+    async def get_klines(self, symbol: str, interval: Interval, limit: int = 500, end_time_ms: Optional[int] = None) -> List[Candle]:
         pass
 
     @abstractmethod

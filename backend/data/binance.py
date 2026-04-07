@@ -137,10 +137,11 @@ class BinanceFetcher(DataFetcher):
         return symbols
 
     async def get_klines(
-        self, symbol: str, interval: Interval, limit: int = 500
+        self, symbol: str, interval: Interval, limit: int = 500, end_time_ms: Optional[int] = None
     ) -> List[Candle]:
         """
         获取历史 K 线。Binance 单次最多 1000 根，用 endTime 翻页。
+        end_time_ms: 毫秒时间戳，只返回早于此时间的K线（向左懒加载）。
         返回按时间升序排列的 Candle 列表。
         """
         bn_interval = _INTERVAL_MAP.get(interval)
@@ -149,7 +150,8 @@ class BinanceFetcher(DataFetcher):
 
         bn_symbol = _symbol_to_binance(symbol)
         all_candles: List[Candle] = []
-        end_time: Optional[int] = None
+        # 如果指定了 end_time_ms，用它作为初始 endTime；否则从最新开始
+        end_time: Optional[int] = (end_time_ms - 1) if end_time_ms is not None else None
         remaining = limit
 
         while remaining > 0:

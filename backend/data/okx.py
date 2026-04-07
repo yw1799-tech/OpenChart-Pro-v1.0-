@@ -118,11 +118,12 @@ class OKXFetcher(DataFetcher):
         return symbols
 
     async def get_klines(
-        self, symbol: str, interval: Interval, limit: int = 500
+        self, symbol: str, interval: Interval, limit: int = 500, end_time_ms: Optional[int] = None
     ) -> List[Candle]:
         """
         获取历史 K 线，自动分页拉取直到 limit 满足。
         OKX 单次最多 100 根，用 after 参数翻页。
+        end_time_ms: 毫秒时间戳，只返回早于此时间的K线（向左懒加载）。
         返回按时间升序排列的 Candle 列表。
         """
         bar = _INTERVAL_MAP.get(interval)
@@ -130,7 +131,8 @@ class OKXFetcher(DataFetcher):
             raise ValueError(f"不支持的 Interval: {interval}")
 
         all_candles: List[Candle] = []
-        after: Optional[str] = None
+        # end_time_ms 存在时直接走 history-candles，after 设为该时间戳
+        after: Optional[str] = str(end_time_ms) if end_time_ms is not None else None
         remaining = limit
 
         while remaining > 0:
@@ -141,12 +143,12 @@ class OKXFetcher(DataFetcher):
                 "limit": str(batch_size),
             }
 
-            # 首次走 candles 接口，翻页走 history-candles
-            if after is None:
-                path = "/api/v5/market/candles"
-            else:
+            # end_time_ms 存在或已翻页，走 history-candles；否则走 candles（含最新未收盘K线）
+            if after is not None:
                 path = "/api/v5/market/history-candles"
                 params["after"] = after
+            else:
+                path = "/api/v5/market/candles"
 
             data = await self._get(path, params)
             if not data:
