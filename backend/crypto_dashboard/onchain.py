@@ -2,6 +2,7 @@
 链上数据模块
 数据源: CryptoQuant, Blockchain.com, Glassnode
 """
+
 import os
 import aiohttp
 import logging
@@ -47,9 +48,7 @@ class OnChainData:
                             "source": "cryptoquant",
                         }
                     else:
-                        logger.warning(
-                            "CryptoQuant API 返回 %d，降级为模拟数据", resp.status
-                        )
+                        logger.warning("CryptoQuant API 返回 %d，降级为模拟数据", resp.status)
                         return self._mock_exchange_flow()
         except Exception as e:
             logger.error("获取交易所流入流出数据失败: %s", e)
@@ -77,9 +76,7 @@ class OnChainData:
             "source": "mock",
         }
 
-    async def get_whale_transactions(
-        self, coin: str = "BTC", min_value: int = 1_000_000
-    ) -> list:
+    async def get_whale_transactions(self, coin: str = "BTC", min_value: int = 1_000_000) -> list:
         """
         巨鲸交易追踪
         数据源: Blockchain.com API (免费)
@@ -93,9 +90,7 @@ class OnChainData:
             async with aiohttp.ClientSession(timeout=self.timeout) as session:
                 async with session.get(url) as resp:
                     if resp.status != 200:
-                        logger.warning(
-                            "Blockchain.com API 返回 %d，返回空列表", resp.status
-                        )
+                        logger.warning("Blockchain.com API 返回 %d，返回空列表", resp.status)
                         return []
 
                     data = await resp.json()
@@ -104,9 +99,7 @@ class OnChainData:
 
                     for tx in txs:
                         # 计算交易总输出（单位为聪，转换为BTC）
-                        total_out_satoshi = sum(
-                            out.get("value", 0) for out in tx.get("out", [])
-                        )
+                        total_out_satoshi = sum(out.get("value", 0) for out in tx.get("out", []))
                         total_out_btc = total_out_satoshi / 1e8
 
                         # 粗略估算USD价值（使用简单乘数，实际应查询实时价格）
@@ -117,10 +110,7 @@ class OnChainData:
                             whale_txs.append(
                                 {
                                     "hash": tx.get("hash", ""),
-                                    "time": datetime.utcfromtimestamp(
-                                        tx.get("time", 0)
-                                    ).isoformat()
-                                    + "Z",
+                                    "time": datetime.utcfromtimestamp(tx.get("time", 0)).isoformat() + "Z",
                                     "total_btc": round(total_out_btc, 4),
                                     "estimated_usd": round(estimated_usd, 2),
                                     "inputs_count": len(tx.get("inputs", [])),
@@ -149,9 +139,7 @@ class OnChainData:
             async with aiohttp.ClientSession(timeout=self.timeout) as session:
                 async with session.get(url) as resp:
                     if resp.status != 200:
-                        logger.warning(
-                            "获取活跃地址数失败，状态码: %d", resp.status
-                        )
+                        logger.warning("获取活跃地址数失败，状态码: %d", resp.status)
                         return {"values": [], "source": "error"}
 
                     data = await resp.json()
@@ -159,9 +147,7 @@ class OnChainData:
                     for point in data.get("values", []):
                         values.append(
                             {
-                                "date": datetime.utcfromtimestamp(
-                                    point["x"]
-                                ).strftime("%Y-%m-%d"),
+                                "date": datetime.utcfromtimestamp(point["x"]).strftime("%Y-%m-%d"),
                                 "count": int(point["y"]),
                             }
                         )
@@ -200,9 +186,7 @@ class OnChainData:
             async with aiohttp.ClientSession(timeout=self.timeout) as session:
                 async with session.get(url, params=params) as resp:
                     if resp.status != 200:
-                        logger.warning(
-                            "Glassnode API 返回 %d，降级为模拟数据", resp.status
-                        )
+                        logger.warning("Glassnode API 返回 %d，降级为模拟数据", resp.status)
                         return self._mock_nupl()
 
                     data = await resp.json()
@@ -210,9 +194,7 @@ class OnChainData:
                     for point in data:
                         values.append(
                             {
-                                "date": datetime.utcfromtimestamp(
-                                    point["t"]
-                                ).strftime("%Y-%m-%d"),
+                                "date": datetime.utcfromtimestamp(point["t"]).strftime("%Y-%m-%d"),
                                 "nupl": round(point["v"], 4),
                             }
                         )
@@ -276,12 +258,8 @@ class OnChainData:
         - https://api.blockchain.info/charts/hash-rate?timespan=30days&format=json
         - https://api.blockchain.info/charts/miners-revenue?timespan=30days&format=json
         """
-        hash_rate_url = (
-            f"{self.blockchain_base}/charts/hash-rate?timespan=30days&format=json"
-        )
-        revenue_url = (
-            f"{self.blockchain_base}/charts/miners-revenue?timespan=30days&format=json"
-        )
+        hash_rate_url = f"{self.blockchain_base}/charts/hash-rate?timespan=30days&format=json"
+        revenue_url = f"{self.blockchain_base}/charts/miners-revenue?timespan=30days&format=json"
 
         result = {
             "hash_rate": {"values": [], "unit": ""},
@@ -299,42 +277,30 @@ class OnChainData:
                     # 处理哈希率
                     if hash_resp.status == 200:
                         hash_data = await hash_resp.json()
-                        result["hash_rate"]["unit"] = hash_data.get(
-                            "unit", "TH/s"
-                        )
+                        result["hash_rate"]["unit"] = hash_data.get("unit", "TH/s")
                         for point in hash_data.get("values", []):
                             result["hash_rate"]["values"].append(
                                 {
-                                    "date": datetime.utcfromtimestamp(
-                                        point["x"]
-                                    ).strftime("%Y-%m-%d"),
+                                    "date": datetime.utcfromtimestamp(point["x"]).strftime("%Y-%m-%d"),
                                     "value": round(point["y"], 2),
                                 }
                             )
                     else:
-                        logger.warning(
-                            "获取哈希率失败，状态码: %d", hash_resp.status
-                        )
+                        logger.warning("获取哈希率失败，状态码: %d", hash_resp.status)
 
                     # 处理矿工收入
                     if rev_resp.status == 200:
                         rev_data = await rev_resp.json()
-                        result["miners_revenue"]["unit"] = rev_data.get(
-                            "unit", "USD"
-                        )
+                        result["miners_revenue"]["unit"] = rev_data.get("unit", "USD")
                         for point in rev_data.get("values", []):
                             result["miners_revenue"]["values"].append(
                                 {
-                                    "date": datetime.utcfromtimestamp(
-                                        point["x"]
-                                    ).strftime("%Y-%m-%d"),
+                                    "date": datetime.utcfromtimestamp(point["x"]).strftime("%Y-%m-%d"),
                                     "value": round(point["y"], 2),
                                 }
                             )
                     else:
-                        logger.warning(
-                            "获取矿工收入失败，状态码: %d", rev_resp.status
-                        )
+                        logger.warning("获取矿工收入失败，状态码: %d", rev_resp.status)
 
         except Exception as e:
             logger.error("获取矿工数据失败: %s", e)

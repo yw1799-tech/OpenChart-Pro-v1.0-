@@ -7,7 +7,7 @@ from KLine.KLine_Unit import CKLine_Unit
 
 from .Combine_Item import CCombine_Item
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class CKLine_Combiner(Generic[T]):
@@ -29,25 +29,32 @@ class CKLine_Combiner(Generic[T]):
         self._memoize_cache = {}
 
     @property
-    def time_begin(self): return self.__time_begin
+    def time_begin(self):
+        return self.__time_begin
 
     @property
-    def time_end(self): return self.__time_end
+    def time_end(self):
+        return self.__time_end
 
     @property
-    def high(self): return self.__high
+    def high(self):
+        return self.__high
 
     @property
-    def low(self): return self.__low
+    def low(self):
+        return self.__low
 
     @property
-    def lst(self): return self.__lst
+    def lst(self):
+        return self.__lst
 
     @property
-    def dir(self): return self.__dir
+    def dir(self):
+        return self.__dir
 
     @property
-    def fx(self): return self.__fx
+    def fx(self):
+        return self.__fx
 
     @property
     def pre(self) -> Self:
@@ -55,24 +62,25 @@ class CKLine_Combiner(Generic[T]):
         return self.__pre
 
     @property
-    def next(self): return self.__next
+    def next(self):
+        return self.__next
 
     def get_next(self) -> Self:
         assert self.next is not None
         return self.next
 
     def test_combine(self, item: CCombine_Item, exclude_included=False, allow_top_equal=None):
-        if (self.high >= item.high and self.low <= item.low):
+        if self.high >= item.high and self.low <= item.low:
             return KLINE_DIR.COMBINE
-        if (self.high <= item.high and self.low >= item.low):
+        if self.high <= item.high and self.low >= item.low:
             if allow_top_equal == 1 and self.high == item.high and self.low > item.low:
                 return KLINE_DIR.DOWN
             elif allow_top_equal == -1 and self.low == item.low and self.high < item.high:
                 return KLINE_DIR.UP
             return KLINE_DIR.INCLUDED if exclude_included else KLINE_DIR.COMBINE
-        if (self.high > item.high and self.low > item.low):
+        if self.high > item.high and self.low > item.low:
             return KLINE_DIR.DOWN
-        if (self.high < item.high and self.low < item.low):
+        if self.high < item.high and self.low < item.low:
             return KLINE_DIR.UP
         else:
             raise CChanException("combine type unknown", ErrCode.COMBINER_ERR)
@@ -100,7 +108,9 @@ class CKLine_Combiner(Generic[T]):
                     self.__high = min([self.high, combine_item.high])
                     self.__low = min([self.low, combine_item.low])
             else:
-                raise CChanException(f"KLINE_DIR = {self.dir} err!!! must be {KLINE_DIR.UP}/{KLINE_DIR.DOWN}", ErrCode.COMBINER_ERR)
+                raise CChanException(
+                    f"KLINE_DIR = {self.dir} err!!! must be {KLINE_DIR.UP}/{KLINE_DIR.DOWN}", ErrCode.COMBINER_ERR
+                )
             self.__time_end = combine_item.time_end
             self.clean_cache()
         # 返回UP/DOWN/COMBINE给KL_LIST，设置下一个的方向

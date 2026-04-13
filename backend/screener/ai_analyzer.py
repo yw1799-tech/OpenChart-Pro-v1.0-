@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 try:
     from openai import AsyncOpenAI
+
     HAS_OPENAI = True
 except ImportError:
     HAS_OPENAI = False
@@ -113,7 +114,7 @@ class AIAnalyzer:
         all_results = []
 
         for i in range(0, len(news_list), batch_size):
-            batch = news_list[i:i + batch_size]
+            batch = news_list[i : i + batch_size]
             analyzed = await self._analyze_batch(batch)
             all_results.extend(analyzed)
 
@@ -162,10 +163,10 @@ class AIAnalyzer:
                         json_lines.append(line)
                 result_text = "\n".join(json_lines).strip()
             # 如果不是以{或[开头，尝试找JSON部分
-            if result_text and result_text[0] not in ('{', '['):
-                start = result_text.find('{')
+            if result_text and result_text[0] not in ("{", "["):
+                start = result_text.find("{")
                 if start == -1:
-                    start = result_text.find('[')
+                    start = result_text.find("[")
                 if start != -1:
                     result_text = result_text[start:]
             logger.debug(f"LLM返回内容(截取): {result_text[:200]}")
@@ -202,14 +203,30 @@ class AIAnalyzer:
 
         except json.JSONDecodeError as e:
             logger.error(f"LLM返回的JSON解析失败: {e}")
-            return [{**item, "sentiment_score": 50, "impact_level": "low",
-                     "affected_sectors": [], "affected_symbols": [], "ai_summary": ""}
-                    for item in batch]
+            return [
+                {
+                    **item,
+                    "sentiment_score": 50,
+                    "impact_level": "low",
+                    "affected_sectors": [],
+                    "affected_symbols": [],
+                    "ai_summary": "",
+                }
+                for item in batch
+            ]
         except Exception as e:
             logger.error(f"AI情绪分析失败: {e}")
-            return [{**item, "sentiment_score": 50, "impact_level": "low",
-                     "affected_sectors": [], "affected_symbols": [], "ai_summary": ""}
-                    for item in batch]
+            return [
+                {
+                    **item,
+                    "sentiment_score": 50,
+                    "impact_level": "low",
+                    "affected_sectors": [],
+                    "affected_symbols": [],
+                    "ai_summary": "",
+                }
+                for item in batch
+            ]
 
     # ------------------------------------------------------------------
     # 综合推荐
@@ -283,9 +300,7 @@ class AIAnalyzer:
                     }
                 symbol_data[sym]["sentiment_scores"].append(item.get("sentiment_score", 50))
                 impact_map = {"high": 90, "medium": 60, "low": 30}
-                symbol_data[sym]["impact_scores"].append(
-                    impact_map.get(item.get("impact_level", "low"), 30)
-                )
+                symbol_data[sym]["impact_scores"].append(impact_map.get(item.get("impact_level", "low"), 30))
                 symbol_data[sym]["news_count"] += 1
                 symbol_data[sym]["news_items"].append(item.get("title", ""))
 
@@ -310,12 +325,7 @@ class AIAnalyzer:
             impact = sum(data["impact_scores"]) / len(data["impact_scores"])
 
             # 综合评分
-            total_score = (
-                sentiment * 0.40
-                + technical * 0.35
-                + news_volume * 0.15
-                + impact * 0.10
-            )
+            total_score = sentiment * 0.40 + technical * 0.35 + news_volume * 0.15 + impact * 0.10
 
             if total_score >= min_score:
                 # 根据评分判断动作
@@ -328,18 +338,20 @@ class AIAnalyzer:
                 else:
                     action = "hold"
 
-                recommendations.append({
-                    "symbol": sym,
-                    "action": action,
-                    "total_score": round(total_score, 2),
-                    "sentiment_score": round(sentiment, 2),
-                    "technical_score": round(technical, 2),
-                    "news_volume_score": round(news_volume, 2),
-                    "impact_score": round(impact, 2),
-                    "news_count": data["news_count"],
-                    "recent_headlines": data["news_items"][:5],
-                    "market": market,
-                })
+                recommendations.append(
+                    {
+                        "symbol": sym,
+                        "action": action,
+                        "total_score": round(total_score, 2),
+                        "sentiment_score": round(sentiment, 2),
+                        "technical_score": round(technical, 2),
+                        "news_volume_score": round(news_volume, 2),
+                        "impact_score": round(impact, 2),
+                        "news_count": data["news_count"],
+                        "recent_headlines": data["news_items"][:5],
+                        "market": market,
+                    }
+                )
 
         # 按综合评分降序
         recommendations.sort(key=lambda x: x["total_score"], reverse=True)
@@ -349,9 +361,7 @@ class AIAnalyzer:
     # 技术面评分
     # ------------------------------------------------------------------
 
-    async def _get_technical_scores(
-        self, symbols: List[str], market: str
-    ) -> Dict[str, float]:
+    async def _get_technical_scores(self, symbols: List[str], market: str) -> Dict[str, float]:
         """
         获取品种的技术面评分 (0-100)。
 
@@ -372,9 +382,12 @@ class AIAnalyzer:
             for symbol in symbols:
                 try:
                     collection_name = f"kline_{symbol.lower().replace('/', '_')}_1d"
-                    cursor = db[collection_name].find(
-                        {}, {"_id": 0, "close": 1, "volume": 1, "high": 1, "low": 1}
-                    ).sort("timestamp", -1).limit(100)
+                    cursor = (
+                        db[collection_name]
+                        .find({}, {"_id": 0, "close": 1, "volume": 1, "high": 1, "low": 1})
+                        .sort("timestamp", -1)
+                        .limit(100)
+                    )
 
                     records = await cursor.to_list(length=None)
                     if not records or len(records) < 30:
@@ -410,7 +423,7 @@ class AIAnalyzer:
                         if rsi < 30:
                             score += 20  # 超卖看多
                         elif rsi > 70:
-                            score -= 5   # 超买
+                            score -= 5  # 超买
                         else:
                             score += 10  # 正常
 

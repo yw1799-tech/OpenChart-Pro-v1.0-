@@ -24,7 +24,7 @@ class CTime:
         else:
             return f"{self.year:04}/{self.month:02}/{self.day:02} {self.hour:02}:{self.minute:02}"
 
-    def toDateStr(self, splt=''):
+    def toDateStr(self, splt=""):
         return f"{self.year:04}{splt}{self.month:02}{splt}{self.day:02}"
 
     def toDate(self):

@@ -15,22 +15,46 @@ import numpy as np
 from typing import Any
 
 from .parser import (
-    parse_openscript, OpenScriptError, ParseResult, Program,
-    ASTNode, NumberLiteral, StringLiteral, BoolLiteral, NALiteral,
-    Identifier, DotAccess, IndexAccess, BinaryOp, UnaryOp, TernaryOp,
-    FunctionCall, Assignment, Reassignment, CompoundAssignment,
-    IfBlock, ForBlock, WhileBlock, BreakStmt, ContinueStmt,
-    ExprStatement, TupleDestructure, FunctionDef, _get_func_name,
+    parse_openscript,
+    OpenScriptError,
+    ParseResult,
+    Program,
+    ASTNode,
+    NumberLiteral,
+    StringLiteral,
+    BoolLiteral,
+    NALiteral,
+    Identifier,
+    DotAccess,
+    IndexAccess,
+    BinaryOp,
+    UnaryOp,
+    TernaryOp,
+    FunctionCall,
+    Assignment,
+    Reassignment,
+    CompoundAssignment,
+    IfBlock,
+    ForBlock,
+    WhileBlock,
+    BreakStmt,
+    ContinueStmt,
+    ExprStatement,
+    TupleDestructure,
+    FunctionDef,
+    _get_func_name,
 )
 
 
 class ExecutionError(Exception):
     """执行错误"""
+
     pass
 
 
 class _TimeoutError(Exception):
     """执行超时"""
+
     pass
 
 
@@ -46,10 +70,11 @@ class ContinueSignal(Exception):
 # Pine Script Array 包装类
 # ============================================================
 
+
 class PineArray:
     """Pine Script array 类型的 Python 实现"""
 
-    def __init__(self, size: int = 0, init_val: float = float('nan')):
+    def __init__(self, size: int = 0, init_val: float = float("nan")):
         if size > 0:
             self.data = [init_val] * size
         else:
@@ -58,7 +83,7 @@ class PineArray:
     def get(self, index: int):
         if 0 <= index < len(self.data):
             return self.data[index]
-        return float('nan')
+        return float("nan")
 
     def set(self, index: int, value):
         if 0 <= index < len(self.data):
@@ -70,7 +95,7 @@ class PineArray:
     def pop(self):
         if self.data:
             return self.data.pop()
-        return float('nan')
+        return float("nan")
 
     def size(self):
         return len(self.data)
@@ -80,15 +105,15 @@ class PineArray:
 
     def avg(self):
         valid = [v for v in self.data if v is not None and not _is_nan(v)]
-        return sum(valid) / len(valid) if valid else float('nan')
+        return sum(valid) / len(valid) if valid else float("nan")
 
     def min(self):
         valid = [v for v in self.data if v is not None and not _is_nan(v)]
-        return min(valid) if valid else float('nan')
+        return min(valid) if valid else float("nan")
 
     def max(self):
         valid = [v for v in self.data if v is not None and not _is_nan(v)]
-        return max(valid) if valid else float('nan')
+        return max(valid) if valid else float("nan")
 
     def includes(self, value):
         return value in self.data
@@ -104,7 +129,7 @@ class PineArray:
     def remove(self, index: int):
         if 0 <= index < len(self.data):
             return self.data.pop(index)
-        return float('nan')
+        return float("nan")
 
     def insert(self, index: int, value):
         self.data.insert(index, value)
@@ -115,7 +140,7 @@ class PineArray:
     def shift(self):
         if self.data:
             return self.data.pop(0)
-        return float('nan')
+        return float("nan")
 
     def slice(self, start: int, end: int = None):
         new_arr = PineArray()
@@ -139,6 +164,7 @@ def _is_nan(v) -> bool:
 # 技术指标状态管理器
 # ============================================================
 
+
 class TAState:
     """
     管理逐bar技术指标计算所需的历史数据。
@@ -147,7 +173,7 @@ class TAState:
 
     def __init__(self):
         self.history: dict[str, list] = {}  # key -> 历史值列表
-        self.state: dict[str, dict] = {}    # key -> 中间状态
+        self.state: dict[str, dict] = {}  # key -> 中间状态
 
     def get_history(self, key: str) -> list:
         if key not in self.history:
@@ -168,6 +194,7 @@ class TAState:
 # 解释器上下文
 # ============================================================
 
+
 class InterpreterContext:
     """解释器执行上下文，管理变量作用域和bar数据"""
 
@@ -181,9 +208,9 @@ class InterpreterContext:
 
         # 变量存储
         self.variables: dict[str, Any] = {}
-        self.var_declared: set[str] = set()       # 已用 = 声明的变量
-        self.var_persistent: set[str] = set()     # var 声明的持久变量
-        self.varip_persistent: set[str] = set()   # varip 声明
+        self.var_declared: set[str] = set()  # 已用 = 声明的变量
+        self.var_persistent: set[str] = set()  # var 声明的持久变量
+        self.varip_persistent: set[str] = set()  # varip 声明
 
         # 输出收集
         self.plots: list[dict] = []
@@ -227,6 +254,7 @@ class InterpreterContext:
         self._op_count += 1
         if self._op_count % 5000 == 0:
             import time
+
             if time.time() - self._start_time > self._timeout:
                 raise _TimeoutError(f"代码执行超时 ({self._timeout}秒)")
 
@@ -234,6 +262,7 @@ class InterpreterContext:
 # ============================================================
 # Pine Script 解释器
 # ============================================================
+
 
 class PineInterpreter:
     """
@@ -267,6 +296,7 @@ class PineInterpreter:
     def run(self, program: Program):
         """执行完整程序（逐bar）"""
         import time
+
         self.ctx._start_time = time.time()
 
         _errors = []
@@ -347,8 +377,12 @@ class PineInterpreter:
     def _exec_compound_assignment(self, node: CompoundAssignment):
         old_val = self.ctx.variables.get(node.name, 0)
         rhs = self._eval(node.value)
-        op_map = {"+": lambda a, b: a + b, "-": lambda a, b: a - b,
-                  "*": lambda a, b: a * b, "/": lambda a, b: a / b if b != 0 else float('nan')}
+        op_map = {
+            "+": lambda a, b: a + b,
+            "-": lambda a, b: a - b,
+            "*": lambda a, b: a * b,
+            "/": lambda a, b: a / b if b != 0 else float("nan"),
+        }
         self.ctx.variables[node.name] = op_map[node.op](old_val, rhs)
 
     def _exec_if(self, node: IfBlock):
@@ -503,15 +537,47 @@ class PineInterpreter:
             return False
 
         # 命名空间前缀（作为标识符返回，点访问时再处理）
-        if name in ("ta", "math", "array", "str", "color", "strategy",
-                     "input", "plot", "hline", "fill", "bgcolor",
-                     "plotshape", "alertcondition", "indicator",
-                     "nz", "na", "fixnan",
-                     "sma", "ema", "rsi", "macd", "crossover", "crossunder",
-                     "highest", "lowest", "stdev", "wma",
-                     "rising", "falling", "valuewhen", "barssince",
-                     "request", "syminfo", "timeframe", "barstate",
-                     "line", "label", "box", "table"):
+        if name in (
+            "ta",
+            "math",
+            "array",
+            "str",
+            "color",
+            "strategy",
+            "input",
+            "plot",
+            "hline",
+            "fill",
+            "bgcolor",
+            "plotshape",
+            "alertcondition",
+            "indicator",
+            "nz",
+            "na",
+            "fixnan",
+            "sma",
+            "ema",
+            "rsi",
+            "macd",
+            "crossover",
+            "crossunder",
+            "highest",
+            "lowest",
+            "stdev",
+            "wma",
+            "rising",
+            "falling",
+            "valuewhen",
+            "barssince",
+            "request",
+            "syminfo",
+            "timeframe",
+            "barstate",
+            "line",
+            "label",
+            "box",
+            "table",
+        ):
             return _BuiltinNamespace(name)
 
         return None
@@ -772,7 +838,7 @@ class PineInterpreter:
         # 无法识别的函数调用，返回None而不是报错（Pine Script中很多函数我们不支持）
         return None
 
-    def _call_user_function(self, func: '_UserFunction', args: list) -> Any:
+    def _call_user_function(self, func: "_UserFunction", args: list) -> Any:
         """调用用户定义函数"""
         # 保存当前变量（简单作用域隔离）
         saved_vars = {}
@@ -836,8 +902,7 @@ class PineInterpreter:
             return None
 
         # ---- input 函数 ----
-        if name in ("input", "input.int", "input.float", "input.bool",
-                     "input.string", "input.source"):
+        if name in ("input", "input.int", "input.float", "input.bool", "input.string", "input.source"):
             return self._handle_input(name, args, kwargs)
 
         # ---- plot 绘图函数 ----
@@ -964,7 +1029,7 @@ class PineInterpreter:
         # ---- array.* 数组函数 ----
         if name == "array.new_float":
             size = self._safe_int(args[0]) if args else 0
-            init_val = float(args[1]) if len(args) > 1 else float('nan')
+            init_val = float(args[1]) if len(args) > 1 else float("nan")
             return PineArray(size, init_val)
         if name == "array.new_int":
             size = self._safe_int(args[0]) if args else 0
@@ -1120,21 +1185,52 @@ class PineInterpreter:
                 "top": self._safe_float(args[1] if len(args) > 1 else 0),
                 "right": self._safe_int(args[2] if len(args) > 2 else 0),
                 "bottom": self._safe_float(args[3] if len(args) > 3 else 0),
-                "border_color": self._resolve_color(kwargs.get("border_color", args[4] if len(args) > 4 else "#888888")),
+                "border_color": self._resolve_color(
+                    kwargs.get("border_color", args[4] if len(args) > 4 else "#888888")
+                ),
                 "bgcolor": self._resolve_color(kwargs.get("bgcolor", args[5] if len(args) > 5 else "rgba(0,0,0,0)")),
             }
             self.ctx._drawings.append(drawing)
             return obj_id
-        if name in ("line.set_xy1", "line.set_xy2", "line.set_x1", "line.set_y1", "line.set_x2", "line.set_y2",
-                     "line.set_color", "line.set_width", "line.delete",
-                     "label.set_xy", "label.set_x", "label.set_y", "label.set_text",
-                     "label.set_color", "label.set_textcolor", "label.delete",
-                     "box.set_lefttop", "box.set_rightbottom", "box.set_left", "box.set_top",
-                     "box.set_right", "box.set_bottom", "box.delete",
-                     "line.set_style", "label.set_style", "box.set_border_color", "box.set_bgcolor",
-                     "table.new", "table.cell", "table.delete"):
+        if name in (
+            "line.set_xy1",
+            "line.set_xy2",
+            "line.set_x1",
+            "line.set_y1",
+            "line.set_x2",
+            "line.set_y2",
+            "line.set_color",
+            "line.set_width",
+            "line.delete",
+            "label.set_xy",
+            "label.set_x",
+            "label.set_y",
+            "label.set_text",
+            "label.set_color",
+            "label.set_textcolor",
+            "label.delete",
+            "box.set_lefttop",
+            "box.set_rightbottom",
+            "box.set_left",
+            "box.set_top",
+            "box.set_right",
+            "box.set_bottom",
+            "box.delete",
+            "line.set_style",
+            "label.set_style",
+            "box.set_border_color",
+            "box.set_bgcolor",
+            "table.new",
+            "table.cell",
+            "table.delete",
+        ):
             return None
-        if name.startswith("line.") or name.startswith("label.") or name.startswith("box.") or name.startswith("table."):
+        if (
+            name.startswith("line.")
+            or name.startswith("label.")
+            or name.startswith("box.")
+            or name.startswith("table.")
+        ):
             return None
 
         # 未知函数：返回 None
@@ -1646,14 +1742,16 @@ class PineInterpreter:
             color = self._resolve_color_value(color)
             linestyle = kwargs.get("linestyle", "dashed")
 
-            self.ctx._hlines.append({
-                "type": "hline",
-                "price": price,
-                "title": title if isinstance(title, str) else "",
-                "color": color if isinstance(color, str) else "#787878",
-                "linestyle": linestyle if isinstance(linestyle, str) else "dashed",
-                "linewidth": 1,
-            })
+            self.ctx._hlines.append(
+                {
+                    "type": "hline",
+                    "price": price,
+                    "title": title if isinstance(title, str) else "",
+                    "color": color if isinstance(color, str) else "#787878",
+                    "linestyle": linestyle if isinstance(linestyle, str) else "dashed",
+                    "linewidth": 1,
+                }
+            )
 
     def _handle_bgcolor(self, args, kwargs):
         condition = args[0] if args else None
@@ -1705,38 +1803,44 @@ class PineInterpreter:
             else:
                 direction = "long"
 
-        self.ctx.orders.append({
-            "action": "entry",
-            "id": str(entry_id),
-            "direction": str(direction),
-            "qty": float(qty) if isinstance(qty, (int, float)) else 1.0,
-            "bar_index": self.ctx.bar_index,
-            "when": True,
-        })
+        self.ctx.orders.append(
+            {
+                "action": "entry",
+                "id": str(entry_id),
+                "direction": str(direction),
+                "qty": float(qty) if isinstance(qty, (int, float)) else 1.0,
+                "bar_index": self.ctx.bar_index,
+                "when": True,
+            }
+        )
 
     def _handle_strategy_close(self, args, kwargs):
         close_id = args[0] if args else "entry"
-        self.ctx.orders.append({
-            "action": "close",
-            "id": str(close_id),
-            "bar_index": self.ctx.bar_index,
-            "when": True,
-        })
+        self.ctx.orders.append(
+            {
+                "action": "close",
+                "id": str(close_id),
+                "bar_index": self.ctx.bar_index,
+                "when": True,
+            }
+        )
 
     def _handle_strategy_exit(self, args, kwargs):
         exit_id = args[0] if args else "exit"
         from_entry = kwargs.get("from_entry", "")
         stop = kwargs.get("stop", 0)
         limit = kwargs.get("limit", 0)
-        self.ctx.orders.append({
-            "action": "exit",
-            "id": str(exit_id),
-            "from_entry": str(from_entry),
-            "stop": float(stop) if isinstance(stop, (int, float)) else 0,
-            "limit": float(limit) if isinstance(limit, (int, float)) else 0,
-            "bar_index": self.ctx.bar_index,
-            "when": True,
-        })
+        self.ctx.orders.append(
+            {
+                "action": "exit",
+                "id": str(exit_id),
+                "from_entry": str(from_entry),
+                "stop": float(stop) if isinstance(stop, (int, float)) else 0,
+                "limit": float(limit) if isinstance(limit, (int, float)) else 0,
+                "bar_index": self.ctx.bar_index,
+                "when": True,
+            }
+        )
 
     # ---- input 处理 ----
 
@@ -1859,8 +1963,10 @@ class PineInterpreter:
 # 辅助类型
 # ============================================================
 
+
 class _BuiltinNamespace:
     """内置命名空间标识（ta, math, array, strategy, color 等）"""
+
     def __init__(self, name: str):
         self.name = name
 
@@ -1875,6 +1981,7 @@ class _BuiltinNamespace:
 
 class _BoundMethod:
     """PineArray 的绑定方法"""
+
     def __init__(self, obj, method: str):
         self.obj = obj
         self.method = method
@@ -1882,6 +1989,7 @@ class _BoundMethod:
 
 class _UserFunction:
     """用户定义函数"""
+
     def __init__(self, name: str, params: list[str], body: list):
         self.name = name
         self.params = params
@@ -1891,6 +1999,7 @@ class _UserFunction:
 # ============================================================
 # 公开接口
 # ============================================================
+
 
 def execute_openscript(
     code: str,
@@ -1928,8 +2037,12 @@ def execute_openscript(
 
     if len(ohlcv.get("close", [])) == 0:
         return {
-            "plots": [], "shapes": [], "alerts": [], "orders": [],
-            "inputs": [], "meta": {"mode": "indicator", "name": "", "overlay": False}
+            "plots": [],
+            "shapes": [],
+            "alerts": [],
+            "orders": [],
+            "inputs": [],
+            "meta": {"mode": "indicator", "name": "", "overlay": False},
         }
 
     # 解析代码
@@ -2037,10 +2150,26 @@ def validate_and_preview(
 # ============================================================
 
 _FORBIDDEN_PATTERNS = [
-    "__import__", "import ", "exec(", "eval(", "compile(",
-    "globals(", "locals(", "getattr(", "setattr(", "delattr(",
-    "breakpoint(", "__builtins__", "__class__", "__subclasses__",
-    "__bases__", "__mro__", "subprocess", "os.system", "os.popen", "shutil",
+    "__import__",
+    "import ",
+    "exec(",
+    "eval(",
+    "compile(",
+    "globals(",
+    "locals(",
+    "getattr(",
+    "setattr(",
+    "delattr(",
+    "breakpoint(",
+    "__builtins__",
+    "__class__",
+    "__subclasses__",
+    "__bases__",
+    "__mro__",
+    "subprocess",
+    "os.system",
+    "os.popen",
+    "shutil",
 ]
 
 

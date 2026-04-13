@@ -128,9 +128,7 @@ class OKXTrader(TradingBase):
             logger.warning("OKX API Key 未配置，交易功能不可用")
             return False
 
-        self._session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=10)
-        )
+        self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10))
 
         # 验证连接
         try:
@@ -198,18 +196,20 @@ class OKXTrader(TradingBase):
             if pos_size == 0:
                 continue
 
-            positions.append(Position(
-                symbol=d.get("instId", ""),
-                side=PositionSide.LONG if d.get("posSide") == "long" else PositionSide.SHORT,
-                size=abs(pos_size),
-                avg_price=float(d.get("avgPx", 0)),
-                unrealized_pnl=float(d.get("upl", 0)),
-                realized_pnl=float(d.get("realizedPnl", 0)),
-                margin=float(d.get("margin", 0)),
-                leverage=int(d.get("lever", 1)),
-                liquidation_price=float(d.get("liqPx", 0)) if d.get("liqPx") else 0,
-                timestamp=int(d.get("uTime", 0)),
-            ))
+            positions.append(
+                Position(
+                    symbol=d.get("instId", ""),
+                    side=PositionSide.LONG if d.get("posSide") == "long" else PositionSide.SHORT,
+                    size=abs(pos_size),
+                    avg_price=float(d.get("avgPx", 0)),
+                    unrealized_pnl=float(d.get("upl", 0)),
+                    realized_pnl=float(d.get("realizedPnl", 0)),
+                    margin=float(d.get("margin", 0)),
+                    leverage=int(d.get("lever", 1)),
+                    liquidation_price=float(d.get("liqPx", 0)) if d.get("liqPx") else 0,
+                    timestamp=int(d.get("uTime", 0)),
+                )
+            )
 
         return positions
 
@@ -281,7 +281,8 @@ class OKXTrader(TradingBase):
     async def get_order(self, symbol: str, order_id: str) -> Optional[Order]:
         """查询订单"""
         result = await self._request(
-            "GET", "/api/v5/trade/order",
+            "GET",
+            "/api/v5/trade/order",
             {"instId": symbol, "ordId": order_id},
         )
         if result.get("code") != "0":
@@ -323,23 +324,26 @@ class OKXTrader(TradingBase):
 
         orders = []
         for d in result.get("data", []):
-            orders.append(Order(
-                order_id=d.get("ordId", ""),
-                symbol=d.get("instId", ""),
-                side=OrderSide.BUY if d.get("side") == "buy" else OrderSide.SELL,
-                price=float(d.get("px", 0)),
-                size=float(d.get("sz", 0)),
-                filled_size=float(d.get("fillSz", 0)),
-                status=OrderStatus.OPEN,
-                timestamp=int(d.get("uTime", 0)),
-            ))
+            orders.append(
+                Order(
+                    order_id=d.get("ordId", ""),
+                    symbol=d.get("instId", ""),
+                    side=OrderSide.BUY if d.get("side") == "buy" else OrderSide.SELL,
+                    price=float(d.get("px", 0)),
+                    size=float(d.get("sz", 0)),
+                    filled_size=float(d.get("fillSz", 0)),
+                    status=OrderStatus.OPEN,
+                    timestamp=int(d.get("uTime", 0)),
+                )
+            )
 
         return orders
 
     async def get_trades(self, symbol: str, limit: int = 50) -> List[TradeRecord]:
         """获取成交记录"""
         result = await self._request(
-            "GET", "/api/v5/trade/fills",
+            "GET",
+            "/api/v5/trade/fills",
             {"instId": symbol, "limit": str(limit)},
         )
         if result.get("code") != "0":
@@ -347,16 +351,18 @@ class OKXTrader(TradingBase):
 
         trades = []
         for d in result.get("data", []):
-            trades.append(TradeRecord(
-                trade_id=d.get("tradeId", ""),
-                order_id=d.get("ordId", ""),
-                symbol=d.get("instId", ""),
-                side=OrderSide.BUY if d.get("side") == "buy" else OrderSide.SELL,
-                price=float(d.get("fillPx", 0)),
-                size=float(d.get("fillSz", 0)),
-                fee=float(d.get("fee", 0)),
-                fee_currency=d.get("feeCcy", ""),
-                timestamp=int(d.get("ts", 0)),
-            ))
+            trades.append(
+                TradeRecord(
+                    trade_id=d.get("tradeId", ""),
+                    order_id=d.get("ordId", ""),
+                    symbol=d.get("instId", ""),
+                    side=OrderSide.BUY if d.get("side") == "buy" else OrderSide.SELL,
+                    price=float(d.get("fillPx", 0)),
+                    size=float(d.get("fillSz", 0)),
+                    fee=float(d.get("fee", 0)),
+                    fee_currency=d.get("feeCcy", ""),
+                    timestamp=int(d.get("ts", 0)),
+                )
+            )
 
         return trades

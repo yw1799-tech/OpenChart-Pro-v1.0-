@@ -11,6 +11,7 @@ import numpy as np
 # 工具函数
 # ============================================================================
 
+
 def _ensure_float(arr):
     """确保输入为float64 numpy数组"""
     return np.asarray(arr, dtype=np.float64)
@@ -21,7 +22,7 @@ def _rolling_max(arr, period):
     n = len(arr)
     result = np.full(n, np.nan)
     for i in range(period - 1, n):
-        result[i] = np.nanmax(arr[i - period + 1: i + 1])
+        result[i] = np.nanmax(arr[i - period + 1 : i + 1])
     return result
 
 
@@ -30,7 +31,7 @@ def _rolling_min(arr, period):
     n = len(arr)
     result = np.full(n, np.nan)
     for i in range(period - 1, n):
-        result[i] = np.nanmin(arr[i - period + 1: i + 1])
+        result[i] = np.nanmin(arr[i - period + 1 : i + 1])
     return result
 
 
@@ -79,7 +80,7 @@ def _wilder_smooth(arr, period):
         start += 1
     if start + period > n:
         return result
-    result[start + period - 1] = np.nanmean(arr[start: start + period])
+    result[start + period - 1] = np.nanmean(arr[start : start + period])
     for i in range(start + period, n):
         result[i] = (result[i - 1] * (period - 1) + arr[i]) / period
     return result
@@ -94,17 +95,14 @@ def _true_range(high, low, close):
     tr = np.full(n, np.nan)
     tr[0] = high[0] - low[0]
     for i in range(1, n):
-        tr[i] = max(
-            high[i] - low[i],
-            abs(high[i] - close[i - 1]),
-            abs(low[i] - close[i - 1])
-        )
+        tr[i] = max(high[i] - low[i], abs(high[i] - close[i - 1]), abs(low[i] - close[i - 1]))
     return tr
 
 
 # ============================================================================
 # 趋势类指标（主图叠加）
 # ============================================================================
+
 
 def calc_ma(close, period=20):
     """简单移动平均线 (SMA/MA)"""
@@ -127,7 +125,7 @@ def calc_boll(close, period=20, multiplier=2):
     n = len(close)
     std = np.full(n, np.nan)
     for i in range(period - 1, n):
-        std[i] = np.nanstd(close[i - period + 1: i + 1], ddof=0)
+        std[i] = np.nanstd(close[i - period + 1 : i + 1], ddof=0)
     upper = middle + multiplier * std
     lower = middle - multiplier * std
     return {"upper": upper, "middle": middle, "lower": lower}
@@ -216,7 +214,7 @@ def calc_ichimoku(high, low, close, tenkan=9, kijun=26, senkou=52):
     senkou_a_raw = (tenkan_sen + kijun_sen) / 2
     senkou_a = np.full(n, np.nan)
     if n > kijun:
-        senkou_a[kijun:] = senkou_a_raw[:n - kijun]
+        senkou_a[kijun:] = senkou_a_raw[: n - kijun]
 
     # 先行带B = (senkou周期最高 + senkou周期最低) / 2，前移kijun周期
     senkou_high = _rolling_max(high, senkou)
@@ -224,12 +222,12 @@ def calc_ichimoku(high, low, close, tenkan=9, kijun=26, senkou=52):
     senkou_b_raw = (senkou_high + senkou_low) / 2
     senkou_b = np.full(n, np.nan)
     if n > kijun:
-        senkou_b[kijun:] = senkou_b_raw[:n - kijun]
+        senkou_b[kijun:] = senkou_b_raw[: n - kijun]
 
     # 迟行线 = 收盘价后移kijun周期
     chikou_span = np.full(n, np.nan)
     if n > kijun:
-        chikou_span[:n - kijun] = close[kijun:]
+        chikou_span[: n - kijun] = close[kijun:]
 
     return {
         "tenkan_sen": tenkan_sen,
@@ -280,6 +278,7 @@ def calc_envelope(close, period=20, pct=0.05):
 # ============================================================================
 # 动量类指标（副图）
 # ============================================================================
+
 
 def calc_macd(close, fast=12, slow=26, signal=9):
     """MACD指标
@@ -384,7 +383,7 @@ def calc_cci(high, low, close, period=14):
     # 平均偏差
     md = np.full(n, np.nan)
     for i in range(period - 1, n):
-        md[i] = np.mean(np.abs(tp[i - period + 1: i + 1] - tp_ma[i]))
+        md[i] = np.mean(np.abs(tp[i - period + 1 : i + 1] - tp_ma[i]))
 
     cci = np.full(n, np.nan)
     valid = md != 0
@@ -496,6 +495,7 @@ def calc_stoch(high, low, close, k_period=14, d_period=3):
 # 成交量类指标
 # ============================================================================
 
+
 def calc_obv(close, volume):
     """能量潮 (On Balance Volume)"""
     close = _ensure_float(close)
@@ -544,6 +544,7 @@ def calc_volume_ma(volume, period=20):
 # 波动类指标
 # ============================================================================
 
+
 def calc_atr(high, low, close, period=14):
     """平均真实波幅 (Average True Range)"""
     tr = _true_range(high, low, close)
@@ -556,13 +557,14 @@ def calc_stddev(close, period=20):
     n = len(close)
     result = np.full(n, np.nan)
     for i in range(period - 1, n):
-        result[i] = np.std(close[i - period + 1: i + 1], ddof=0)
+        result[i] = np.std(close[i - period + 1 : i + 1], ddof=0)
     return result
 
 
 # ============================================================================
 # 趋势强度类指标
 # ============================================================================
+
 
 def calc_dmi(high, low, close, period=14):
     """趋势方向指标 (DMI / ADX)

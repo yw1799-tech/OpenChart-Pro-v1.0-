@@ -22,6 +22,7 @@ A股缠论买点扫描器 - Powered by chan.py
 使用方法:
     python App/ashare_bsp_scanner_gui.py
 """
+
 import sys
 from pathlib import Path
 
@@ -31,10 +32,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from datetime import datetime, timedelta
 
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QComboBox, QCheckBox, QGroupBox,
-    QMessageBox, QStatusBar, QSplitter, QTableWidget, QTableWidgetItem,
-    QProgressBar, QHeaderView, QTextEdit
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QComboBox,
+    QCheckBox,
+    QGroupBox,
+    QMessageBox,
+    QStatusBar,
+    QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
+    QProgressBar,
+    QHeaderView,
+    QTextEdit,
 )
 from PyQt6.QtCore import QDate, Qt, QThread, pyqtSignal
 
@@ -74,29 +90,29 @@ def get_tradable_stocks():
 
         # 过滤条件
         # 1. 剔除ST股票（名称包含ST）
-        df = df[~df['名称'].str.contains('ST', case=False, na=False)]
+        df = df[~df["名称"].str.contains("ST", case=False, na=False)]
 
         # 2. 剔除科创板（688开头）
-        df = df[~df['代码'].str.startswith('688')]
+        df = df[~df["代码"].str.startswith("688")]
 
         # 3. 剔除北交所（8开头，以43、83、87开头的也是北交所）
-        df = df[~df['代码'].str.startswith('8')]
-        df = df[~df['代码'].str.startswith('43')]
+        df = df[~df["代码"].str.startswith("8")]
+        df = df[~df["代码"].str.startswith("43")]
 
         # 4. 剔除B股（200开头深圳B股，900开头上海B股）
-        df = df[~df['代码'].str.startswith('200')]
-        df = df[~df['代码'].str.startswith('900')]
+        df = df[~df["代码"].str.startswith("200")]
+        df = df[~df["代码"].str.startswith("900")]
 
         # 5. 剔除存托凭证CDR（920开头）
-        df = df[~df['代码'].str.startswith('920')]
+        df = df[~df["代码"].str.startswith("920")]
 
         # 6. 剔除停牌股票（成交量为0或涨跌幅为空）
-        df = df[df['成交量'] > 0]
+        df = df[df["成交量"] > 0]
 
         # 7. 剔除新股（上市不足60天的，这里简化处理，只保留有数据的）
-        df = df[df['最新价'] > 0]
+        df = df[df["最新价"] > 0]
 
-        return df[['代码', '名称', '最新价', '涨跌幅']].reset_index(drop=True)
+        return df[["代码", "名称", "最新价", "涨跌幅"]].reset_index(drop=True)
     except Exception as e:
         print(f"获取股票列表失败: {e}")
         return pd.DataFrame()
@@ -115,6 +131,7 @@ class ScanThread(QThread):
         finished: (int, int) 扫描完成，返回成功数和失败数
         log_signal: (str) 日志消息
     """
+
     progress = pyqtSignal(int, int, str)
     found_signal = pyqtSignal(dict)
     finished = pyqtSignal(int, int)
@@ -159,8 +176,8 @@ class ScanThread(QThread):
             if not self.is_running:
                 break
 
-            code = row['代码']
-            name = row['名称']
+            code = row["代码"]
+            name = row["名称"]
             self.progress.emit(idx + 1, total, f"{code} {name}")
             self.log_signal.emit(f"🔍 扫描 {code} {name}...")
 
@@ -194,7 +211,8 @@ class ScanThread(QThread):
                 bsp_list = chan.get_latest_bsp(number=0)
                 cutoff_date = datetime.now() - timedelta(days=3)
                 buy_points = [
-                    bsp for bsp in bsp_list
+                    bsp
+                    for bsp in bsp_list
                     if bsp.is_buy and datetime(bsp.klu.time.year, bsp.klu.time.month, bsp.klu.time.day) >= cutoff_date
                 ]
 
@@ -202,15 +220,17 @@ class ScanThread(QThread):
                     # 获取最近的买点
                     latest_buy = buy_points[0]
                     self.log_signal.emit(f"✅ {code} {name}: 发现买点 {latest_buy.type2str()}")
-                    self.found_signal.emit({
-                        'code': code,
-                        'name': name,
-                        'price': row['最新价'],
-                        'change': row['涨跌幅'],
-                        'bsp_type': latest_buy.type2str(),
-                        'bsp_time': str(latest_buy.klu.time),
-                        'chan': chan,
-                    })
+                    self.found_signal.emit(
+                        {
+                            "code": code,
+                            "name": name,
+                            "price": row["最新价"],
+                            "change": row["涨跌幅"],
+                            "bsp_type": latest_buy.type2str(),
+                            "bsp_time": str(latest_buy.klu.time),
+                            "chan": chan,
+                        }
+                    )
                 else:
                     self.log_signal.emit(f"➖ {code} {name}: 无近期买点")
             except Exception as e:
@@ -231,6 +251,7 @@ class SingleAnalysisThread(QThread):
         finished: (CChan) 分析完成，返回 CChan 对象
         error: (str) 分析出错时返回错误信息
     """
+
     finished = pyqtSignal(object)
     error = pyqtSignal(str)
 
@@ -317,7 +338,7 @@ class AkshareGUI(QMainWindow):
 
     def init_ui(self):
         """初始化用户界面"""
-        self.setWindowTitle('A股缠论买点扫描器 - Powered by chan.py')
+        self.setWindowTitle("A股缠论买点扫描器 - Powered by chan.py")
         self.setGeometry(100, 100, 1600, 900)
 
         # 创建中央 widget
@@ -427,7 +448,7 @@ class AkshareGUI(QMainWindow):
 
         self.stock_table = QTableWidget()
         self.stock_table.setColumnCount(5)
-        self.stock_table.setHorizontalHeaderLabels(['代码', '名称', '现价', '涨跌%', '买点'])
+        self.stock_table.setHorizontalHeaderLabels(["代码", "名称", "现价", "涨跌%", "买点"])
         self.stock_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.stock_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.stock_table.cellClicked.connect(self.on_stock_clicked)
@@ -514,20 +535,22 @@ class AkshareGUI(QMainWindow):
         Returns:
             CChanConfig: 包含笔严格模式、买卖点类型等配置的对象
         """
-        return CChanConfig({
-            "bi_strict": self.bi_strict_cb.isChecked(),  # 笔严格模式
-            "trigger_step": False,  # 不启用逐步触发模式
-            "skip_step": 0,
-            "divergence_rate": float("inf"),  # 背驰比率
-            "bsp2_follow_1": False,  # 二类买卖点不跟随一类
-            "bsp3_follow_1": False,  # 三类买卖点不跟随一类
-            "min_zs_cnt": 0,  # 最小中枢数量
-            "bs1_peak": False,
-            "macd_algo": "peak",  # MACD 算法
-            "bs_type": "1,1p,2,2s,3a,3b",  # 启用的买卖点类型
-            "print_warning": False,
-            "zs_algo": "normal",  # 中枢算法
-        })
+        return CChanConfig(
+            {
+                "bi_strict": self.bi_strict_cb.isChecked(),  # 笔严格模式
+                "trigger_step": False,  # 不启用逐步触发模式
+                "skip_step": 0,
+                "divergence_rate": float("inf"),  # 背驰比率
+                "bsp2_follow_1": False,  # 二类买卖点不跟随一类
+                "bsp3_follow_1": False,  # 三类买卖点不跟随一类
+                "min_zs_cnt": 0,  # 最小中枢数量
+                "bs1_peak": False,
+                "macd_algo": "peak",  # MACD 算法
+                "bs_type": "1,1p,2,2s,3a,3b",  # 启用的买卖点类型
+                "print_warning": False,
+                "zs_algo": "normal",  # 中枢算法
+            }
+        )
 
     def get_plot_config(self):
         """
@@ -554,7 +577,7 @@ class AkshareGUI(QMainWindow):
         self.progress_bar.setValue(0)
         self.stock_cache.clear()
 
-        self.statusBar.showMessage('正在获取股票列表...')
+        self.statusBar.showMessage("正在获取股票列表...")
         QApplication.processEvents()
 
         # 获取股票列表
@@ -566,7 +589,7 @@ class AkshareGUI(QMainWindow):
             self.progress_bar.setVisible(False)
             return
 
-        self.statusBar.showMessage(f'获取到 {len(stock_list)} 只可交易股票，开始扫描...')
+        self.statusBar.showMessage(f"获取到 {len(stock_list)} 只可交易股票，开始扫描...")
         self.progress_bar.setMaximum(len(stock_list))
 
         # 启动扫描线程
@@ -582,7 +605,7 @@ class AkshareGUI(QMainWindow):
         """停止扫描"""
         if self.scan_thread:
             self.scan_thread.stop()
-        self.statusBar.showMessage('正在停止扫描...')
+        self.statusBar.showMessage("正在停止扫描...")
 
     def on_scan_progress(self, current, total, stock_info):
         """扫描进度更新"""
@@ -602,14 +625,14 @@ class AkshareGUI(QMainWindow):
         """
         row = self.stock_table.rowCount()
         self.stock_table.insertRow(row)
-        self.stock_table.setItem(row, 0, QTableWidgetItem(data['code']))
-        self.stock_table.setItem(row, 1, QTableWidgetItem(data['name']))
+        self.stock_table.setItem(row, 0, QTableWidgetItem(data["code"]))
+        self.stock_table.setItem(row, 1, QTableWidgetItem(data["name"]))
         self.stock_table.setItem(row, 2, QTableWidgetItem(f"{data['price']:.2f}"))
         self.stock_table.setItem(row, 3, QTableWidgetItem(f"{data['change']:.2f}%"))
         self.stock_table.setItem(row, 4, QTableWidgetItem(f"{data['bsp_type']} ({data['bsp_time']})"))
 
         # 缓存 chan 对象
-        self.stock_cache[data['code']] = data['chan']
+        self.stock_cache[data["code"]] = data["chan"]
 
     def on_scan_finished(self, success_count, fail_count):
         """扫描完成"""
@@ -617,7 +640,7 @@ class AkshareGUI(QMainWindow):
         self.stop_btn.setEnabled(False)
         self.progress_bar.setVisible(False)
         found_count = self.stock_table.rowCount()
-        self.statusBar.showMessage(f'扫描完成: 成功{success_count}只, 跳过{fail_count}只, 发现{found_count}只买点股票')
+        self.statusBar.showMessage(f"扫描完成: 成功{success_count}只, 跳过{fail_count}只, 发现{found_count}只买点股票")
         self.progress_label.setText(f"完成: 成功{success_count}, 跳过{fail_count}, 买点{found_count}")
 
     def on_stock_clicked(self, row, col):
@@ -628,7 +651,7 @@ class AkshareGUI(QMainWindow):
         if code in self.stock_cache:
             self.chan = self.stock_cache[code]
             self.plot_chart()
-            self.statusBar.showMessage(f'显示: {code} {name}')
+            self.statusBar.showMessage(f"显示: {code} {name}")
         else:
             # 重新分析
             self.analyze_stock(code)
@@ -644,7 +667,7 @@ class AkshareGUI(QMainWindow):
     def analyze_stock(self, code):
         """分析指定股票"""
         self.analyze_btn.setEnabled(False)
-        self.statusBar.showMessage(f'正在分析 {code}...')
+        self.statusBar.showMessage(f"正在分析 {code}...")
 
         config = self.get_chan_config()
         self.analysis_thread = SingleAnalysisThread(code, config, days=365)
@@ -657,13 +680,13 @@ class AkshareGUI(QMainWindow):
         self.chan = chan
         self.analyze_btn.setEnabled(True)
         self.plot_chart()
-        self.statusBar.showMessage(f'分析完成: {chan.code}')
+        self.statusBar.showMessage(f"分析完成: {chan.code}")
 
     def on_analysis_error(self, error_msg):
         """分析出错"""
         self.analyze_btn.setEnabled(True)
         QMessageBox.critical(self, "分析错误", error_msg)
-        self.statusBar.showMessage('分析失败')
+        self.statusBar.showMessage("分析失败")
 
     def plot_chart(self):
         """
@@ -679,7 +702,7 @@ class AkshareGUI(QMainWindow):
             from Plot.PlotDriver import CPlotDriver
 
             # 关闭旧的 figure 释放内存
-            plt.close('all')
+            plt.close("all")
 
             plot_config = self.get_plot_config()
 
@@ -714,13 +737,13 @@ class AkshareGUI(QMainWindow):
         """清空股票列表"""
         self.stock_table.setRowCount(0)
         self.stock_cache.clear()
-        self.statusBar.showMessage('列表已清空')
+        self.statusBar.showMessage("列表已清空")
 
 
 def main():
     """程序入口函数，创建并运行 GUI 应用"""
     app = QApplication(sys.argv)
-    app.setStyle('Fusion')  # 使用 Fusion 风格，跨平台一致性好
+    app.setStyle("Fusion")  # 使用 Fusion 风格，跨平台一致性好
 
     window = AkshareGUI()
     window.show()
@@ -728,5 +751,5 @@ def main():
     sys.exit(app.exec())
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

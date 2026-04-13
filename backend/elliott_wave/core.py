@@ -14,6 +14,7 @@ from typing import List, Optional, Dict, Tuple, Any
 # 枚举类型
 # ============================================================
 
+
 class Direction(Enum):
     UP = 1
     DOWN = -1
@@ -23,35 +24,43 @@ class PatternType(Enum):
     """所有支持的波浪模式 — 覆盖 Elliott Wave 完整理论"""
 
     # === 推动浪 (Motive Waves) ===
-    IMPULSE = "impulse"                         # 标准推动浪 5-3-5-3-5
-    IMPULSE_EXT1 = "impulse_ext1"               # 浪1延伸
-    IMPULSE_EXT3 = "impulse_ext3"               # 浪3延伸 (最常见)
-    IMPULSE_EXT5 = "impulse_ext5"               # 浪5延伸
-    LEADING_DIAGONAL = "leading_diagonal"       # 引导楔形 (浪1/A位置)
-    ENDING_DIAGONAL = "ending_diagonal"         # 终结楔形 (浪5/C位置)
-    TRUNCATED_5TH = "truncated_5th"             # 失败第五浪
+    IMPULSE = "impulse"  # 标准推动浪 5-3-5-3-5
+    IMPULSE_EXT1 = "impulse_ext1"  # 浪1延伸
+    IMPULSE_EXT3 = "impulse_ext3"  # 浪3延伸 (最常见)
+    IMPULSE_EXT5 = "impulse_ext5"  # 浪5延伸
+    LEADING_DIAGONAL = "leading_diagonal"  # 引导楔形 (浪1/A位置)
+    ENDING_DIAGONAL = "ending_diagonal"  # 终结楔形 (浪5/C位置)
+    TRUNCATED_5TH = "truncated_5th"  # 失败第五浪
 
     # === 调整浪 (Corrective Waves) ===
-    ZIGZAG = "zigzag"                           # 锯齿形 5-3-5
-    DOUBLE_ZIGZAG = "double_zigzag"             # 双锯齿 W-X-Y (两个zigzag)
-    FLAT_REGULAR = "flat_regular"               # 规则平台 3-3-5
-    FLAT_EXPANDED = "flat_expanded"             # 扩展平台 3-3-5 (B超A起点)
-    FLAT_RUNNING = "flat_running"               # 顺势平台 3-3-5
-    TRIANGLE_CONTRACTING = "triangle_contracting"   # 收缩三角 3-3-3-3-3
-    TRIANGLE_EXPANDING = "triangle_expanding"       # 扩展三角 3-3-3-3-3
-    COMBINATION_WXY = "combination_wxy"         # 双重组合 W-X-Y
+    ZIGZAG = "zigzag"  # 锯齿形 5-3-5
+    DOUBLE_ZIGZAG = "double_zigzag"  # 双锯齿 W-X-Y (两个zigzag)
+    FLAT_REGULAR = "flat_regular"  # 规则平台 3-3-5
+    FLAT_EXPANDED = "flat_expanded"  # 扩展平台 3-3-5 (B超A起点)
+    FLAT_RUNNING = "flat_running"  # 顺势平台 3-3-5
+    TRIANGLE_CONTRACTING = "triangle_contracting"  # 收缩三角 3-3-3-3-3
+    TRIANGLE_EXPANDING = "triangle_expanding"  # 扩展三角 3-3-3-3-3
+    COMBINATION_WXY = "combination_wxy"  # 双重组合 W-X-Y
 
 
 MOTIVE_TYPES = {
-    PatternType.IMPULSE, PatternType.IMPULSE_EXT1, PatternType.IMPULSE_EXT3,
-    PatternType.IMPULSE_EXT5, PatternType.LEADING_DIAGONAL,
-    PatternType.ENDING_DIAGONAL, PatternType.TRUNCATED_5TH,
+    PatternType.IMPULSE,
+    PatternType.IMPULSE_EXT1,
+    PatternType.IMPULSE_EXT3,
+    PatternType.IMPULSE_EXT5,
+    PatternType.LEADING_DIAGONAL,
+    PatternType.ENDING_DIAGONAL,
+    PatternType.TRUNCATED_5TH,
 }
 
 CORRECTIVE_TYPES = {
-    PatternType.ZIGZAG, PatternType.DOUBLE_ZIGZAG,
-    PatternType.FLAT_REGULAR, PatternType.FLAT_EXPANDED, PatternType.FLAT_RUNNING,
-    PatternType.TRIANGLE_CONTRACTING, PatternType.TRIANGLE_EXPANDING,
+    PatternType.ZIGZAG,
+    PatternType.DOUBLE_ZIGZAG,
+    PatternType.FLAT_REGULAR,
+    PatternType.FLAT_EXPANDED,
+    PatternType.FLAT_RUNNING,
+    PatternType.TRIANGLE_CONTRACTING,
+    PatternType.TRIANGLE_EXPANDING,
     PatternType.COMBINATION_WXY,
 }
 
@@ -79,9 +88,11 @@ PATTERN_NAMES_CN = {
 # 数据结构
 # ============================================================
 
+
 @dataclass
 class Swing:
     """ZigZag 枢轴点"""
+
     index: int
     price: float
     is_high: bool
@@ -94,9 +105,10 @@ class Swing:
 @dataclass
 class Wave:
     """单个波浪段"""
+
     start: Swing
     end: Swing
-    label: str      # "1","2","3","4","5","A","B","C","D","E","W","X","Y"
+    label: str  # "1","2","3","4","5","A","B","C","D","E","W","X","Y"
 
     @property
     def direction(self) -> Direction:
@@ -118,9 +130,10 @@ class Wave:
 @dataclass
 class RuleResult:
     """单条规则的验证结果"""
+
     name: str
     passed: bool
-    is_hard: bool       # True=铁律(必须通过), False=指引(贡献置信度)
+    is_hard: bool  # True=铁律(必须通过), False=指引(贡献置信度)
     score: float = 0.0  # 0-1, 对置信度的贡献
     detail: str = ""
 
@@ -128,10 +141,11 @@ class RuleResult:
 @dataclass
 class WavePattern:
     """一个完整的波浪模式"""
+
     pattern_type: PatternType
     direction: Direction
     waves: List[Wave]
-    degree: int = 0             # 0=主级, 1=次级, 2=小级
+    degree: int = 0  # 0=主级, 1=次级, 2=小级
     rule_results: List[RuleResult] = field(default_factory=list)
     sub_patterns: Dict[str, "WavePattern"] = field(default_factory=dict)
     confidence: float = 0.0
@@ -170,15 +184,13 @@ class WavePattern:
         labels = "-".join(w.label for w in self.waves)
         hard_pass = sum(1 for r in self.rule_results if r.is_hard and r.passed)
         hard_total = sum(1 for r in self.rule_results if r.is_hard)
-        return (f"{self.cn_name}{d} [{labels}] "
-                f"置信度={self.confidence:.1%} 硬规则={hard_pass}/{hard_total}")
+        return f"{self.cn_name}{d} [{labels}] 置信度={self.confidence:.1%} 硬规则={hard_pass}/{hard_total}"
 
     def detail_report(self) -> str:
         lines = [self.summary()]
         for w in self.waves:
             d = "↑" if w.direction == Direction.UP else "↓"
-            lines.append(f"  {w.label}: {w.start.price:.2f}→{w.end.price:.2f} "
-                         f"{d} 幅度={w.length:.2f} K线={w.duration}")
+            lines.append(f"  {w.label}: {w.start.price:.2f}→{w.end.price:.2f} {d} 幅度={w.length:.2f} K线={w.duration}")
         lines.append("  规则:")
         for r in self.rule_results:
             tag = "硬" if r.is_hard else "软"
@@ -190,8 +202,9 @@ class WavePattern:
 @dataclass
 class Prediction:
     """基于已识别模式的预测"""
+
     pattern: WavePattern
-    next_wave_label: str        # 预测的下一浪标签
+    next_wave_label: str  # 预测的下一浪标签
     target_prices: Dict[str, float]  # fib_ratio -> 目标价
     direction: Direction
     confidence: float

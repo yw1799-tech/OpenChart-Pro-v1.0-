@@ -124,7 +124,9 @@ class CBiList:
             return False
         if klc.idx == self[-1].end_klc.idx:
             return False
-        if (self[-1].is_up() and klc.high >= self[-1].end_klc.high) or (self[-1].is_down() and klc.low <= self[-1].end_klc.low):
+        if (self[-1].is_up() and klc.high >= self[-1].end_klc.high) or (
+            self[-1].is_down() and klc.low <= self[-1].end_klc.low
+        ):
             # 更新最后一笔
             self.bi_list[-1].update_virtual_end(klc)
             return True
@@ -176,7 +178,7 @@ class CBiList:
         return span
 
     def can_make_bi(self, klc: CKLine, last_end: CKLine, for_virtual: bool = False):
-        satisify_span = True if self.config.bi_algo == 'fx' else self.satisfy_bi_span(klc, last_end)
+        satisify_span = True if self.config.bi_algo == "fx" else self.satisfy_bi_span(klc, last_end)
         if not satisify_span:
             return False
         if not last_end.check_fx_valid(klc, self.config.bi_fx_check, for_virtual):
@@ -201,8 +203,9 @@ class CBiList:
         if len(self.bi_list) == 0:
             return False
         last_bi = self.bi_list[-1]
-        if (last_bi.is_up() and check_top(klc, for_virtual) and klc.high >= last_bi.get_end_val()) or \
-           (last_bi.is_down() and check_bottom(klc, for_virtual) and klc.low <= last_bi.get_end_val()):
+        if (last_bi.is_up() and check_top(klc, for_virtual) and klc.high >= last_bi.get_end_val()) or (
+            last_bi.is_down() and check_bottom(klc, for_virtual) and klc.low <= last_bi.get_end_val()
+        ):
             last_bi.update_virtual_end(klc) if for_virtual else last_bi.update_new_end(klc)
             self.last_end = klc
             return True

@@ -75,6 +75,7 @@ class CChanException(Exception):
 
 
 if __name__ == "__main__":
+
     def foo():
         raise CChanException("XXX", ErrCode.CONFIG_ERROR)
 

@@ -31,19 +31,13 @@ class CCXT(CCommonStockApi):
         fields = "time,open,high,low,close"
         exchange = ccxt.binance()
         timeframe = self.__convert_type()
-        since_date = exchange.parse8601(f'{self.begin_date}T00:00:00')
+        since_date = exchange.parse8601(f"{self.begin_date}T00:00:00")
         data = exchange.fetch_ohlcv(self.code, timeframe, since=since_date)
 
         for item in data:
             time_obj = datetime.fromtimestamp(item[0] / 1000)
-            time_str = time_obj.strftime('%Y-%m-%d %H:%M:%S')
-            item_data = [
-                time_str,
-                item[1],
-                item[2],
-                item[3],
-                item[4]
-            ]
+            time_str = time_obj.strftime("%Y-%m-%d %H:%M:%S")
+            item_data = [time_str, item[1], item[2], item[3], item[4]]
             yield CKLine_Unit(self.create_item_dict(item_data, GetColumnNameFromFieldList(fields)), autofix=True)
 
     def SetBasciInfo(self):
@@ -59,13 +53,13 @@ class CCXT(CCommonStockApi):
 
     def __convert_type(self):
         _dict = {
-            KL_TYPE.K_DAY: '1d',
-            KL_TYPE.K_WEEK: '1w',
-            KL_TYPE.K_MON: '1M',
-            KL_TYPE.K_5M: '5m',
-            KL_TYPE.K_15M: '15m',
-            KL_TYPE.K_30M: '30m',
-            KL_TYPE.K_60M: '1h',
+            KL_TYPE.K_DAY: "1d",
+            KL_TYPE.K_WEEK: "1w",
+            KL_TYPE.K_MON: "1M",
+            KL_TYPE.K_5M: "5m",
+            KL_TYPE.K_15M: "15m",
+            KL_TYPE.K_30M: "30m",
+            KL_TYPE.K_60M: "1h",
         }
         return _dict[self.k_type]
 

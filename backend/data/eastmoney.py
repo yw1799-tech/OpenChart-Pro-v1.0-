@@ -2,6 +2,7 @@
 东方财富数据源实现 — A股 REST 接口 + 轮询实时行情。
 无需 API Key，免费公开接口。
 """
+
 import asyncio
 import time
 import logging
@@ -21,15 +22,15 @@ _BJ_TZ = timezone(timedelta(hours=8))
 # ---------- Interval → 东方财富 klt 参数映射 ----------
 # klt: 1=1分钟, 5=5分钟, 15=15分钟, 30=30分钟, 60=60分钟, 101=日, 102=周, 103=月
 _KLT_MAP: Dict[Interval, int] = {
-    Interval.M1:  1,
-    Interval.M5:  5,
+    Interval.M1: 1,
+    Interval.M5: 5,
     Interval.M15: 15,
     Interval.M30: 30,
-    Interval.H1:  60,
-    Interval.H4:  60,   # 不支持4H，用60分钟合并4根
-    Interval.D1:  101,
-    Interval.W1:  102,
-    Interval.MN:  103,
+    Interval.H1: 60,
+    Interval.H4: 60,  # 不支持4H，用60分钟合并4根
+    Interval.D1: 101,
+    Interval.W1: 102,
+    Interval.MN: 103,
 }
 
 # 限频控制
@@ -41,7 +42,7 @@ _POLL_INTERVAL = 3.0
 # 通用请求头
 _HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Referer": "https://quote.eastmoney.com/",
     "Accept": "application/json, text/plain, */*",
 }
@@ -58,7 +59,7 @@ def _get_secid(code: str) -> str:
     code = code.strip().upper()
     for prefix in ("SH", "SZ", "BJ", "1.", "0."):
         if code.startswith(prefix):
-            code = code[len(prefix):]
+            code = code[len(prefix) :]
             break
 
     if code.startswith(("600", "601", "603", "605", "688", "689", "900")):
@@ -179,14 +180,22 @@ class EastMoneyFetcher(DataFetcher):
         if not query:
             # 返回常用A股品种列表
             defaults = [
-                ("600519", "贵州茅台", "SSE"), ("601318", "中国平安", "SSE"),
-                ("000858", "五粮液", "SZSE"), ("000333", "美的集团", "SZSE"),
-                ("600036", "招商银行", "SSE"), ("601166", "兴业银行", "SSE"),
-                ("000001", "平安银行", "SZSE"), ("600276", "恒瑞医药", "SSE"),
-                ("300750", "宁德时代", "SZSE"), ("002594", "比亚迪", "SZSE"),
-                ("601888", "中国中免", "SSE"), ("600900", "长江电力", "SSE"),
-                ("000568", "泸州老窖", "SZSE"), ("002475", "立讯精密", "SZSE"),
-                ("603259", "药明康德", "SSE"), ("300059", "东方财富", "SZSE"),
+                ("600519", "贵州茅台", "SSE"),
+                ("601318", "中国平安", "SSE"),
+                ("000858", "五粮液", "SZSE"),
+                ("000333", "美的集团", "SZSE"),
+                ("600036", "招商银行", "SSE"),
+                ("601166", "兴业银行", "SSE"),
+                ("000001", "平安银行", "SZSE"),
+                ("600276", "恒瑞医药", "SSE"),
+                ("300750", "宁德时代", "SZSE"),
+                ("002594", "比亚迪", "SZSE"),
+                ("601888", "中国中免", "SSE"),
+                ("600900", "长江电力", "SSE"),
+                ("000568", "泸州老窖", "SZSE"),
+                ("002475", "立讯精密", "SZSE"),
+                ("603259", "药明康德", "SSE"),
+                ("300059", "东方财富", "SZSE"),
             ]
             return [Symbol(symbol=s, name=n, market=Market.CN, exchange=e) for s, n, e in defaults]
 
@@ -231,18 +240,18 @@ class EastMoneyFetcher(DataFetcher):
             else:
                 exchange = ""
 
-            symbols.append(Symbol(
-                symbol=code,
-                name=name,
-                market=Market.CN,
-                exchange=exchange,
-            ))
+            symbols.append(
+                Symbol(
+                    symbol=code,
+                    name=name,
+                    market=Market.CN,
+                    exchange=exchange,
+                )
+            )
 
         return symbols
 
-    async def get_klines(
-        self, symbol: str, interval: Interval, limit: int = 500
-    ) -> List[Candle]:
+    async def get_klines(self, symbol: str, interval: Interval, limit: int = 500) -> List[Candle]:
         """
         获取历史 K 线数据。
         注意：4H 周期不直接支持，使用 60 分钟合并 4 根实现。
@@ -252,7 +261,7 @@ class EastMoneyFetcher(DataFetcher):
             raise ValueError(f"不支持的 Interval: {interval}")
 
         secid = _get_secid(symbol)
-        need_4h_merge = (interval == Interval.H4)
+        need_4h_merge = interval == Interval.H4
         fetch_limit = limit * 4 if need_4h_merge else limit
 
         params = {
@@ -299,15 +308,17 @@ class EastMoneyFetcher(DataFetcher):
                 dt = dt.replace(tzinfo=_BJ_TZ)
                 ts = int(dt.timestamp() * 1000)
 
-                candles.append(Candle(
-                    timestamp=ts,
-                    open=float(parts[1]),
-                    close=float(parts[2]),
-                    high=float(parts[3]),
-                    low=float(parts[4]),
-                    volume=float(parts[5]),
-                    turnover=float(parts[6]) if len(parts) > 6 else 0.0,
-                ))
+                candles.append(
+                    Candle(
+                        timestamp=ts,
+                        open=float(parts[1]),
+                        close=float(parts[2]),
+                        high=float(parts[3]),
+                        low=float(parts[4]),
+                        volume=float(parts[5]),
+                        turnover=float(parts[6]) if len(parts) > 6 else 0.0,
+                    )
+                )
             except (ValueError, IndexError) as exc:
                 logger.debug("东方财富K线解析异常: %s, line=%s", exc, line)
                 continue
@@ -318,9 +329,7 @@ class EastMoneyFetcher(DataFetcher):
 
         return candles
 
-    async def subscribe_realtime(
-        self, symbol: str, interval: Interval, callback: Callable
-    ) -> None:
+    async def subscribe_realtime(self, symbol: str, interval: Interval, callback: Callable) -> None:
         """
         使用轮询方式获取实时行情。
         每 3 秒获取最新数据，非交易时段自动暂停。

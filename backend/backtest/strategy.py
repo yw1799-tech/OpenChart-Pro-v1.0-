@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 # 内置技术指标计算（纯numpy实现）
 # ======================================================================
 
+
 def _sma(arr: np.ndarray, period: int) -> np.ndarray:
     """简单移动平均"""
     out = np.full_like(arr, np.nan, dtype=np.float64)
@@ -26,7 +27,7 @@ def _sma(arr: np.ndarray, period: int) -> np.ndarray:
         return out
     cumsum = np.cumsum(arr)
     cumsum[period:] = cumsum[period:] - cumsum[:-period]
-    out[period - 1:] = cumsum[period - 1:] / period
+    out[period - 1 :] = cumsum[period - 1 :] / period
     return out
 
 
@@ -65,14 +66,12 @@ def _macd(
     return dif, dea, hist
 
 
-def _bollinger(
-    close: np.ndarray, period: int = 20, std_dev: float = 2.0
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _bollinger(close: np.ndarray, period: int = 20, std_dev: float = 2.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """布林带: 返回 (upper, mid, lower)"""
     mid = _sma(close, period)
     std = np.full_like(close, np.nan, dtype=np.float64)
     for i in range(period - 1, len(close)):
-        std[i] = np.std(close[i - period + 1: i + 1], ddof=0)
+        std[i] = np.std(close[i - period + 1 : i + 1], ddof=0)
     upper = mid + std_dev * std
     lower = mid - std_dev * std
     return upper, mid, lower
@@ -81,6 +80,7 @@ def _bollinger(
 # ======================================================================
 # 策略数据结构
 # ======================================================================
+
 
 class Strategy:
     """解析后的策略对象"""
@@ -94,16 +94,13 @@ class Strategy:
         self.strategy_type: str = "openscript"
 
     def __repr__(self):
-        return (
-            f"Strategy(name={self.name}, "
-            f"entries={len(self.entry_conditions)}, "
-            f"exits={len(self.exit_conditions)})"
-        )
+        return f"Strategy(name={self.name}, entries={len(self.entry_conditions)}, exits={len(self.exit_conditions)})"
 
 
 # ======================================================================
 # 解析器
 # ======================================================================
+
 
 def parse_strategy(code: str, strategy_type: str = "openscript") -> Strategy:
     """
@@ -153,7 +150,7 @@ def _parse_openscript(strategy: Strategy, code: str) -> Strategy:
             continue
 
         # 参数定义
-        m = re.match(r'@param\s+(\w+)\s*=\s*(.+)', line)
+        m = re.match(r"@param\s+(\w+)\s*=\s*(.+)", line)
         if m:
             key = m.group(1)
             val_str = m.group(2).strip()
@@ -198,12 +195,12 @@ def _parse_condition_line(line: str) -> Optional[Dict[str, Any]]:
     """将一行条件表达式解析为条件字典"""
 
     # cross_above(a, b)
-    m = re.match(r'cross_above\((.+),\s*(.+)\)', line)
+    m = re.match(r"cross_above\((.+),\s*(.+)\)", line)
     if m:
         return {"type": "cross_above", "left": m.group(1).strip(), "right": m.group(2).strip()}
 
     # cross_below(a, b)
-    m = re.match(r'cross_below\((.+),\s*(.+)\)', line)
+    m = re.match(r"cross_below\((.+),\s*(.+)\)", line)
     if m:
         return {"type": "cross_below", "left": m.group(1).strip(), "right": m.group(2).strip()}
 
@@ -215,7 +212,7 @@ def _parse_condition_line(line: str) -> Optional[Dict[str, Any]]:
                 return {"type": f"compare_{op_name}", "left": parts[0].strip(), "right": parts[1].strip()}
 
     # 简单函数调用作为布尔条件
-    m = re.match(r'(\w+)\((.+)\)', line)
+    m = re.match(r"(\w+)\((.+)\)", line)
     if m:
         return {"type": "func_call", "func": m.group(1), "args": m.group(2).strip()}
 
@@ -241,6 +238,7 @@ def _parse_value(val_str: str) -> Any:
 # ======================================================================
 # 信号生成
 # ======================================================================
+
 
 def generate_signals(
     strategy: Strategy,
@@ -313,9 +311,7 @@ def _generate_python_signals(
     return entries.astype(bool), exits.astype(bool)
 
 
-def _build_indicator_context(
-    ohlcv: pd.DataFrame, params: Dict[str, Any]
-) -> Dict[str, np.ndarray]:
+def _build_indicator_context(ohlcv: pd.DataFrame, params: Dict[str, Any]) -> Dict[str, np.ndarray]:
     """预计算常用指标，建立名称→数组的映射"""
     close = ohlcv["close"].values.astype(np.float64)
     high = ohlcv["high"].values.astype(np.float64)
@@ -381,7 +377,7 @@ def _resolve_series(expr: str, ctx: Dict[str, np.ndarray]) -> np.ndarray:
         pass
 
     # 带括号的函数表达式 sma(close, 10)
-    m = re.match(r'(sma|ema)\((\w+),\s*(\w+)\)', expr)
+    m = re.match(r"(sma|ema)\((\w+),\s*(\w+)\)", expr)
     if m:
         func_name, series_name, period_str = m.group(1), m.group(2), m.group(3)
         series = ctx.get(series_name)
@@ -397,7 +393,7 @@ def _resolve_series(expr: str, ctx: Dict[str, np.ndarray]) -> np.ndarray:
         ctx[expr] = result  # 缓存
         return result
 
-    m = re.match(r'rsi\((\w+),\s*(\d+)\)', expr)
+    m = re.match(r"rsi\((\w+),\s*(\d+)\)", expr)
     if m:
         series = ctx.get(m.group(1))
         if series is not None:
@@ -413,9 +409,7 @@ def _resolve_series(expr: str, ctx: Dict[str, np.ndarray]) -> np.ndarray:
     raise ValueError(f"无法解析表达式: {expr}")
 
 
-def _eval_condition(
-    cond: Dict[str, Any], ctx: Dict[str, np.ndarray], n: int
-) -> np.ndarray:
+def _eval_condition(cond: Dict[str, Any], ctx: Dict[str, np.ndarray], n: int) -> np.ndarray:
     """评估单个条件，返回布尔数组"""
     ctype = cond["type"]
 

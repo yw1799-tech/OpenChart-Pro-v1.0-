@@ -4,6 +4,7 @@
 接收K线数据列表，返回笔/线段/中枢/买卖点分析结果。
 所有坐标使用 (bar_index, price) 格式，方便前端绑定到K线图。
 """
+
 import sys
 import os
 import logging
@@ -24,7 +25,6 @@ from Common.CTime import CTime
 from KLine.KLine_Unit import CKLine_Unit
 
 logger = logging.getLogger(__name__)
-
 
 
 def _ts_to_ctime(ts_ms: int) -> CTime:
@@ -78,8 +78,6 @@ def _klu_to_bar_index(klu, ts_list: List[int]) -> int:
     return _find_bar_index(ts_ms, ts_list)
 
 
-
-
 def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     缠论完整分析
@@ -124,18 +122,20 @@ def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
         divergence_rate = 10.0
         bsp1_only_multibi_zs = True
 
-    config = CChanConfig({
-        "bi_strict": True,
-        "bi_fx_check": "half",
-        "divergence_rate": divergence_rate,
-        "min_zs_cnt": 1,
-        "zs_combine": True,
-        "zs_combine_mode": "zs",
-        "one_bi_zs": one_bi_zs,
-        "macd_algo": "area",
-        "bsp1_only_multibi_zs": bsp1_only_multibi_zs,
-        "trigger_step": False,
-    })
+    config = CChanConfig(
+        {
+            "bi_strict": True,
+            "bi_fx_check": "half",
+            "divergence_rate": divergence_rate,
+            "min_zs_cnt": 1,
+            "zs_combine": True,
+            "zs_combine_mode": "zs",
+            "one_bi_zs": one_bi_zs,
+            "macd_algo": "area",
+            "bsp1_only_multibi_zs": bsp1_only_multibi_zs,
+            "trigger_step": False,
+        }
+    )
 
     try:
         lv = KL_TYPE.K_DAY
@@ -173,14 +173,16 @@ def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
             begin_val = float(bi.get_begin_val())
             end_val = float(bi.get_end_val())
             is_up = bi.dir == BI_DIR.UP
-            bi_list.append({
-                "begin_x": begin_x,
-                "begin_y": begin_val,
-                "end_x": end_x,
-                "end_y": end_val,
-                "dir": 1 if is_up else -1,
-                "is_sure": bi.is_sure,
-            })
+            bi_list.append(
+                {
+                    "begin_x": begin_x,
+                    "begin_y": begin_val,
+                    "end_x": end_x,
+                    "end_y": end_val,
+                    "dir": 1 if is_up else -1,
+                    "is_sure": bi.is_sure,
+                }
+            )
         except Exception as e:
             logger.debug(f"提取笔失败: {e}")
 
@@ -195,14 +197,16 @@ def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
             begin_val = float(seg.start_bi.get_begin_val())
             end_val = float(seg.end_bi.get_end_val())
             is_up = seg.dir == BI_DIR.UP
-            seg_list.append({
-                "begin_x": begin_x,
-                "begin_y": begin_val,
-                "end_x": end_x,
-                "end_y": end_val,
-                "dir": 1 if is_up else -1,
-                "is_sure": seg.is_sure,
-            })
+            seg_list.append(
+                {
+                    "begin_x": begin_x,
+                    "begin_y": begin_val,
+                    "end_x": end_x,
+                    "end_y": end_val,
+                    "dir": 1 if is_up else -1,
+                    "is_sure": seg.is_sure,
+                }
+            )
         except Exception as e:
             logger.debug(f"提取线段失败: {e}")
 
@@ -216,14 +220,16 @@ def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
             zs_dir = 0
             if zs.bi_in is not None:
                 zs_dir = 1 if zs.bi_in.dir == BI_DIR.UP else -1
-            zs_list.append({
-                "begin_x": begin_x,
-                "end_x": end_x,
-                "zg": float(zs.high),   # ZG: 中枢上沿
-                "zd": float(zs.low),    # ZD: 中枢下沿
-                "dir": zs_dir,
-                "level": "bi",
-            })
+            zs_list.append(
+                {
+                    "begin_x": begin_x,
+                    "end_x": end_x,
+                    "zg": float(zs.high),  # ZG: 中枢上沿
+                    "zd": float(zs.low),  # ZD: 中枢下沿
+                    "dir": zs_dir,
+                    "level": "bi",
+                }
+            )
         except Exception as e:
             logger.debug(f"提取中枢失败: {e}")
 
@@ -235,14 +241,16 @@ def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
             zs_dir = 0
             if zs.bi_in is not None:
                 zs_dir = 1 if zs.bi_in.dir == BI_DIR.UP else -1
-            zs_list.append({
-                "begin_x": begin_x,
-                "end_x": end_x,
-                "zg": float(zs.high),
-                "zd": float(zs.low),
-                "dir": zs_dir,
-                "level": "seg",
-            })
+            zs_list.append(
+                {
+                    "begin_x": begin_x,
+                    "end_x": end_x,
+                    "zg": float(zs.high),
+                    "zd": float(zs.low),
+                    "dir": zs_dir,
+                    "level": "seg",
+                }
+            )
         except Exception as e:
             logger.debug(f"提取线段中枢失败: {e}")
 
@@ -255,12 +263,14 @@ def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
                 klu = bsp.klu
                 x = _klu_to_bar_index(klu, ts_list)
                 y = float(klu.low if bsp.is_buy else klu.high)
-                bsp_list.append({
-                    "x": x,
-                    "y": y,
-                    "type": bsp.type2str(),
-                    "is_buy": bsp.is_buy,
-                })
+                bsp_list.append(
+                    {
+                        "x": x,
+                        "y": y,
+                        "type": bsp.type2str(),
+                        "is_buy": bsp.is_buy,
+                    }
+                )
             except Exception as e:
                 logger.debug(f"提取买卖点失败: {e}")
     except Exception as e:
@@ -274,12 +284,14 @@ def analyze(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
                 klu = bsp.klu
                 x = _klu_to_bar_index(klu, ts_list)
                 y = float(klu.low if bsp.is_buy else klu.high)
-                bsp_list.append({
-                    "x": x,
-                    "y": y,
-                    "type": "S" + bsp.type2str(),
-                    "is_buy": bsp.is_buy,
-                })
+                bsp_list.append(
+                    {
+                        "x": x,
+                        "y": y,
+                        "type": "S" + bsp.type2str(),
+                        "is_buy": bsp.is_buy,
+                    }
+                )
             except Exception as e:
                 logger.debug(f"提取线段买卖点失败: {e}")
     except Exception as e:

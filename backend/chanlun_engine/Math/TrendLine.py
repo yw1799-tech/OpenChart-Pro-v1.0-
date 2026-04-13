@@ -11,7 +11,7 @@ class Point:
     y: float
 
     def cal_slope(self, p):
-        return (self.y-p.y)/(self.x-p.x) if self.x != p.x else float("inf")
+        return (self.y - p.y) / (self.x - p.x) if self.x != p.x else float("inf")
 
 
 @dataclass
@@ -20,7 +20,7 @@ class Line:
     slope: float
 
     def cal_dis(self, p):
-        return abs(self.slope*p.x - p.y + self.p.y - self.slope*self.p.x) / sqrt(self.slope**2 + 1)
+        return abs(self.slope * p.x - p.y + self.p.y - self.slope * self.p.x) / sqrt(self.slope**2 + 1)
 
 
 class CTrendLine:
@@ -30,7 +30,7 @@ class CTrendLine:
         self.cal(lst)
 
     def cal(self, lst):
-        bench = float('inf')
+        bench = float("inf")
         if self.side == TREND_LINE_SIDE.INSIDE:
             all_p = [Point(bi.get_begin_klu().idx, bi.get_begin_val()) for bi in lst[-1::-2]]
         else:
@@ -67,9 +67,9 @@ def cal_tl(c_p, _dir, side):
         if side == TREND_LINE_SIDE.INSIDE:
             if (_dir == BI_DIR.UP and slope > peak_slope) or (_dir == BI_DIR.DOWN and slope < peak_slope):
                 peak_slope = slope
-                idx = point_idx+1
+                idx = point_idx + 1
         else:
             if (_dir == BI_DIR.UP and slope < peak_slope) or (_dir == BI_DIR.DOWN and slope > peak_slope):
                 peak_slope = slope
-                idx = point_idx+1
+                idx = point_idx + 1
     return Line(p, peak_slope), idx

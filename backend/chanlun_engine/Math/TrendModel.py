@@ -11,9 +11,9 @@ class CTrendModel:
     def add(self, value) -> float:
         self.arr.append(value)
         if len(self.arr) > self.T:
-            self.arr = self.arr[-self.T:]
+            self.arr = self.arr[-self.T :]
         if self.type == TREND_TYPE.MEAN:
-            return sum(self.arr)/len(self.arr)
+            return sum(self.arr) / len(self.arr)
         elif self.type == TREND_TYPE.MAX:
             return max(self.arr)
         elif self.type == TREND_TYPE.MIN:

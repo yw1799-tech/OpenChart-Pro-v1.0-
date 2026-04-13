@@ -40,7 +40,13 @@ class CKLine(CKLine_Combiner[CKLine_Unit]):
     def has_gap_with_next(self) -> bool:
         assert self.next is not None
         # 相同也算重叠，也就是没有gap
-        return not has_overlap(self.get_klu_min_low(), self.get_klu_max_high(), self.next.get_klu_min_low(), self.next.get_klu_max_high(), equal=True)
+        return not has_overlap(
+            self.get_klu_min_low(),
+            self.get_klu_max_high(),
+            self.next.get_klu_min_low(),
+            self.next.get_klu_max_high(),
+            equal=True,
+        )
 
     def check_fx_valid(self, item2: "CKLine", method, for_virtual=False):
         # for_virtual: 虚笔时使用

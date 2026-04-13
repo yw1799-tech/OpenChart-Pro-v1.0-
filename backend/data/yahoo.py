@@ -2,6 +2,7 @@
 Yahoo Finance 数据源实现 — 美股 / 港股。
 使用 yfinance 库获取数据，轮询方式实现实时推送。
 """
+
 import asyncio
 import time
 import logging
@@ -18,29 +19,29 @@ logger = logging.getLogger(__name__)
 # ---------- Interval → yfinance 参数映射 ----------
 # yfinance interval: 1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo
 _INTERVAL_MAP: Dict[Interval, str] = {
-    Interval.M1:  "1m",
-    Interval.M5:  "5m",
+    Interval.M1: "1m",
+    Interval.M5: "5m",
     Interval.M15: "15m",
     Interval.M30: "30m",
-    Interval.H1:  "1h",
-    Interval.H4:  "1h",   # yfinance 不支持 4h，用 1h 合并
-    Interval.D1:  "1d",
-    Interval.W1:  "1wk",
-    Interval.MN:  "1mo",
+    Interval.H1: "1h",
+    Interval.H4: "1h",  # yfinance 不支持 4h，用 1h 合并
+    Interval.D1: "1d",
+    Interval.W1: "1wk",
+    Interval.MN: "1mo",
 }
 
 # 各 interval 对应的最大回溯 period
 # 分钟级数据最多保留 60 天（免费版有 15 分钟延迟）
 _PERIOD_MAP: Dict[Interval, str] = {
-    Interval.M1:  "7d",
-    Interval.M5:  "60d",
+    Interval.M1: "7d",
+    Interval.M5: "60d",
     Interval.M15: "60d",
     Interval.M30: "60d",
-    Interval.H1:  "730d",
-    Interval.H4:  "730d",
-    Interval.D1:  "max",
-    Interval.W1:  "max",
-    Interval.MN:  "max",
+    Interval.H1: "730d",
+    Interval.H4: "730d",
+    Interval.D1: "max",
+    Interval.W1: "max",
+    Interval.MN: "max",
 }
 
 # 北京时间偏移
@@ -159,22 +160,31 @@ class YahooFetcher(DataFetcher):
         """
         if not query:
             # 根据当前市场返回对应默认品种
-            mkt = getattr(self, '_market', None)
+            mkt = getattr(self, "_market", None)
             if mkt == Market.HK:
                 hk_defaults = [
-                    ("0700.HK", "腾讯控股"), ("9988.HK", "阿里巴巴"),
-                    ("0005.HK", "汇丰控股"), ("1810.HK", "小米集团"),
-                    ("2318.HK", "中国平安"), ("3690.HK", "美团"),
-                    ("9618.HK", "京东集团"), ("1024.HK", "快手"),
+                    ("0700.HK", "腾讯控股"),
+                    ("9988.HK", "阿里巴巴"),
+                    ("0005.HK", "汇丰控股"),
+                    ("1810.HK", "小米集团"),
+                    ("2318.HK", "中国平安"),
+                    ("3690.HK", "美团"),
+                    ("9618.HK", "京东集团"),
+                    ("1024.HK", "快手"),
                 ]
                 return [Symbol(symbol=s, name=n, market=Market.HK, exchange="HKG") for s, n in hk_defaults]
             else:
                 us_defaults = [
-                    ("AAPL", "Apple Inc."), ("MSFT", "Microsoft Corp."),
-                    ("GOOGL", "Alphabet Inc."), ("AMZN", "Amazon.com"),
-                    ("NVDA", "NVIDIA Corp."), ("TSLA", "Tesla Inc."),
-                    ("META", "Meta Platforms"), ("NFLX", "Netflix Inc."),
-                    ("JPM", "JPMorgan Chase"), ("V", "Visa Inc."),
+                    ("AAPL", "Apple Inc."),
+                    ("MSFT", "Microsoft Corp."),
+                    ("GOOGL", "Alphabet Inc."),
+                    ("AMZN", "Amazon.com"),
+                    ("NVDA", "NVIDIA Corp."),
+                    ("TSLA", "Tesla Inc."),
+                    ("META", "Meta Platforms"),
+                    ("NFLX", "Netflix Inc."),
+                    ("JPM", "JPMorgan Chase"),
+                    ("V", "Visa Inc."),
                 ]
                 return [Symbol(symbol=s, name=n, market=Market.US, exchange="NMS") for s, n in us_defaults]
 
@@ -205,12 +215,14 @@ class YahooFetcher(DataFetcher):
                 else:
                     market = Market.US
 
-                results.append(Symbol(
-                    symbol=candidate,
-                    name=long_name,
-                    market=market,
-                    exchange=exchange,
-                ))
+                results.append(
+                    Symbol(
+                        symbol=candidate,
+                        name=long_name,
+                        market=market,
+                        exchange=exchange,
+                    )
+                )
             except Exception as exc:
                 logger.debug("Yahoo 搜索 %s 失败: %s", candidate, exc)
 
@@ -229,7 +241,7 @@ class YahooFetcher(DataFetcher):
         if yf_interval is None or yf_period is None:
             raise ValueError(f"不支持的 Interval: {interval}")
 
-        need_4h_merge = (interval == Interval.H4)
+        need_4h_merge = interval == Interval.H4
         fetch_limit = limit * 4 if need_4h_merge else limit
 
         loop = asyncio.get_event_loop()
@@ -241,8 +253,14 @@ class YahooFetcher(DataFetcher):
                 end_dt = datetime.fromtimestamp(end_time_ms / 1000, tz=timezone.utc)
                 # 根据interval估算需要往前多久
                 interval_seconds = {
-                    "1m": 60, "5m": 300, "15m": 900, "30m": 1800,
-                    "1h": 3600, "1d": 86400, "1wk": 604800, "1mo": 2592000,
+                    "1m": 60,
+                    "5m": 300,
+                    "15m": 900,
+                    "30m": 1800,
+                    "1h": 3600,
+                    "1d": 86400,
+                    "1wk": 604800,
+                    "1mo": 2592000,
                 }.get(yf_interval, 3600)
                 start_dt = end_dt - timedelta(seconds=interval_seconds * fetch_limit * 2)
                 df = ticker.history(start=start_dt, end=end_dt, interval=yf_interval)
@@ -261,15 +279,17 @@ class YahooFetcher(DataFetcher):
 
         candles: List[Candle] = []
         for idx, row in df.iterrows():
-            ts = int(idx.timestamp() * 1000) if hasattr(idx, 'timestamp') else 0
-            candles.append(Candle(
-                timestamp=ts,
-                open=float(row.get("Open", 0)),
-                high=float(row.get("High", 0)),
-                low=float(row.get("Low", 0)),
-                close=float(row.get("Close", 0)),
-                volume=float(row.get("Volume", 0)),
-            ))
+            ts = int(idx.timestamp() * 1000) if hasattr(idx, "timestamp") else 0
+            candles.append(
+                Candle(
+                    timestamp=ts,
+                    open=float(row.get("Open", 0)),
+                    high=float(row.get("High", 0)),
+                    low=float(row.get("Low", 0)),
+                    close=float(row.get("Close", 0)),
+                    volume=float(row.get("Volume", 0)),
+                )
+            )
 
         if need_4h_merge:
             candles = _merge_4h_candles(candles)
@@ -277,9 +297,7 @@ class YahooFetcher(DataFetcher):
 
         return candles
 
-    async def subscribe_realtime(
-        self, symbol: str, interval: Interval, callback: Callable
-    ) -> None:
+    async def subscribe_realtime(self, symbol: str, interval: Interval, callback: Callable) -> None:
         """
         使用轮询方式模拟实时推送。
         每 10 秒获取最新价格，非交易时段自动暂停。

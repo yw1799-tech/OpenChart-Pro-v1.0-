@@ -23,9 +23,11 @@ class CBi:
         self.__seg_idx: Optional[int] = None
 
         from Seg.Seg import CSeg
+
         self.parent_seg: Optional[CSeg[CBi]] = None  # 在哪个线段里面
 
         from BuySellPoint.BS_Point import CBS_Point
+
         self.bsp: Optional[CBS_Point] = None  # 尾部是不是买卖点
 
         self.next: Optional[CBi] = None
@@ -35,25 +37,32 @@ class CBi:
         self._memoize_cache = {}
 
     @property
-    def begin_klc(self): return self.__begin_klc
+    def begin_klc(self):
+        return self.__begin_klc
 
     @property
-    def end_klc(self): return self.__end_klc
+    def end_klc(self):
+        return self.__end_klc
 
     @property
-    def dir(self): return self.__dir
+    def dir(self):
+        return self.__dir
 
     @property
-    def idx(self): return self.__idx
+    def idx(self):
+        return self.__idx
 
     @property
-    def type(self): return self.__type
+    def type(self):
+        return self.__type
 
     @property
-    def is_sure(self): return self.__is_sure
+    def is_sure(self):
+        return self.__is_sure
 
     @property
-    def sure_end(self): return self.__sure_end
+    def sure_end(self):
+        return self.__sure_end
 
     @property
     def klc_lst(self):
@@ -74,7 +83,8 @@ class CBi:
                 break
 
     @property
-    def seg_idx(self): return self.__seg_idx
+    def seg_idx(self):
+        return self.__seg_idx
 
     def set_seg_idx(self, idx):
         self.__seg_idx = idx
@@ -89,7 +99,9 @@ class CBi:
             else:
                 assert self.begin_klc.low < self.end_klc.high
         except Exception as e:
-            raise CChanException(f"{self.idx}:{self.begin_klc[0].time}~{self.end_klc[-1].time}笔的方向和收尾位置不一致!", ErrCode.BI_ERR) from e
+            raise CChanException(
+                f"{self.idx}:{self.begin_klc[0].time}~{self.end_klc[-1].time}笔的方向和收尾位置不一致!", ErrCode.BI_ERR
+            ) from e
 
     def set(self, begin_klc: CKLine, end_klc: CKLine):
         self.__begin_klc: CKLine = begin_klc
@@ -203,14 +215,17 @@ class CBi:
         elif macd_algo == MACD_ALGO.RSI:
             return self.Cal_Rsi()
         else:
-            raise CChanException(f"unsupport macd_algo={macd_algo}, should be one of area/full_area/peak/diff/slope/amp", ErrCode.PARA_ERROR)
+            raise CChanException(
+                f"unsupport macd_algo={macd_algo}, should be one of area/full_area/peak/diff/slope/amp",
+                ErrCode.PARA_ERROR,
+            )
 
     @make_cache
     def Cal_Rsi(self):
         rsi_lst: List[float] = []
         for klc in self.klc_lst:
             rsi_lst.extend(klu.rsi for klu in klc.lst)
-        return 10000.0/(min(rsi_lst)+1e-7) if self.is_down() else max(rsi_lst)
+        return 10000.0 / (min(rsi_lst) + 1e-7) if self.is_down() else max(rsi_lst)
 
     @make_cache
     def Cal_MACD_area(self):
@@ -252,7 +267,7 @@ class CBi:
             for klu in klc.lst:
                 if klu.idx < begin_klu.idx:
                     continue
-                if klu.macd.macd*peak_macd > 0:
+                if klu.macd.macd * peak_macd > 0:
                     _s += abs(klu.macd.macd)
                 else:
                     break
@@ -270,7 +285,7 @@ class CBi:
             for klu in klc[::-1]:
                 if klu.idx > begin_klu.idx:
                     continue
-                if klu.macd.macd*peak_macd > 0:
+                if klu.macd.macd * peak_macd > 0:
                     _s += abs(klu.macd.macd)
                 else:
                     break
@@ -292,25 +307,25 @@ class CBi:
                     _max = macd
                 if macd < _min:
                     _min = macd
-        return _max-_min
+        return _max - _min
 
     @make_cache
     def Cal_MACD_slope(self):
         begin_klu = self.get_begin_klu()
         end_klu = self.get_end_klu()
         if self.is_up():
-            return (end_klu.high - begin_klu.low)/end_klu.high/(end_klu.idx - begin_klu.idx + 1)
+            return (end_klu.high - begin_klu.low) / end_klu.high / (end_klu.idx - begin_klu.idx + 1)
         else:
-            return (begin_klu.high - end_klu.low)/begin_klu.high/(end_klu.idx - begin_klu.idx + 1)
+            return (begin_klu.high - end_klu.low) / begin_klu.high / (end_klu.idx - begin_klu.idx + 1)
 
     @make_cache
     def Cal_MACD_amp(self):
         begin_klu = self.get_begin_klu()
         end_klu = self.get_end_klu()
         if self.is_down():
-            return (begin_klu.high-end_klu.low)/begin_klu.high
+            return (begin_klu.high - end_klu.low) / begin_klu.high
         else:
-            return (end_klu.high-begin_klu.low)/begin_klu.low
+            return (end_klu.high - begin_klu.low) / begin_klu.low
 
     def Cal_MACD_trade_metric(self, metric: str, cal_avg=False) -> float:
         _s = 0

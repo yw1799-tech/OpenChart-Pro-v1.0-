@@ -15,6 +15,7 @@ try:
         guarded_unpack_sequence,
         safer_getattr,
     )
+
     HAS_RESTRICTED_PYTHON = True
 except ImportError:
     HAS_RESTRICTED_PYTHON = False
@@ -22,20 +23,39 @@ except ImportError:
 
 class PythonSandboxError(Exception):
     """Python 沙箱执行错误"""
+
     pass
 
 
 class PythonTimeoutError(Exception):
     """Python 沙箱执行超时"""
+
     pass
 
 
 # 禁止的模块
 _FORBIDDEN_MODULES = {
-    "os", "sys", "subprocess", "shutil", "socket", "http",
-    "urllib", "requests", "ctypes", "signal", "multiprocessing",
-    "threading", "asyncio", "importlib", "pickle", "shelve",
-    "sqlite3", "pathlib", "glob", "tempfile", "io",
+    "os",
+    "sys",
+    "subprocess",
+    "shutil",
+    "socket",
+    "http",
+    "urllib",
+    "requests",
+    "ctypes",
+    "signal",
+    "multiprocessing",
+    "threading",
+    "asyncio",
+    "importlib",
+    "pickle",
+    "shelve",
+    "sqlite3",
+    "pathlib",
+    "glob",
+    "tempfile",
+    "io",
 }
 
 # 禁止的代码模式
@@ -83,11 +103,12 @@ def _check_code_safety(code: str) -> list[str]:
         if pattern == "open(":
             # 查找非 OHLCV 上下文的 open() 调用
             import re
+
             # 匹配独立的 open( 但排除 ohlcv 数据引用上下文
-            matches = list(re.finditer(r'\bopen\s*\(', code))
+            matches = list(re.finditer(r"\bopen\s*\(", code))
             for m in matches:
                 # 检查是否在 def calculate 的参数列表中
-                before = code[:m.start()]
+                before = code[: m.start()]
                 if "def " in before.split("\n")[-1]:
                     continue  # 函数定义中的参数
                 errors.append(f"禁止使用文件操作函数 open()")
@@ -103,6 +124,7 @@ def _safe_import(name, *args, **kwargs):
     allowed = {"numpy", "math", "statistics", "pandas"}
     if name in allowed:
         import importlib
+
         return importlib.import_module(name)
     raise ImportError(f"禁止导入模块: {name}. 仅允许: {', '.join(sorted(allowed))}")
 
@@ -184,6 +206,7 @@ def _build_safe_globals() -> dict:
     # 尝试导入 pandas
     try:
         import pandas as pd
+
         g["pd"] = pd
         g["pandas"] = pd
     except ImportError:
@@ -237,9 +260,7 @@ def execute_python(
 
     # 步骤2：检查是否定义了 calculate 函数
     if "def calculate" not in code:
-        raise PythonSandboxError(
-            "代码必须定义 calculate(open, high, low, close, volume) 函数"
-        )
+        raise PythonSandboxError("代码必须定义 calculate(open, high, low, close, volume) 函数")
 
     # 步骤3：转换 OHLCV 数据为 numpy 数组
     ohlcv = {}
@@ -255,9 +276,7 @@ def execute_python(
         # 使用 RestrictedPython 编译
         result = compile_restricted(code, "<python_sandbox>", "exec")
         if result.errors:
-            raise PythonSandboxError(
-                "RestrictedPython 编译错误:\n" + "\n".join(result.errors)
-            )
+            raise PythonSandboxError("RestrictedPython 编译错误:\n" + "\n".join(result.errors))
         compiled = result.code
     else:
         # 降级：使用标准编译（仍有运行时守卫）
@@ -345,25 +364,31 @@ def _normalize_result(calc_result: Any) -> dict:
             if isinstance(item, dict):
                 output["plots"].append(item)
             elif isinstance(item, np.ndarray):
-                output["plots"].append({
-                    "type": "plot",
-                    "title": f"Line {i + 1}",
-                    "data": item.tolist(),
-                })
+                output["plots"].append(
+                    {
+                        "type": "plot",
+                        "title": f"Line {i + 1}",
+                        "data": item.tolist(),
+                    }
+                )
             elif isinstance(item, list):
-                output["plots"].append({
-                    "type": "plot",
-                    "title": f"Line {i + 1}",
-                    "data": item,
-                })
+                output["plots"].append(
+                    {
+                        "type": "plot",
+                        "title": f"Line {i + 1}",
+                        "data": item,
+                    }
+                )
 
     elif isinstance(calc_result, np.ndarray):
         # 单个数组
-        output["plots"].append({
-            "type": "plot",
-            "title": "Result",
-            "data": calc_result.tolist(),
-        })
+        output["plots"].append(
+            {
+                "type": "plot",
+                "title": "Result",
+                "data": calc_result.tolist(),
+            }
+        )
 
     return output
 
@@ -381,10 +406,12 @@ def _convert_plot_list(plots: list) -> list:
                     new_p[k] = v
             converted.append(new_p)
         elif isinstance(p, np.ndarray):
-            converted.append({
-                "type": "plot",
-                "data": p.tolist(),
-            })
+            converted.append(
+                {
+                    "type": "plot",
+                    "data": p.tolist(),
+                }
+            )
         else:
             converted.append(p)
     return converted

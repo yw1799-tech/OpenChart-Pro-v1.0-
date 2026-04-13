@@ -1,0 +1,17 @@
+[project]
+name = "openchart-pro"
+version = "1.0.0"
+description = "专业级加密货币与股票行情分析平台"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

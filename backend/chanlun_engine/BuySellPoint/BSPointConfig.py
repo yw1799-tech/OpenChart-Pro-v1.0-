@@ -14,22 +14,23 @@ class CBSPointConfig:
 
 
 class CPointConfig:
-    def __init__(self,
-                 divergence_rate,
-                 min_zs_cnt,
-                 bsp1_only_multibi_zs,
-                 max_bs2_rate,
-                 macd_algo,
-                 bs1_peak,
-                 bs_type,
-                 bsp2_follow_1,
-                 bsp3_follow_1,
-                 bsp3_peak,
-                 bsp2s_follow_2,
-                 max_bsp2s_lv,
-                 strict_bsp3,
-                 bsp3a_max_zs_cnt,
-                 ):
+    def __init__(
+        self,
+        divergence_rate,
+        min_zs_cnt,
+        bsp1_only_multibi_zs,
+        max_bs2_rate,
+        macd_algo,
+        bs1_peak,
+        bs_type,
+        bsp2_follow_1,
+        bsp3_follow_1,
+        bsp3_peak,
+        bsp2s_follow_2,
+        max_bsp2s_lv,
+        strict_bsp3,
+        bsp3a_max_zs_cnt,
+    ):
         self.divergence_rate = divergence_rate
         self.min_zs_cnt = min_zs_cnt
         self.bsp1_only_multibi_zs = bsp1_only_multibi_zs
@@ -53,7 +54,7 @@ class CPointConfig:
         if isinstance(self.tmp_target_types, str):
             self.tmp_target_types = [t.strip() for t in self.tmp_target_types.split(",")]
         for target_t in self.tmp_target_types:
-            assert target_t in ['1', '2', '3a', '2s', '1p', '3b']
+            assert target_t in ["1", "2", "3a", "2s", "1p", "3b"]
         self.target_types = [_d[_type] for _type in self.tmp_target_types]
 
     def SetMacdAlgo(self, macd_algo):

@@ -2,6 +2,7 @@
 OpenChart Pro 一键启动脚本
 Usage: python run.py
 """
+
 import uvicorn
 import webbrowser
 import threading
@@ -24,10 +25,4 @@ if __name__ == "__main__":
 
     threading.Thread(target=open_browser, daemon=True).start()
 
-    uvicorn.run(
-        "backend.main:app",
-        host="0.0.0.0",
-        port=8888,
-        reload=True,
-        log_level="info"
-    )
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=8888, reload=True, log_level="info")

@@ -3,13 +3,31 @@
 """
 
 from backend.indicators.builtin import (
-    calc_ma, calc_ema, calc_boll, calc_sar, calc_ichimoku, calc_vwap,
-    calc_donchian, calc_envelope,
-    calc_macd, calc_rsi, calc_kdj, calc_cci, calc_williams, calc_roc,
-    calc_stoch_rsi, calc_mfi, calc_stoch,
-    calc_obv, calc_cmf, calc_volume_ma,
-    calc_atr, calc_stddev,
-    calc_dmi, calc_trix, calc_adl,
+    calc_ma,
+    calc_ema,
+    calc_boll,
+    calc_sar,
+    calc_ichimoku,
+    calc_vwap,
+    calc_donchian,
+    calc_envelope,
+    calc_macd,
+    calc_rsi,
+    calc_kdj,
+    calc_cci,
+    calc_williams,
+    calc_roc,
+    calc_stoch_rsi,
+    calc_mfi,
+    calc_stoch,
+    calc_obv,
+    calc_cmf,
+    calc_volume_ma,
+    calc_atr,
+    calc_stddev,
+    calc_dmi,
+    calc_trix,
+    calc_adl,
 )
 
 
@@ -114,7 +132,6 @@ INDICATOR_REGISTRY = {
         "outputs": ["upper", "middle", "lower"],
         "calc_func": "calc_envelope",
     },
-
     # ------------------------------------------------------------------
     # 动量类（副图）
     # ------------------------------------------------------------------
@@ -215,7 +232,6 @@ INDICATOR_REGISTRY = {
         "outputs": ["k", "d"],
         "calc_func": "calc_stoch",
     },
-
     # ------------------------------------------------------------------
     # 成交量类
     # ------------------------------------------------------------------
@@ -247,7 +263,6 @@ INDICATOR_REGISTRY = {
         "outputs": ["volume_ma"],
         "calc_func": "calc_volume_ma",
     },
-
     # ------------------------------------------------------------------
     # 波动类
     # ------------------------------------------------------------------
@@ -271,7 +286,6 @@ INDICATOR_REGISTRY = {
         "outputs": ["stddev"],
         "calc_func": "calc_stddev",
     },
-
     # ------------------------------------------------------------------
     # 趋势强度类
     # ------------------------------------------------------------------
@@ -361,37 +375,38 @@ _CALC_FUNCTIONS = {
 
 # 各函数需要的OHLCV字段映射
 _INPUT_FIELDS = {
-    "calc_ma":        ["close"],
-    "calc_ema":       ["close"],
-    "calc_boll":      ["close"],
-    "calc_sar":       ["high", "low"],
-    "calc_ichimoku":  ["high", "low", "close"],
-    "calc_vwap":      ["high", "low", "close", "volume"],
-    "calc_donchian":  ["high", "low"],
-    "calc_envelope":  ["close"],
-    "calc_macd":      ["close"],
-    "calc_rsi":       ["close"],
-    "calc_kdj":       ["high", "low", "close"],
-    "calc_cci":       ["high", "low", "close"],
-    "calc_williams":  ["high", "low", "close"],
-    "calc_roc":       ["close"],
+    "calc_ma": ["close"],
+    "calc_ema": ["close"],
+    "calc_boll": ["close"],
+    "calc_sar": ["high", "low"],
+    "calc_ichimoku": ["high", "low", "close"],
+    "calc_vwap": ["high", "low", "close", "volume"],
+    "calc_donchian": ["high", "low"],
+    "calc_envelope": ["close"],
+    "calc_macd": ["close"],
+    "calc_rsi": ["close"],
+    "calc_kdj": ["high", "low", "close"],
+    "calc_cci": ["high", "low", "close"],
+    "calc_williams": ["high", "low", "close"],
+    "calc_roc": ["close"],
     "calc_stoch_rsi": ["close"],
-    "calc_mfi":       ["high", "low", "close", "volume"],
-    "calc_stoch":     ["high", "low", "close"],
-    "calc_obv":       ["close", "volume"],
-    "calc_cmf":       ["high", "low", "close", "volume"],
+    "calc_mfi": ["high", "low", "close", "volume"],
+    "calc_stoch": ["high", "low", "close"],
+    "calc_obv": ["close", "volume"],
+    "calc_cmf": ["high", "low", "close", "volume"],
     "calc_volume_ma": ["volume"],
-    "calc_atr":       ["high", "low", "close"],
-    "calc_stddev":    ["close"],
-    "calc_dmi":       ["high", "low", "close"],
-    "calc_trix":      ["close"],
-    "calc_adl":       ["high", "low", "close", "volume"],
+    "calc_atr": ["high", "low", "close"],
+    "calc_stddev": ["close"],
+    "calc_dmi": ["high", "low", "close"],
+    "calc_trix": ["close"],
+    "calc_adl": ["high", "low", "close", "volume"],
 }
 
 
 # ============================================================================
 # 统一计算入口
 # ============================================================================
+
 
 def calculate_indicator(name, ohlcv_data, params=None):
     """根据注册表查找并调用对应的计算函数
@@ -462,10 +477,12 @@ def list_indicators(category=None):
         seen.add(id(meta))
         if category and meta["category"] != category:
             continue
-        result.append({
-            "id": ind_id,
-            "name": meta["name"],
-            "category": meta["category"],
-            "overlay": meta["overlay"],
-        })
+        result.append(
+            {
+                "id": ind_id,
+                "name": meta["name"],
+                "category": meta["category"],
+                "overlay": meta["overlay"],
+            }
+        )
     return result

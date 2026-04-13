@@ -13,9 +13,18 @@ import numpy as np
 import pandas as pd
 from typing import List, Optional, Dict, Tuple
 from .core import (
-    Swing, Wave, WavePattern, Prediction, Direction, PatternType,
-    MOTIVE_TYPES, CORRECTIVE_TYPES, PATTERN_NAMES_CN,
-    compute_confidence, fib_score, FIB_RATIOS,
+    Swing,
+    Wave,
+    WavePattern,
+    Prediction,
+    Direction,
+    PatternType,
+    MOTIVE_TYPES,
+    CORRECTIVE_TYPES,
+    PATTERN_NAMES_CN,
+    compute_confidence,
+    fib_score,
+    FIB_RATIOS,
 )
 from .rules import validate_pattern, classify_impulse_extension, check_volume_confirmation
 
@@ -24,8 +33,8 @@ from .rules import validate_pattern, classify_impulse_extension, check_volume_co
 # ZigZag Swing 检测 (内置, 不依赖外部)
 # ============================================================
 
-def _calc_atr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray,
-              period: int = 10) -> np.ndarray:
+
+def _calc_atr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 10) -> np.ndarray:
     """计算ATR (RMA方式, 与TradingView一致)"""
     n = len(highs)
     atr = np.zeros(n)
@@ -34,14 +43,12 @@ def _calc_atr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray,
     tr = np.zeros(n)
     tr[0] = highs[0] - lows[0]
     for i in range(1, n):
-        tr[i] = max(highs[i] - lows[i],
-                    abs(highs[i] - closes[i - 1]),
-                    abs(lows[i] - closes[i - 1]))
+        tr[i] = max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
     p = min(period, n)
     atr[p - 1] = np.mean(tr[:p])
     for i in range(p, n):
         atr[i] = (atr[i - 1] * (p - 1) + tr[i]) / p
-    atr[:p - 1] = atr[p - 1]
+    atr[: p - 1] = atr[p - 1]
     return atr
 
 
@@ -62,8 +69,8 @@ def detect_swings(
 
     # 自适应depth: 低波动率时降低depth，避免光滑数据检测不到pivot
     atr_check = _calc_atr(highs, lows, closes, period=10)
-    avg_close = np.mean(closes[-min(20, n):])
-    atr_ratio = np.mean(atr_check[-min(20, n):]) / avg_close if avg_close > 0 else 1.0
+    avg_close = np.mean(closes[-min(20, n) :])
+    atr_ratio = np.mean(atr_check[-min(20, n) :]) / avg_close if avg_close > 0 else 1.0
     use_relaxed = False  # 是否使用宽松比较(>=代替>)
     if atr_ratio < 0.001:
         # 极低波动(接近无噪声): depth=1，用宽松比较
@@ -87,27 +94,21 @@ def detect_swings(
     for i in range(depth, n - depth):
         if use_relaxed:
             # 宽松模式: 允许相等(>=)，适合光滑数据
-            is_hi = all(highs[i] >= highs[i - j] and highs[i] >= highs[i + j]
-                        for j in range(1, depth + 1))
+            is_hi = all(highs[i] >= highs[i - j] and highs[i] >= highs[i + j] for j in range(1, depth + 1))
             # 额外要求: 至少比某个邻居严格大(排除完全平坦)
             if is_hi:
-                is_hi = any(highs[i] > highs[i - j] or highs[i] > highs[i + j]
-                            for j in range(1, depth + 1))
+                is_hi = any(highs[i] > highs[i - j] or highs[i] > highs[i + j] for j in range(1, depth + 1))
         else:
-            is_hi = all(highs[i] > highs[i - j] and highs[i] > highs[i + j]
-                        for j in range(1, depth + 1))
+            is_hi = all(highs[i] > highs[i - j] and highs[i] > highs[i + j] for j in range(1, depth + 1))
         if is_hi:
             cand_hi[i] = float(highs[i])
 
         if use_relaxed:
-            is_lo = all(lows[i] <= lows[i - j] and lows[i] <= lows[i + j]
-                        for j in range(1, depth + 1))
+            is_lo = all(lows[i] <= lows[i - j] and lows[i] <= lows[i + j] for j in range(1, depth + 1))
             if is_lo:
-                is_lo = any(lows[i] < lows[i - j] or lows[i] < lows[i + j]
-                            for j in range(1, depth + 1))
+                is_lo = any(lows[i] < lows[i - j] or lows[i] < lows[i + j] for j in range(1, depth + 1))
         else:
-            is_lo = all(lows[i] < lows[i - j] and lows[i] < lows[i + j]
-                        for j in range(1, depth + 1))
+            is_lo = all(lows[i] < lows[i - j] and lows[i] < lows[i + j] for j in range(1, depth + 1))
         if is_lo:
             cand_lo[i] = float(lows[i])
 
@@ -141,6 +142,7 @@ def detect_swings(
 # ============================================================
 # 滑窗模式匹配
 # ============================================================
+
 
 def _make_waves_5(swings: List[Swing], labels: List[str]) -> Tuple[List[Wave], Direction]:
     """从6个swing点构建5个Wave, 返回(waves, 趋势方向)"""
@@ -247,7 +249,7 @@ def _find_significant_pivots(swings: List[Swing], n_points: int = 6) -> List[Lis
         amplitudes.sort(reverse=True)
 
         # 取振幅最大的n_points-1个分段对应的pivot
-        top_indices = sorted(set([0] + [idx for _, idx in amplitudes[:n_points * 2]]))
+        top_indices = sorted(set([0] + [idx for _, idx in amplitudes[: n_points * 2]]))
         # 从中选出交替的n_points个
         alt_combo = []
         for idx in top_indices:
@@ -298,7 +300,7 @@ def _select_6_from_swings(swings: List[Swing], max_skip: int = 2) -> List[List[S
     if max_skip >= 1 and n >= 7:
         # 尝试在每个位置跳过1个点
         for skip_pos in range(1, 5):  # 跳过位置1-4
-            combo = list(swings[:skip_pos]) + list(swings[skip_pos + 1:skip_pos + 7 - skip_pos])
+            combo = list(swings[:skip_pos]) + list(swings[skip_pos + 1 : skip_pos + 7 - skip_pos])
             if len(combo) >= 6:
                 combos.append(combo[:6])
 
@@ -327,7 +329,7 @@ def _select_4_from_swings(swings: List[Swing], max_skip: int = 2) -> List[List[S
 
     if max_skip >= 1 and n >= 5:
         for skip_pos in range(1, 3):
-            combo = list(swings[:skip_pos]) + list(swings[skip_pos + 1:skip_pos + 5 - skip_pos])
+            combo = list(swings[:skip_pos]) + list(swings[skip_pos + 1 : skip_pos + 5 - skip_pos])
             if len(combo) >= 4:
                 combos.append(combo[:4])
 
@@ -341,8 +343,7 @@ def _select_4_from_swings(swings: List[Swing], max_skip: int = 2) -> List[List[S
     return combos
 
 
-def _dp_find_best_pivots(swings: List[Swing], n_points: int = 6,
-                         max_candidates_per_step: int = 3) -> List[List[Swing]]:
+def _dp_find_best_pivots(swings: List[Swing], n_points: int = 6, max_candidates_per_step: int = 3) -> List[List[Swing]]:
     """
     动态规划 + beam search 剪枝: 从所有swing点中找最优的n_points个交替pivot组合。
 
@@ -373,7 +374,6 @@ def _dp_find_best_pivots(swings: List[Swing], n_points: int = 6,
 
     # 尝试两种起点类型: 从high开始 和 从low开始
     for start_with_high in [True, False]:
-
         # 找所有合法起点
         start_indices = [i for i in range(n) if swings[i].is_high == start_with_high]
 
@@ -383,7 +383,7 @@ def _dp_find_best_pivots(swings: List[Swing], n_points: int = 6,
                 start_indices.sort(key=lambda i: swings[i].price, reverse=True)
             else:
                 start_indices.sort(key=lambda i: swings[i].price)
-            start_indices = start_indices[:max_candidates_per_step * 2]
+            start_indices = start_indices[: max_candidates_per_step * 2]
 
         for start_i in start_indices:
             # 起点之后剩余的swing不够，跳过
@@ -396,7 +396,7 @@ def _dp_find_best_pivots(swings: List[Swing], n_points: int = 6,
 
             for step in range(1, n_points):
                 # 本步需要的is_high类型：与起点交替
-                need_high = (start_with_high if step % 2 == 0 else not start_with_high)
+                need_high = start_with_high if step % 2 == 0 else not start_with_high
 
                 next_states = []
                 for score, path in dp_states:
@@ -421,7 +421,7 @@ def _dp_find_best_pivots(swings: List[Swing], n_points: int = 6,
 
                 # beam search: 只保留评分最高的状态
                 next_states.sort(reverse=True, key=lambda x: x[0])
-                dp_states = next_states[:max_candidates_per_step * 2]
+                dp_states = next_states[: max_candidates_per_step * 2]
 
             # 收集完成的组合
             for score, path in dp_states:
@@ -465,24 +465,21 @@ def _try_5wave_patterns(swings6: List[Swing]) -> List[WavePattern]:
     rules = validate_pattern(PatternType.TRUNCATED_5TH, waves, direction)
     conf = compute_confidence(rules)
     if conf > 0:
-        pat = WavePattern(PatternType.TRUNCATED_5TH, direction, waves,
-                          rule_results=rules, confidence=conf)
+        pat = WavePattern(PatternType.TRUNCATED_5TH, direction, waves, rule_results=rules, confidence=conf)
         results.append(pat)
 
     # 3. 引导楔形
     rules = validate_pattern(PatternType.LEADING_DIAGONAL, waves, direction)
     conf = compute_confidence(rules)
     if conf > 0:
-        pat = WavePattern(PatternType.LEADING_DIAGONAL, direction, waves,
-                          rule_results=rules, confidence=conf)
+        pat = WavePattern(PatternType.LEADING_DIAGONAL, direction, waves, rule_results=rules, confidence=conf)
         results.append(pat)
 
     # 4. 终结楔形
     rules = validate_pattern(PatternType.ENDING_DIAGONAL, waves, direction)
     conf = compute_confidence(rules)
     if conf > 0:
-        pat = WavePattern(PatternType.ENDING_DIAGONAL, direction, waves,
-                          rule_results=rules, confidence=conf)
+        pat = WavePattern(PatternType.ENDING_DIAGONAL, direction, waves, rule_results=rules, confidence=conf)
         results.append(pat)
 
     # 5. 收缩三角 (ABCDE)
@@ -491,16 +488,14 @@ def _try_5wave_patterns(swings6: List[Swing]) -> List[WavePattern]:
     rules = validate_pattern(PatternType.TRIANGLE_CONTRACTING, waves_tri, dir_tri)
     conf = compute_confidence(rules)
     if conf > 0:
-        pat = WavePattern(PatternType.TRIANGLE_CONTRACTING, dir_tri, waves_tri,
-                          rule_results=rules, confidence=conf)
+        pat = WavePattern(PatternType.TRIANGLE_CONTRACTING, dir_tri, waves_tri, rule_results=rules, confidence=conf)
         results.append(pat)
 
     # 6. 扩展三角
     rules = validate_pattern(PatternType.TRIANGLE_EXPANDING, waves_tri, dir_tri)
     conf = compute_confidence(rules)
     if conf > 0:
-        pat = WavePattern(PatternType.TRIANGLE_EXPANDING, dir_tri, waves_tri,
-                          rule_results=rules, confidence=conf)
+        pat = WavePattern(PatternType.TRIANGLE_EXPANDING, dir_tri, waves_tri, rule_results=rules, confidence=conf)
         results.append(pat)
 
     # 7. 双锯齿 (W-X-Y 5段)
@@ -509,16 +504,14 @@ def _try_5wave_patterns(swings6: List[Swing]) -> List[WavePattern]:
     rules = validate_pattern(PatternType.DOUBLE_ZIGZAG, waves_wxy, dir_wxy)
     conf = compute_confidence(rules)
     if conf > 0:
-        pat = WavePattern(PatternType.DOUBLE_ZIGZAG, dir_wxy, waves_wxy,
-                          rule_results=rules, confidence=conf)
+        pat = WavePattern(PatternType.DOUBLE_ZIGZAG, dir_wxy, waves_wxy, rule_results=rules, confidence=conf)
         results.append(pat)
 
     # 8. 双重组合 WXY
     rules = validate_pattern(PatternType.COMBINATION_WXY, waves_wxy, dir_wxy)
     conf = compute_confidence(rules)
     if conf > 0:
-        pat = WavePattern(PatternType.COMBINATION_WXY, dir_wxy, waves_wxy,
-                          rule_results=rules, confidence=conf)
+        pat = WavePattern(PatternType.COMBINATION_WXY, dir_wxy, waves_wxy, rule_results=rules, confidence=conf)
         results.append(pat)
 
     return results
@@ -541,15 +534,14 @@ def _try_3wave_patterns(swings4: List[Swing]) -> List[WavePattern]:
     wa, wb = waves[0], waves[1]
     ba_ratio = wb.length / wa.length if wa.length > 0 else 0.0
 
-    try_zigzag = ba_ratio < 0.90    # Zigzag: B/A < 90%（含重叠带）
-    try_flat = ba_ratio >= 0.80     # Flat: B/A >= 80%（含重叠带）
+    try_zigzag = ba_ratio < 0.90  # Zigzag: B/A < 90%（含重叠带）
+    try_flat = ba_ratio >= 0.80  # Flat: B/A >= 80%（含重叠带）
 
     if try_zigzag:
         rules = validate_pattern(PatternType.ZIGZAG, waves, direction)
         conf = compute_confidence(rules)
         if conf > 0:
-            pat = WavePattern(PatternType.ZIGZAG, direction, waves,
-                              rule_results=rules, confidence=conf)
+            pat = WavePattern(PatternType.ZIGZAG, direction, waves, rule_results=rules, confidence=conf)
             results.append(pat)
 
     if try_flat:
@@ -557,24 +549,21 @@ def _try_3wave_patterns(swings4: List[Swing]) -> List[WavePattern]:
         rules = validate_pattern(PatternType.FLAT_REGULAR, waves, direction)
         conf = compute_confidence(rules)
         if conf > 0:
-            pat = WavePattern(PatternType.FLAT_REGULAR, direction, waves,
-                              rule_results=rules, confidence=conf)
+            pat = WavePattern(PatternType.FLAT_REGULAR, direction, waves, rule_results=rules, confidence=conf)
             results.append(pat)
 
         # 扩展平台
         rules = validate_pattern(PatternType.FLAT_EXPANDED, waves, direction)
         conf = compute_confidence(rules)
         if conf > 0:
-            pat = WavePattern(PatternType.FLAT_EXPANDED, direction, waves,
-                              rule_results=rules, confidence=conf)
+            pat = WavePattern(PatternType.FLAT_EXPANDED, direction, waves, rule_results=rules, confidence=conf)
             results.append(pat)
 
         # 顺势平台
         rules = validate_pattern(PatternType.FLAT_RUNNING, waves, direction)
         conf = compute_confidence(rules)
         if conf > 0:
-            pat = WavePattern(PatternType.FLAT_RUNNING, direction, waves,
-                              rule_results=rules, confidence=conf)
+            pat = WavePattern(PatternType.FLAT_RUNNING, direction, waves, rule_results=rules, confidence=conf)
             results.append(pat)
 
     return results
@@ -583,6 +572,7 @@ def _try_3wave_patterns(swings4: List[Swing]) -> List[WavePattern]:
 # ============================================================
 # 递归子浪分析
 # ============================================================
+
 
 def _analyze_sub_waves(
     pattern: WavePattern,
@@ -608,10 +598,10 @@ def _analyze_sub_waves(
         if end_idx - start_idx < 10:  # 子浪太短, 跳过 (降低门槛从20到10)
             continue
 
-        sub_highs = highs[start_idx:end_idx + 1]
-        sub_lows = lows[start_idx:end_idx + 1]
-        sub_closes = closes[start_idx:end_idx + 1]
-        sub_ts = timestamps[start_idx:end_idx + 1] if timestamps is not None else None
+        sub_highs = highs[start_idx : end_idx + 1]
+        sub_lows = lows[start_idx : end_idx + 1]
+        sub_closes = closes[start_idx : end_idx + 1]
+        sub_ts = timestamps[start_idx : end_idx + 1] if timestamps is not None else None
 
         # 根据父浪类型决定子浪应该是推动还是调整
         if pattern.pattern_type in MOTIVE_TYPES:
@@ -627,8 +617,7 @@ def _analyze_sub_waves(
             continue
 
         # 在子范围内检测
-        sub_swings = detect_swings(sub_highs, sub_lows, sub_closes,
-                                   deviation=2.0, depth=5, timestamps=sub_ts)
+        sub_swings = detect_swings(sub_highs, sub_lows, sub_closes, deviation=2.0, depth=5, timestamps=sub_ts)
         if len(sub_swings) < 4:
             continue
 
@@ -637,14 +626,14 @@ def _analyze_sub_waves(
 
         if expected == "motive" and len(sub_swings) >= 6:
             for i in range(len(sub_swings) - 5):
-                for p in _try_5wave_patterns(sub_swings[i:i + 6]):
+                for p in _try_5wave_patterns(sub_swings[i : i + 6]):
                     if p.is_valid and p.confidence > best_conf:
                         best_sub = p
                         best_conf = p.confidence
 
         if expected == "corrective":
             for i in range(len(sub_swings) - 3):
-                for p in _try_3wave_patterns(sub_swings[i:i + 4]):
+                for p in _try_3wave_patterns(sub_swings[i : i + 4]):
                     if p.is_valid and p.confidence > best_conf:
                         best_sub = p
                         best_conf = p.confidence
@@ -659,6 +648,7 @@ def _analyze_sub_waves(
 # ============================================================
 # 预测引擎
 # ============================================================
+
 
 def _predict_from_pattern(pattern: WavePattern, current_price: float) -> Optional[Prediction]:
     """基于已识别的模式预测下一步"""
@@ -678,9 +668,9 @@ def _predict_from_pattern(pattern: WavePattern, current_price: float) -> Optiona
             targets["W5=W1"] = base + r1 * d
             targets["W5=0.618*W1"] = base + r1 * 0.618 * d
             targets["W5=1.618*W1"] = base + r1 * 1.618 * d
-            return Prediction(pattern, "5", targets,
-                              Direction.UP if d == 1 else Direction.DOWN,
-                              pattern.confidence * 0.7)
+            return Prediction(
+                pattern, "5", targets, Direction.UP if d == 1 else Direction.DOWN, pattern.confidence * 0.7
+            )
 
         # 如果识别到完整5浪, 预测ABC调整
         if len(waves) == 5:
@@ -690,13 +680,12 @@ def _predict_from_pattern(pattern: WavePattern, current_price: float) -> Optiona
             targets["A=0.382回撤"] = end - total * 0.382 * d
             targets["A=0.500回撤"] = end - total * 0.500 * d
             targets["A=0.618回撤"] = end - total * 0.618 * d
-            return Prediction(pattern, "A", targets,
-                              Direction.DOWN if d == 1 else Direction.UP,
-                              pattern.confidence * 0.6)
+            return Prediction(
+                pattern, "A", targets, Direction.DOWN if d == 1 else Direction.UP, pattern.confidence * 0.6
+            )
 
     # === 三角形突破预测 ===
-    if pattern.pattern_type in (PatternType.TRIANGLE_CONTRACTING,
-                                 PatternType.TRIANGLE_EXPANDING):
+    if pattern.pattern_type in (PatternType.TRIANGLE_CONTRACTING, PatternType.TRIANGLE_EXPANDING):
         if len(waves) == 5:
             # 三角形突破目标 = 最宽处高度 + 突破点
             width = waves[0].length  # A浪是最宽的
@@ -708,9 +697,9 @@ def _predict_from_pattern(pattern: WavePattern, current_price: float) -> Optiona
             targets["突破目标=A浪幅度"] = end + width * break_d
             targets["突破0.618倍"] = end + width * 0.618 * break_d
             targets["突破1.618倍"] = end + width * 1.618 * break_d
-            return Prediction(pattern, "突破", targets,
-                              Direction.UP if break_d == 1 else Direction.DOWN,
-                              pattern.confidence * 0.6)
+            return Prediction(
+                pattern, "突破", targets, Direction.UP if break_d == 1 else Direction.DOWN, pattern.confidence * 0.6
+            )
 
     # === 终结楔形回撤预测 ===
     if pattern.pattern_type == PatternType.ENDING_DIAGONAL:
@@ -722,9 +711,9 @@ def _predict_from_pattern(pattern: WavePattern, current_price: float) -> Optiona
             targets["回撤至起点"] = start
             targets["回撤0.618"] = end - total * 0.618 * d
             targets["回撤0.786"] = end - total * 0.786 * d
-            return Prediction(pattern, "楔形回撤", targets,
-                              Direction.DOWN if d == 1 else Direction.UP,
-                              pattern.confidence * 0.7)
+            return Prediction(
+                pattern, "楔形回撤", targets, Direction.DOWN if d == 1 else Direction.UP, pattern.confidence * 0.7
+            )
 
     # === 引导楔形回撤预测 ===
     if pattern.pattern_type == PatternType.LEADING_DIAGONAL:
@@ -736,16 +725,17 @@ def _predict_from_pattern(pattern: WavePattern, current_price: float) -> Optiona
             targets["回撤0.618"] = end - total * 0.618 * d
             targets["回撤0.786"] = end - total * 0.786 * d
             targets["回撤0.500"] = end - total * 0.500 * d
-            return Prediction(pattern, "浪2回撤", targets,
-                              Direction.DOWN if d == 1 else Direction.UP,
-                              pattern.confidence * 0.65)
+            return Prediction(
+                pattern, "浪2回撤", targets, Direction.DOWN if d == 1 else Direction.UP, pattern.confidence * 0.65
+            )
 
     if pattern.pattern_type in CORRECTIVE_TYPES:
         wa = waves[0]
 
         # 双锯齿/WXY完成后，预测新一轮推动浪
         if len(waves) == 5 and pattern.pattern_type in (
-            PatternType.DOUBLE_ZIGZAG, PatternType.COMBINATION_WXY,
+            PatternType.DOUBLE_ZIGZAG,
+            PatternType.COMBINATION_WXY,
         ):
             total = pattern.total_length
             end = pattern.end_price
@@ -755,9 +745,9 @@ def _predict_from_pattern(pattern: WavePattern, current_price: float) -> Optiona
             targets["新浪1=0.500*调整"] = end + total * 0.500 * new_d
             targets["新浪1=0.618*调整"] = end + total * 0.618 * new_d
             targets["新浪1=调整全幅"] = end + total * new_d
-            return Prediction(pattern, "新浪1", targets,
-                              Direction.UP if new_d == 1 else Direction.DOWN,
-                              pattern.confidence * 0.5)
+            return Prediction(
+                pattern, "新浪1", targets, Direction.UP if new_d == 1 else Direction.DOWN, pattern.confidence * 0.5
+            )
 
         # 识别到A-B, 预测C
         if len(waves) == 2:
@@ -766,8 +756,7 @@ def _predict_from_pattern(pattern: WavePattern, current_price: float) -> Optiona
             targets["C=A"] = base + wa.length * d
             targets["C=0.618*A"] = base + wa.length * 0.618 * d
             targets["C=1.618*A"] = base + wa.length * 1.618 * d
-            return Prediction(pattern, "C", targets,
-                              Direction(d), pattern.confidence * 0.6)
+            return Prediction(pattern, "C", targets, Direction(d), pattern.confidence * 0.6)
 
         # 识别到完整ABC, 预测新一轮推动浪1
         # 使用 C 浪（最后一浪）的振幅作为参考，而非整个 ABC 范围，避免目标过远
@@ -784,9 +773,9 @@ def _predict_from_pattern(pattern: WavePattern, current_price: float) -> Optiona
             targets = {k: v for k, v in targets.items() if v > 0}
             if not targets:
                 return None
-            return Prediction(pattern, "新浪1", targets,
-                              Direction.UP if new_d == 1 else Direction.DOWN,
-                              pattern.confidence * 0.5)
+            return Prediction(
+                pattern, "新浪1", targets, Direction.UP if new_d == 1 else Direction.DOWN, pattern.confidence * 0.5
+            )
 
     return None
 
@@ -794,6 +783,7 @@ def _predict_from_pattern(pattern: WavePattern, current_price: float) -> Optiona
 # ============================================================
 # 主引擎
 # ============================================================
+
 
 class ElliottWaveAnalyzer:
     """
@@ -898,9 +888,7 @@ class ElliottWaveAnalyzer:
             swings = None
             used_depth = self.depth
             for d in depths_to_try:
-                swings = detect_swings(highs, lows, closes,
-                                       deviation=dev, depth=d,
-                                       timestamps=timestamps)
+                swings = detect_swings(highs, lows, closes, deviation=dev, depth=d, timestamps=timestamps)
                 used_depth = d
                 if len(swings) >= 4:
                     break  # 找到足够swing，不需要降低depth
@@ -953,16 +941,14 @@ class ElliottWaveAnalyzer:
             # 当swing点较多时(>8个), DP能找到滑窗和锚定策略遗漏的最优组合
             if len(swings) >= 8:
                 # 5浪模式: 选6个最优pivot
-                for combo in _dp_find_best_pivots(swings, n_points=6,
-                                                   max_candidates_per_step=3):
+                for combo in _dp_find_best_pivots(swings, n_points=6, max_candidates_per_step=3):
                     for pat in _try_5wave_patterns(combo):
                         if pat.is_valid and pat.confidence >= self.min_confidence:
                             pat.degree = 0
                             all_candidates.append((dev, pat))
 
                 # 3浪模式: 选4个最优pivot
-                for combo in _dp_find_best_pivots(swings, n_points=4,
-                                                   max_candidates_per_step=3):
+                for combo in _dp_find_best_pivots(swings, n_points=4, max_candidates_per_step=3):
                     for pat in _try_3wave_patterns(combo):
                         if pat.is_valid and pat.confidence >= self.min_confidence:
                             pat.degree = 0
@@ -992,8 +978,7 @@ class ElliottWaveAnalyzer:
             if len(pat.waves) == 5:
                 bonus += 0.05
 
-            self._patterns[i].confidence = max(0.01,
-                min(1.0, pat.confidence + bonus))
+            self._patterns[i].confidence = max(0.01, min(1.0, pat.confidence + bonus))
 
         # === 成交量确认加分 (可选，有volume数据时生效) ===
         if self._volumes is not None and len(self._volumes) > 0:
@@ -1014,15 +999,18 @@ class ElliottWaveAnalyzer:
                     # 将成交量规则结果添加到模式的规则列表中
                     pat.rule_results.extend(vol_results)
                     if vol_bonus > 0:
-                        self._patterns[i].confidence = min(1.0,
-                            pat.confidence + vol_bonus)
+                        self._patterns[i].confidence = min(1.0, pat.confidence + vol_bonus)
 
         # 递归子浪分析
         if self.max_recursion > 0 and highs is not None:
             for i, pat in enumerate(self._patterns):
                 self._patterns[i] = _analyze_sub_waves(
-                    pat, highs, lows, closes,
-                    depth=1, max_depth=self.max_recursion + 1,
+                    pat,
+                    highs,
+                    lows,
+                    closes,
+                    depth=1,
+                    max_depth=self.max_recursion + 1,
                     timestamps=timestamps,
                 )
                 # 子浪匹配加分 (提高权重 + 类型匹配奖励)
@@ -1099,8 +1087,7 @@ class ElliottWaveAnalyzer:
         """分析摘要"""
         lines = ["=" * 60, "Elliott Wave 分析报告", "=" * 60]
 
-        lines.append(f"参数: deviations={self.deviations}, depth={self.depth}, "
-                      f"max_recursion={self.max_recursion}")
+        lines.append(f"参数: deviations={self.deviations}, depth={self.depth}, max_recursion={self.max_recursion}")
 
         for dev, swings in self._swings_by_dev.items():
             lines.append(f"  deviation={dev}: {len(swings)}个swing点")
@@ -1121,7 +1108,7 @@ class ElliottWaveAnalyzer:
         # Top 5 模式详情
         lines.append(f"\nTop {min(5, len(self._patterns))} 模式:")
         for i, pat in enumerate(self._patterns[:5]):
-            lines.append(f"\n  [{i+1}] {pat.summary()}")
+            lines.append(f"\n  [{i + 1}] {pat.summary()}")
             for w in pat.waves:
                 d = "↑" if w.direction == Direction.UP else "↓"
                 lines.append(f"      {w.label}: {w.start.price:.2f}→{w.end.price:.2f} {d}")
@@ -1163,7 +1150,7 @@ class ElliottWaveAnalyzer:
         """
         # 1. 每个时间框架独立分析
         tf_results: Dict[str, List[WavePattern]] = {}
-        tf_analyzers: Dict[str, 'ElliottWaveAnalyzer'] = {}
+        tf_analyzers: Dict[str, "ElliottWaveAnalyzer"] = {}
 
         for tf_name, df in dfs.items():
             analyzer = ElliottWaveAnalyzer(
@@ -1172,8 +1159,7 @@ class ElliottWaveAnalyzer:
                 max_recursion=self.max_recursion,
                 min_confidence=self.min_confidence,
             )
-            analyzer.analyze(df, high_col=high_col, low_col=low_col,
-                             close_col=close_col, volume_col=volume_col)
+            analyzer.analyze(df, high_col=high_col, low_col=low_col, close_col=close_col, volume_col=volume_col)
             tf_results[tf_name] = list(analyzer.patterns)
             tf_analyzers[tf_name] = analyzer
 
@@ -1190,13 +1176,15 @@ class ElliottWaveAnalyzer:
                 # 确保min < max
                 if price_min > price_max:
                     price_min, price_max = price_max, price_min
-                all_pats.append({
-                    "tf": tf_name,
-                    "pattern": pat,
-                    "price_min": price_min,
-                    "price_max": price_max,
-                    "mid_price": (price_min + price_max) / 2,
-                })
+                all_pats.append(
+                    {
+                        "tf": tf_name,
+                        "pattern": pat,
+                        "price_min": price_min,
+                        "price_max": price_max,
+                        "mid_price": (price_min + price_max) / 2,
+                    }
+                )
 
         # 按价格中点排序，然后检查相邻模式是否来自不同TF且价格重叠
         all_pats.sort(key=lambda x: x["mid_price"])
@@ -1217,8 +1205,9 @@ class ElliottWaveAnalyzer:
                 range2 = p2["price_max"] - p2["price_min"]
                 tolerance = max(range1, range2) * 0.2
 
-                overlap = (p1["price_min"] - tolerance <= p2["price_max"] and
-                           p2["price_min"] - tolerance <= p1["price_max"])
+                overlap = (
+                    p1["price_min"] - tolerance <= p2["price_max"] and p2["price_min"] - tolerance <= p1["price_max"]
+                )
 
                 if overlap and p1["tf"] != p2["tf"]:
                     cluster.append(p2)
@@ -1230,15 +1219,17 @@ class ElliottWaveAnalyzer:
                 best_pat = max(cluster, key=lambda c: c["pattern"].confidence)
                 boosted = min(1.0, best_pat["pattern"].confidence * (1.0 + 0.3 * (len(tfs_involved) - 1)))
 
-                cross_tf_patterns.append({
-                    "pattern_type": best_pat["pattern"].cn_name,
-                    "direction": best_pat["pattern"].direction,
-                    "timeframes": tfs_involved,
-                    "tf_count": len(tfs_involved),
-                    "original_confidence": best_pat["pattern"].confidence,
-                    "boosted_confidence": boosted,
-                    "price_range": (best_pat["price_min"], best_pat["price_max"]),
-                })
+                cross_tf_patterns.append(
+                    {
+                        "pattern_type": best_pat["pattern"].cn_name,
+                        "direction": best_pat["pattern"].direction,
+                        "timeframes": tfs_involved,
+                        "tf_count": len(tfs_involved),
+                        "original_confidence": best_pat["pattern"].confidence,
+                        "boosted_confidence": boosted,
+                        "price_range": (best_pat["price_min"], best_pat["price_max"]),
+                    }
+                )
 
         # 3. 生成摘要
         lines = ["=" * 60, "多时间框架分析报告", "=" * 60]
@@ -1320,10 +1311,12 @@ class ElliottWaveAnalyzer:
                     merged = True
                     break
             if not merged:
-                clusters.append({
-                    "prices": [price],
-                    "sources": [source],
-                })
+                clusters.append(
+                    {
+                        "prices": [price],
+                        "sources": [source],
+                    }
+                )
 
         # 3. 统计并排序
         result = []
@@ -1341,13 +1334,15 @@ class ElliottWaveAnalyzer:
             else:
                 strength = "弱"
 
-            result.append({
-                "price": round(avg_price, 2),
-                "count": count,
-                "sources": list(set(cluster["sources"])),
-                "strength": strength,
-                "distance_pct": round((avg_price - current_price) / current_price * 100, 2),
-            })
+            result.append(
+                {
+                    "price": round(avg_price, 2),
+                    "count": count,
+                    "sources": list(set(cluster["sources"])),
+                    "strength": strength,
+                    "distance_pct": round((avg_price - current_price) / current_price * 100, 2),
+                }
+            )
 
         # 按来源数量降序排列
         result.sort(key=lambda x: x["count"], reverse=True)

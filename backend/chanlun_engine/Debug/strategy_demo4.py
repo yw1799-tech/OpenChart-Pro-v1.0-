@@ -16,11 +16,13 @@ if __name__ == "__main__":
     data_src = DATA_SRC.BAO_STOCK
     lv_list = [KL_TYPE.K_DAY, KL_TYPE.K_30M]
 
-    config = CChanConfig({
-        "trigger_step": True,
-        "divergence_rate": 0.8,
-        "min_zs_cnt": 1,
-    })
+    config = CChanConfig(
+        {
+            "trigger_step": True,
+            "divergence_rate": 0.8,
+            "min_zs_cnt": 1,
+        }
+    )
 
     chan = CChan(
         code=code,

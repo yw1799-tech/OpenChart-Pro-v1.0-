@@ -2,6 +2,7 @@
 OKX 数据源实现 — REST + WebSocket。
 公开数据接口无需 API Key。
 """
+
 import asyncio
 import json
 import time
@@ -18,28 +19,28 @@ logger = logging.getLogger(__name__)
 
 # ---------- Interval → OKX bar 参数映射 ----------
 _INTERVAL_MAP: Dict[Interval, str] = {
-    Interval.M1:  "1m",
-    Interval.M5:  "5m",
+    Interval.M1: "1m",
+    Interval.M5: "5m",
     Interval.M15: "15m",
     Interval.M30: "30m",
-    Interval.H1:  "1H",
-    Interval.H4:  "4H",
-    Interval.D1:  "1D",
-    Interval.W1:  "1W",
-    Interval.MN:  "1M",
+    Interval.H1: "1H",
+    Interval.H4: "4H",
+    Interval.D1: "1D",
+    Interval.W1: "1W",
+    Interval.MN: "1M",
 }
 
 # Interval → WebSocket channel 名称
 _WS_CHANNEL_MAP: Dict[Interval, str] = {
-    Interval.M1:  "candle1m",
-    Interval.M5:  "candle5m",
+    Interval.M1: "candle1m",
+    Interval.M5: "candle5m",
     Interval.M15: "candle15m",
     Interval.M30: "candle30m",
-    Interval.H1:  "candle1H",
-    Interval.H4:  "candle4H",
-    Interval.D1:  "candle1D",
-    Interval.W1:  "candle1W",
-    Interval.MN:  "candle1M",
+    Interval.H1: "candle1H",
+    Interval.H4: "candle4H",
+    Interval.D1: "candle1D",
+    Interval.W1: "candle1W",
+    Interval.MN: "candle1M",
 }
 
 # REST 限频：20 次 / 2 秒
@@ -107,14 +108,16 @@ class OKXFetcher(DataFetcher):
             inst_id: str = item["instId"]
             if query_upper and query_upper not in inst_id.upper():
                 continue
-            symbols.append(Symbol(
-                symbol=inst_id,
-                name=inst_id,
-                market=Market.CRYPTO,
-                exchange="okx",
-                base=item.get("baseCcy", ""),
-                quote=item.get("quoteCcy", ""),
-            ))
+            symbols.append(
+                Symbol(
+                    symbol=inst_id,
+                    name=inst_id,
+                    market=Market.CRYPTO,
+                    exchange="okx",
+                    base=item.get("baseCcy", ""),
+                    quote=item.get("quoteCcy", ""),
+                )
+            )
         return symbols
 
     async def get_klines(
@@ -156,15 +159,17 @@ class OKXFetcher(DataFetcher):
 
             for row in data:
                 # OKX 数组: [ts, o, h, l, c, vol, volCcy, volCcyQuote, confirm]
-                all_candles.append(Candle(
-                    timestamp=int(row[0]),
-                    open=float(row[1]),
-                    high=float(row[2]),
-                    low=float(row[3]),
-                    close=float(row[4]),
-                    volume=float(row[5]),
-                    turnover=float(row[7]) if len(row) > 7 else 0.0,
-                ))
+                all_candles.append(
+                    Candle(
+                        timestamp=int(row[0]),
+                        open=float(row[1]),
+                        high=float(row[2]),
+                        low=float(row[3]),
+                        close=float(row[4]),
+                        volume=float(row[5]),
+                        turnover=float(row[7]) if len(row) > 7 else 0.0,
+                    )
+                )
 
             # OKX 返回按时间降序，最后一条的 ts 最早 → 用作 after
             after = data[-1][0]
@@ -178,9 +183,7 @@ class OKXFetcher(DataFetcher):
         all_candles.sort(key=lambda c: c.timestamp)
         return all_candles
 
-    async def subscribe_realtime(
-        self, symbol: str, interval: Interval, callback: Callable
-    ) -> None:
+    async def subscribe_realtime(self, symbol: str, interval: Interval, callback: Callable) -> None:
         """
         通过 WebSocket 订阅实时 K 线推送。
         callback 签名: async def callback(candle: Candle, confirm: bool) -> None
@@ -275,9 +278,7 @@ class OKXFetcher(DataFetcher):
             "ts": int(r.get("ts", 0)),
         }
 
-    async def get_long_short_ratio(
-        self, currency: str = "BTC", period: str = "1H"
-    ) -> List[Dict[str, Any]]:
+    async def get_long_short_ratio(self, currency: str = "BTC", period: str = "1H") -> List[Dict[str, Any]]:
         """
         获取多空比（账户持仓人数比）。
         currency: 币种，如 BTC / ETH
@@ -289,10 +290,12 @@ class OKXFetcher(DataFetcher):
         )
         results = []
         for row in data:
-            results.append({
-                "ts": int(row.get("ts", 0)),
-                "longShortRatio": float(row.get("longShortRatio", 0)),
-            })
+            results.append(
+                {
+                    "ts": int(row.get("ts", 0)),
+                    "longShortRatio": float(row.get("longShortRatio", 0)),
+                }
+            )
         return results
 
     # ------------------------------------------------------------------ #
@@ -326,9 +329,7 @@ class OKXFetcher(DataFetcher):
             try:
                 session = await self._ensure_session()
                 logger.info("OKX WS 连接中: %s", self._ws_url)
-                self._ws = await session.ws_connect(
-                    self._ws_url, heartbeat=25, timeout=aiohttp.ClientTimeout(total=30)
-                )
+                self._ws = await session.ws_connect(self._ws_url, heartbeat=25, timeout=aiohttp.ClientTimeout(total=30))
                 logger.info("OKX WS 已连接")
                 reconnect_delay = 1.0  # 连接成功重置
 

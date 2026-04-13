@@ -2,6 +2,7 @@
 情绪指标模块
 数据源: Alternative.me, OKX
 """
+
 import aiohttp
 import logging
 from datetime import datetime
@@ -29,9 +30,7 @@ class SentimentData:
             async with aiohttp.ClientSession(timeout=self.timeout) as session:
                 async with session.get(url) as resp:
                     if resp.status != 200:
-                        logger.warning(
-                            "恐惧贪婪指数API返回 %d，返回空数据", resp.status
-                        )
+                        logger.warning("恐惧贪婪指数API返回 %d，返回空数据", resp.status)
                         return self._empty_fear_greed()
 
                     data = await resp.json()
@@ -49,13 +48,9 @@ class SentimentData:
                         ts = int(entry.get("timestamp", 0))
                         history.append(
                             {
-                                "date": datetime.utcfromtimestamp(ts).strftime(
-                                    "%Y-%m-%d"
-                                ),
+                                "date": datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d"),
                                 "value": int(entry.get("value", 0)),
-                                "label": entry.get(
-                                    "value_classification", "Unknown"
-                                ),
+                                "label": entry.get("value_classification", "Unknown"),
                             }
                         )
 
@@ -105,9 +100,7 @@ class SentimentData:
         返回: 当前费率 + 历史费率
         """
         current_url = f"{self.okx_base}/public/funding-rate?instId={symbol}"
-        history_url = (
-            f"{self.okx_base}/public/funding-rate-history?instId={symbol}&limit=48"
-        )
+        history_url = f"{self.okx_base}/public/funding-rate-history?instId={symbol}&limit=48"
 
         result = {
             "symbol": symbol,
@@ -130,22 +123,15 @@ class SentimentData:
                             result["current"] = {
                                 "rate": float(rate),
                                 "rate_pct": round(float(rate) * 100, 4),
-                                "annualized_pct": round(
-                                    float(rate) * 100 * 3 * 365, 2
-                                ),
+                                "annualized_pct": round(float(rate) * 100 * 3 * 365, 2),
                             }
                             next_ts = item.get("nextFundingTime", "")
                             if next_ts:
                                 result["next_funding_time"] = (
-                                    datetime.utcfromtimestamp(
-                                        int(next_ts) / 1000
-                                    ).isoformat()
-                                    + "Z"
+                                    datetime.utcfromtimestamp(int(next_ts) / 1000).isoformat() + "Z"
                                 )
                     else:
-                        logger.warning(
-                            "获取当前资金费率失败，状态码: %d", resp.status
-                        )
+                        logger.warning("获取当前资金费率失败，状态码: %d", resp.status)
 
                 # 获取历史费率
                 async with session.get(history_url) as resp:
@@ -156,18 +142,13 @@ class SentimentData:
                             ts = int(item.get("fundingTime", "0"))
                             result["history"].append(
                                 {
-                                    "time": datetime.utcfromtimestamp(
-                                        ts / 1000
-                                    ).isoformat()
-                                    + "Z",
+                                    "time": datetime.utcfromtimestamp(ts / 1000).isoformat() + "Z",
                                     "rate": rate,
                                     "rate_pct": round(rate * 100, 4),
                                 }
                             )
                     else:
-                        logger.warning(
-                            "获取历史资金费率失败，状态码: %d", resp.status
-                        )
+                        logger.warning("获取历史资金费率失败，状态码: %d", resp.status)
 
         except Exception as e:
             logger.error("获取资金费率失败: %s", e)
@@ -187,9 +168,7 @@ class SentimentData:
             async with aiohttp.ClientSession(timeout=self.timeout) as session:
                 async with session.get(url) as resp:
                     if resp.status != 200:
-                        logger.warning(
-                            "获取持仓量失败，状态码: %d", resp.status
-                        )
+                        logger.warning("获取持仓量失败，状态码: %d", resp.status)
                         return {
                             "symbol": symbol,
                             "oi": None,
@@ -217,10 +196,7 @@ class SentimentData:
                         "oi_ccy": float(oi_ccy),
                         "oi_unit": "contracts",
                         "oi_ccy_unit": symbol.split("-")[0],
-                        "timestamp": datetime.utcfromtimestamp(
-                            ts / 1000
-                        ).isoformat()
-                        + "Z",
+                        "timestamp": datetime.utcfromtimestamp(ts / 1000).isoformat() + "Z",
                         "source": "okx",
                     }
 
@@ -235,18 +211,13 @@ class SentimentData:
         URL: GET https://www.okx.com/api/v5/rubik/stat/contracts/long-short-account-ratio?ccy=BTC&period=1H
         返回: 多空账户比例时序数据
         """
-        url = (
-            f"{self.okx_base}/rubik/stat/contracts/long-short-account-ratio"
-            f"?ccy={coin}&period=1H"
-        )
+        url = f"{self.okx_base}/rubik/stat/contracts/long-short-account-ratio?ccy={coin}&period=1H"
 
         try:
             async with aiohttp.ClientSession(timeout=self.timeout) as session:
                 async with session.get(url) as resp:
                     if resp.status != 200:
-                        logger.warning(
-                            "获取多空比失败，状态码: %d", resp.status
-                        )
+                        logger.warning("获取多空比失败，状态码: %d", resp.status)
                         return {
                             "coin": coin,
                             "current": None,
@@ -259,27 +230,14 @@ class SentimentData:
 
                     history = []
                     for item in items:
-                        ts = int(item[0]) if isinstance(item, list) else int(
-                            item.get("ts", 0)
-                        )
-                        ratio = (
-                            float(item[1])
-                            if isinstance(item, list)
-                            else float(item.get("ratio", 0))
-                        )
+                        ts = int(item[0]) if isinstance(item, list) else int(item.get("ts", 0))
+                        ratio = float(item[1]) if isinstance(item, list) else float(item.get("ratio", 0))
                         history.append(
                             {
-                                "time": datetime.utcfromtimestamp(
-                                    ts / 1000
-                                ).isoformat()
-                                + "Z",
+                                "time": datetime.utcfromtimestamp(ts / 1000).isoformat() + "Z",
                                 "ratio": ratio,
-                                "long_pct": round(
-                                    ratio / (1 + ratio) * 100, 2
-                                ),
-                                "short_pct": round(
-                                    1 / (1 + ratio) * 100, 2
-                                ),
+                                "long_pct": round(ratio / (1 + ratio) * 100, 2),
+                                "short_pct": round(1 / (1 + ratio) * 100, 2),
                             }
                         )
 

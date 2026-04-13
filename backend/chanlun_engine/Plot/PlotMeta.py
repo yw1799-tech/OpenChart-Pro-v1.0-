@@ -64,8 +64,8 @@ class CSeg_meta:
         tl_y = tl.line.p.y
         tl_y0 = self.begin_y
         tl_y1 = self.end_y
-        tl_x0 = (tl_y0-tl_y)/tl_slope + tl_x
-        tl_x1 = (tl_y1-tl_y)/tl_slope + tl_x
+        tl_x0 = (tl_y0 - tl_y) / tl_slope + tl_x
+        tl_x1 = (tl_y1 - tl_y) / tl_slope + tl_x
         return tl_x0, tl_y0, tl_x1, tl_y1
 
 
@@ -112,7 +112,7 @@ class CBS_Point_meta:
 
     def desc(self):
         is_seg_flag = "※" if self.is_seg else ""
-        return f'{is_seg_flag}b{self.type}' if self.is_buy else f'{is_seg_flag}s{self.type}'
+        return f"{is_seg_flag}b{self.type}" if self.is_buy else f"{is_seg_flag}s{self.type}"
 
 
 class CChanPlotMeta:
@@ -142,8 +142,12 @@ class CChanPlotMeta:
         self.zs_lst: List[CZS_meta] = [CZS_meta(zs) for zs in kl_list.zs_list]
         self.segzs_lst: List[CZS_meta] = [CZS_meta(segzs) for segzs in kl_list.segzs_list]
 
-        self.bs_point_lst: List[CBS_Point_meta] = [CBS_Point_meta(bs_point, is_seg=False) for bs_point in kl_list.bs_point_lst.bsp_iter()]
-        self.seg_bsp_lst: List[CBS_Point_meta] = [CBS_Point_meta(seg_bsp, is_seg=True) for seg_bsp in kl_list.seg_bs_point_lst.bsp_iter()]
+        self.bs_point_lst: List[CBS_Point_meta] = [
+            CBS_Point_meta(bs_point, is_seg=False) for bs_point in kl_list.bs_point_lst.bsp_iter()
+        ]
+        self.seg_bsp_lst: List[CBS_Point_meta] = [
+            CBS_Point_meta(seg_bsp, is_seg=True) for seg_bsp in kl_list.seg_bs_point_lst.bsp_iter()
+        ]
 
     def klu_iter(self):
         for klc in self.klc_list:

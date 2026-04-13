@@ -13,12 +13,14 @@ from typing import Any
 
 class OpenScriptError(Exception):
     """解析错误"""
+
     pass
 
 
 # ============================================================
 # Token 定义
 # ============================================================
+
 
 class TokenType:
     # 字面量
@@ -45,31 +47,31 @@ class TokenType:
     IMPORT = "IMPORT"
 
     # 运算符
-    ASSIGN = "ASSIGN"          # =
-    REASSIGN = "REASSIGN"      # :=
-    PLUS = "PLUS"              # +
-    MINUS = "MINUS"            # -
-    STAR = "STAR"              # *
-    SLASH = "SLASH"            # /
-    PERCENT = "PERCENT"        # %
-    EQ = "EQ"                  # ==
-    NEQ = "NEQ"                # !=
-    LT = "LT"                 # <
-    GT = "GT"                  # >
-    LTE = "LTE"               # <=
-    GTE = "GTE"               # >=
-    QUESTION = "QUESTION"      # ?
-    COLON = "COLON"            # :
-    COMMA = "COMMA"            # ,
-    DOT = "DOT"                # .
-    LPAREN = "LPAREN"          # (
-    RPAREN = "RPAREN"          # )
-    LBRACKET = "LBRACKET"      # [
-    RBRACKET = "RBRACKET"      # ]
-    ARROW = "ARROW"            # =>
-    PLUS_ASSIGN = "PLUS_ASSIGN"    # +=
+    ASSIGN = "ASSIGN"  # =
+    REASSIGN = "REASSIGN"  # :=
+    PLUS = "PLUS"  # +
+    MINUS = "MINUS"  # -
+    STAR = "STAR"  # *
+    SLASH = "SLASH"  # /
+    PERCENT = "PERCENT"  # %
+    EQ = "EQ"  # ==
+    NEQ = "NEQ"  # !=
+    LT = "LT"  # <
+    GT = "GT"  # >
+    LTE = "LTE"  # <=
+    GTE = "GTE"  # >=
+    QUESTION = "QUESTION"  # ?
+    COLON = "COLON"  # :
+    COMMA = "COMMA"  # ,
+    DOT = "DOT"  # .
+    LPAREN = "LPAREN"  # (
+    RPAREN = "RPAREN"  # )
+    LBRACKET = "LBRACKET"  # [
+    RBRACKET = "RBRACKET"  # ]
+    ARROW = "ARROW"  # =>
+    PLUS_ASSIGN = "PLUS_ASSIGN"  # +=
     MINUS_ASSIGN = "MINUS_ASSIGN"  # -=
-    STAR_ASSIGN = "STAR_ASSIGN"    # *=
+    STAR_ASSIGN = "STAR_ASSIGN"  # *=
     SLASH_ASSIGN = "SLASH_ASSIGN"  # /=
 
     # 结构
@@ -109,14 +111,23 @@ KEYWORDS = {
 
 # Pine Script 类型关键字（在解析时跳过这些类型注解）
 PINE_TYPE_KEYWORDS = {
-    "int", "float", "bool", "string", "color",
-    "line", "label", "box", "table", "series",
+    "int",
+    "float",
+    "bool",
+    "string",
+    "color",
+    "line",
+    "label",
+    "box",
+    "table",
+    "series",
 }
 
 
 # ============================================================
 # Tokenizer（词法分析器）
 # ============================================================
+
 
 class Tokenizer:
     """将 Pine Script 源代码分解为 Token 流"""
@@ -155,9 +166,9 @@ class Tokenizer:
         # 计算缩进
         indent = 0
         for ch in line:
-            if ch == ' ':
+            if ch == " ":
                 indent += 1
-            elif ch == '\t':
+            elif ch == "\t":
                 indent += 4
             else:
                 break
@@ -178,7 +189,7 @@ class Tokenizer:
             ch = line[pos]
 
             # 空白跳过
-            if ch in (' ', '\t'):
+            if ch in (" ", "\t"):
                 pos += 1
                 continue
 
@@ -191,13 +202,13 @@ class Tokenizer:
                 continue
 
             # 数字
-            if ch.isdigit() or (ch == '.' and pos + 1 < len(line) and line[pos + 1].isdigit()):
+            if ch.isdigit() or (ch == "." and pos + 1 < len(line) and line[pos + 1].isdigit()):
                 num, pos = self._read_number(line, pos)
                 self.tokens.append(Token(TokenType.NUMBER, num, line_num, col))
                 continue
 
             # 标识符/关键字
-            if ch.isalpha() or ch == '_':
+            if ch.isalpha() or ch == "_":
                 word, pos = self._read_ident(line, pos)
                 kw = KEYWORDS.get(word)
                 if kw:
@@ -210,7 +221,7 @@ class Tokenizer:
                 continue
 
             # 双字符运算符
-            two = line[pos:pos + 2]
+            two = line[pos : pos + 2]
             if two == ":=":
                 self.tokens.append(Token(TokenType.REASSIGN, ":=", line_num, col))
                 pos += 2
@@ -254,13 +265,22 @@ class Tokenizer:
 
             # 单字符运算符
             single_map = {
-                '=': TokenType.ASSIGN, '+': TokenType.PLUS, '-': TokenType.MINUS,
-                '*': TokenType.STAR, '/': TokenType.SLASH, '%': TokenType.PERCENT,
-                '<': TokenType.LT, '>': TokenType.GT,
-                '?': TokenType.QUESTION, ':': TokenType.COLON,
-                ',': TokenType.COMMA, '.': TokenType.DOT,
-                '(': TokenType.LPAREN, ')': TokenType.RPAREN,
-                '[': TokenType.LBRACKET, ']': TokenType.RBRACKET,
+                "=": TokenType.ASSIGN,
+                "+": TokenType.PLUS,
+                "-": TokenType.MINUS,
+                "*": TokenType.STAR,
+                "/": TokenType.SLASH,
+                "%": TokenType.PERCENT,
+                "<": TokenType.LT,
+                ">": TokenType.GT,
+                "?": TokenType.QUESTION,
+                ":": TokenType.COLON,
+                ",": TokenType.COMMA,
+                ".": TokenType.DOT,
+                "(": TokenType.LPAREN,
+                ")": TokenType.RPAREN,
+                "[": TokenType.LBRACKET,
+                "]": TokenType.RBRACKET,
             }
             if ch in single_map:
                 self.tokens.append(Token(single_map[ch], ch, line_num, col))
@@ -286,7 +306,7 @@ class Tokenizer:
                 if ch in ('"', "'"):
                     in_string = True
                     quote_char = ch
-                elif ch == '/' and i + 1 < len(line) and line[i + 1] == '/':
+                elif ch == "/" and i + 1 < len(line) and line[i + 1] == "/":
                     return line[:i]
             i += 1
         return line
@@ -297,25 +317,25 @@ class Tokenizer:
         result = []
         while pos < len(line):
             ch = line[pos]
-            if ch == '\\' and pos + 1 < len(line):
+            if ch == "\\" and pos + 1 < len(line):
                 next_ch = line[pos + 1]
-                escape_map = {'n': '\n', 't': '\t', '\\': '\\', '"': '"', "'": "'"}
+                escape_map = {"n": "\n", "t": "\t", "\\": "\\", '"': '"', "'": "'"}
                 result.append(escape_map.get(next_ch, next_ch))
                 pos += 2
                 continue
             if ch == quote:
                 pos += 1
-                return ''.join(result), pos
+                return "".join(result), pos
             result.append(ch)
             pos += 1
-        return ''.join(result), pos
+        return "".join(result), pos
 
     def _read_number(self, line: str, pos: int) -> tuple[float | int, int]:
         start = pos
         has_dot = False
         has_exp = False
-        while pos < len(line) and (line[pos].isdigit() or line[pos] == '.'):
-            if line[pos] == '.':
+        while pos < len(line) and (line[pos].isdigit() or line[pos] == "."):
+            if line[pos] == ".":
                 if pos + 1 < len(line) and line[pos + 1].isdigit():
                     has_dot = True
                 else:
@@ -323,15 +343,15 @@ class Tokenizer:
             pos += 1
         # 科学计数法: 1e18, 1e-7, 2.5e10
         # 只有e后面紧跟数字或+/-数字时才识别为科学计数法
-        if pos < len(line) and line[pos] in ('e', 'E'):
+        if pos < len(line) and line[pos] in ("e", "E"):
             next_pos = pos + 1
-            if next_pos < len(line) and line[next_pos] in ('+', '-'):
+            if next_pos < len(line) and line[next_pos] in ("+", "-"):
                 next_pos += 1
             if next_pos < len(line) and line[next_pos].isdigit():
                 # 确认是科学计数法
                 has_exp = True
                 pos += 1  # skip 'e'
-                if pos < len(line) and line[pos] in ('+', '-'):
+                if pos < len(line) and line[pos] in ("+", "-"):
                     pos += 1
                 while pos < len(line) and line[pos].isdigit():
                     pos += 1
@@ -342,7 +362,7 @@ class Tokenizer:
 
     def _read_ident(self, line: str, pos: int) -> tuple[str, int]:
         start = pos
-        while pos < len(line) and (line[pos].isalnum() or line[pos] == '_'):
+        while pos < len(line) and (line[pos].isalnum() or line[pos] == "_"):
             pos += 1
         return line[start:pos], pos
 
@@ -350,6 +370,7 @@ class Tokenizer:
 # ============================================================
 # AST 节点定义
 # ============================================================
+
 
 @dataclass
 class ASTNode:
@@ -384,6 +405,7 @@ class Identifier(ASTNode):
 @dataclass
 class DotAccess(ASTNode):
     """点访问：obj.attr"""
+
     obj: ASTNode = None
     attr: str = ""
 
@@ -391,6 +413,7 @@ class DotAccess(ASTNode):
 @dataclass
 class IndexAccess(ASTNode):
     """索引访问：arr[index]"""
+
     obj: ASTNode = None
     index: ASTNode = None
 
@@ -425,15 +448,17 @@ class FunctionCall(ASTNode):
 @dataclass
 class Assignment(ASTNode):
     """首次声明赋值 x = expr"""
+
     name: str = ""
     value: ASTNode = None
-    is_var: bool = False      # var 声明
-    is_varip: bool = False    # varip 声明
+    is_var: bool = False  # var 声明
+    is_varip: bool = False  # varip 声明
 
 
 @dataclass
 class Reassignment(ASTNode):
     """重新赋值 x := expr"""
+
     name: str = ""
     value: ASTNode = None
 
@@ -441,6 +466,7 @@ class Reassignment(ASTNode):
 @dataclass
 class CompoundAssignment(ASTNode):
     """复合赋值 x += expr, x -= expr 等"""
+
     name: str = ""
     op: str = ""  # "+", "-", "*", "/"
     value: ASTNode = None
@@ -482,12 +508,14 @@ class ContinueStmt(ASTNode):
 @dataclass
 class ExprStatement(ASTNode):
     """表达式语句（如函数调用）"""
+
     expr: ASTNode = None
 
 
 @dataclass
 class TupleDestructure(ASTNode):
     """多重赋值 [a, b, c] = func()"""
+
     names: list = field(default_factory=list)
     value: ASTNode = None
 
@@ -495,6 +523,7 @@ class TupleDestructure(ASTNode):
 @dataclass
 class FunctionDef(ASTNode):
     """用户定义函数 f(params) => body"""
+
     name: str = ""
     params: list = field(default_factory=list)
     body: list = field(default_factory=list)
@@ -508,6 +537,7 @@ class Program(ASTNode):
 # ============================================================
 # Parser（语法分析器）
 # ============================================================
+
 
 class Parser:
     """递归下降 Pine Script 解析器"""
@@ -550,8 +580,7 @@ class Parser:
     def _expect(self, tok_type: str) -> Token:
         tok = self._current()
         if tok.type != tok_type:
-            raise OpenScriptError(
-                f"第 {tok.line} 行: 期望 {tok_type}，得到 {tok.type} ({tok.value!r})")
+            raise OpenScriptError(f"第 {tok.line} 行: 期望 {tok_type}，得到 {tok.type} ({tok.value!r})")
         return self._advance()
 
     def _match(self, *types) -> Token | None:
@@ -567,12 +596,10 @@ class Parser:
 
     def _skip_type_annotation(self):
         """跳过 Pine Script 类型注解（如 float, int[], string 等）"""
-        if (self._current().type == TokenType.IDENT
-                and self._current().value in PINE_TYPE_KEYWORDS):
+        if self._current().type == TokenType.IDENT and self._current().value in PINE_TYPE_KEYWORDS:
             self._advance()  # 跳过类型名
             # 跳过可选的 [] （数组类型）
-            if (self._current().type == TokenType.LBRACKET
-                    and self._peek(1).type == TokenType.RBRACKET):
+            if self._current().type == TokenType.LBRACKET and self._peek(1).type == TokenType.RBRACKET:
                 self._advance()  # [
                 self._advance()  # ]
 
@@ -609,9 +636,7 @@ class Parser:
             return self._parse_tuple_destructure()
 
         # 类型注解开头的变量声明（如 int DIR_UP = 1, float x = 3.14）
-        if (tok.type == TokenType.IDENT
-                and tok.value in PINE_TYPE_KEYWORDS
-                and self._is_type_annotated_decl()):
+        if tok.type == TokenType.IDENT and tok.value in PINE_TYPE_KEYWORDS and self._is_type_annotated_decl():
             return self._parse_typed_decl()
 
         # 标识符开头：赋值、函数定义或表达式
@@ -648,13 +673,11 @@ class Parser:
         save_pos = self.pos
         self._advance()  # 跳过类型名
         # 跳过可选的 []
-        if (self._current().type == TokenType.LBRACKET
-                and self._peek(1).type == TokenType.RBRACKET):
+        if self._current().type == TokenType.LBRACKET and self._peek(1).type == TokenType.RBRACKET:
             self._advance()
             self._advance()
         # 下一个应该是标识符
-        result = (self._current().type == TokenType.IDENT
-                  and self._peek(1).type == TokenType.ASSIGN)
+        result = self._current().type == TokenType.IDENT and self._peek(1).type == TokenType.ASSIGN
         self.pos = save_pos
         return result
 
@@ -723,11 +746,7 @@ class Parser:
         self._expect(TokenType.ASSIGN)
         value = self._parse_expression()
 
-        return Assignment(
-            name=name_tok.value, value=value,
-            is_var=is_var, is_varip=is_varip,
-            line=tok.line
-        )
+        return Assignment(name=name_tok.value, value=value, is_var=is_var, is_varip=is_varip, line=tok.line)
 
     def _parse_ident_statement(self) -> ASTNode:
         """解析标识符开头的语句：赋值、重新赋值、函数调用等"""
@@ -753,15 +772,16 @@ class Parser:
             return Reassignment(name=name_tok.value, value=value, line=name_tok.line)
 
         # 复合赋值: name += expr, name -= expr 等
-        if self._current().type in (TokenType.PLUS_ASSIGN, TokenType.MINUS_ASSIGN,
-                                     TokenType.STAR_ASSIGN, TokenType.SLASH_ASSIGN):
+        if self._current().type in (
+            TokenType.PLUS_ASSIGN,
+            TokenType.MINUS_ASSIGN,
+            TokenType.STAR_ASSIGN,
+            TokenType.SLASH_ASSIGN,
+        ):
             op_tok = self._advance()
             op_map = {"+=": "+", "-=": "-", "*=": "*", "/=": "/"}
             value = self._parse_expression()
-            return CompoundAssignment(
-                name=name_tok.value, op=op_map[op_tok.value],
-                value=value, line=name_tok.line
-            )
+            return CompoundAssignment(name=name_tok.value, op=op_map[op_tok.value], value=value, line=name_tok.line)
 
         # 不是赋值，回退并解析为表达式
         self.pos = save_pos
@@ -791,8 +811,7 @@ class Parser:
 
         while True:
             self._skip_newlines()
-            if (self._current().type == TokenType.ELSE
-                    and self._peek(1).type == TokenType.IF):
+            if self._current().type == TokenType.ELSE and self._peek(1).type == TokenType.IF:
                 self._advance()  # else
                 self._advance()  # if
                 elif_cond = self._parse_expression()
@@ -805,11 +824,7 @@ class Parser:
             else:
                 break
 
-        return IfBlock(
-            condition=condition, body=body,
-            elif_blocks=elif_blocks, else_body=else_body,
-            line=tok.line
-        )
+        return IfBlock(condition=condition, body=body, elif_blocks=elif_blocks, else_body=else_body, line=tok.line)
 
     def _parse_for(self) -> ForBlock:
         tok = self._advance()  # for
@@ -826,10 +841,7 @@ class Parser:
 
         body = self._parse_block()
 
-        return ForBlock(
-            var_name=var_tok.value, start=start, end=end, step=step,
-            body=body, line=tok.line
-        )
+        return ForBlock(var_name=var_tok.value, start=start, end=end, step=step, body=body, line=tok.line)
 
     def _parse_while(self) -> WhileBlock:
         tok = self._advance()  # while
@@ -874,10 +886,7 @@ class Parser:
             true_expr = self._parse_expression()
             self._expect(TokenType.COLON)
             false_expr = self._parse_expression()
-            return TernaryOp(
-                condition=expr, true_expr=true_expr,
-                false_expr=false_expr, line=expr.line
-            )
+            return TernaryOp(condition=expr, true_expr=true_expr, false_expr=false_expr, line=expr.line)
         return expr
 
     def _parse_or(self) -> ASTNode:
@@ -905,9 +914,14 @@ class Parser:
 
     def _parse_comparison(self) -> ASTNode:
         left = self._parse_addition()
-        comp_ops = {TokenType.EQ: "==", TokenType.NEQ: "!=",
-                    TokenType.LT: "<", TokenType.GT: ">",
-                    TokenType.LTE: "<=", TokenType.GTE: ">="}
+        comp_ops = {
+            TokenType.EQ: "==",
+            TokenType.NEQ: "!=",
+            TokenType.LT: "<",
+            TokenType.GT: ">",
+            TokenType.LTE: "<=",
+            TokenType.GTE: ">=",
+        }
         while self._current().type in comp_ops:
             op = comp_ops[self._current().type]
             self._advance()
@@ -974,8 +988,7 @@ class Parser:
                 raise OpenScriptError("未关闭的函数调用括号")
 
             # 检查是否是 keyword=value
-            if (self._current().type == TokenType.IDENT
-                    and self._peek(1).type == TokenType.ASSIGN):
+            if self._current().type == TokenType.IDENT and self._peek(1).type == TokenType.ASSIGN:
                 key_tok = self._advance()
                 self._advance()  # =
                 value = self._parse_expression()
@@ -1029,26 +1042,33 @@ class Parser:
                     self._advance()
             self._expect(TokenType.RBRACKET)
             return FunctionCall(
-                func=Identifier(name="__array_literal__", line=tok.line),
-                args=elements, kwargs={}, line=tok.line
+                func=Identifier(name="__array_literal__", line=tok.line), args=elements, kwargs={}, line=tok.line
             )
 
         if tok.type == TokenType.IF:
             # 内联 if 表达式
             return self._parse_if()
 
-        raise OpenScriptError(
-            f"第 {tok.line} 行: 意外的 Token {tok.type} ({tok.value!r})")
+        raise OpenScriptError(f"第 {tok.line} 行: 意外的 Token {tok.type} ({tok.value!r})")
 
 
 # ============================================================
 # 解析结果 (保持向后兼容)
 # ============================================================
 
+
 class InputParam:
     """用户输入参数"""
-    def __init__(self, name: str, default: Any, title: str = "",
-                 param_type: str = "int", min_val: Any = None, max_val: Any = None):
+
+    def __init__(
+        self,
+        name: str,
+        default: Any,
+        title: str = "",
+        param_type: str = "int",
+        min_val: Any = None,
+        max_val: Any = None,
+    ):
         self.name = name
         self.default = default
         self.title = title or name
@@ -1069,6 +1089,7 @@ class InputParam:
 
 class ParseResult:
     """解析结果"""
+
     def __init__(self):
         self.mode = "indicator"
         self.name = ""
@@ -1090,6 +1111,7 @@ class ParseResult:
 # ============================================================
 # 公开接口
 # ============================================================
+
 
 def parse_openscript(code: str, user_params: dict[str, Any] | None = None) -> ParseResult:
     """
@@ -1166,8 +1188,7 @@ def _extract_meta(program: Program, result: ParseResult):
             # 提取 input 参数
             if isinstance(stmt.value, FunctionCall):
                 func_name = _get_func_name(stmt.value.func)
-                if func_name in ("input", "input.int", "input.float",
-                                  "input.bool", "input.string", "input.source"):
+                if func_name in ("input", "input.int", "input.float", "input.bool", "input.string", "input.source"):
                     _extract_input(stmt.name, stmt.value, result)
 
 
@@ -1221,9 +1242,7 @@ def _extract_input(name: str, call: FunctionCall, result: ParseResult):
     elif isinstance(default, bool):
         param_type = "bool"
 
-    result.inputs.append(InputParam(
-        name=name, default=default, title=title, param_type=param_type
-    ))
+    result.inputs.append(InputParam(name=name, default=default, title=title, param_type=param_type))
 
 
 def _get_func_name(node: ASTNode) -> str:

@@ -28,8 +28,9 @@ class CEigenFX:
         combine_dir = self.ele[0].try_add(bi, exclude_included=self.exclude_included)
         if combine_dir != KLINE_DIR.COMBINE:  # 不能合并
             self.ele[1] = CEigen(bi, self.kl_dir)
-            if (self.is_up() and self.ele[1].high < self.ele[0].high) or \
-               (self.is_down() and self.ele[1].low > self.ele[0].low):  # 前两元素不可能成为分形
+            if (self.is_up() and self.ele[1].high < self.ele[0].high) or (
+                self.is_down() and self.ele[1].low > self.ele[0].low
+            ):  # 前两元素不可能成为分形
                 return self.reset()
         return False
 
@@ -44,7 +45,9 @@ class CEigenFX:
         self.ele[2] = CEigen(bi, combine_dir)
         if not self.actual_break():
             return self.reset()
-        self.ele[1].update_fx(self.ele[0], self.ele[2], exclude_included=self.exclude_included, allow_top_equal=allow_top_equal)  # type: ignore
+        self.ele[1].update_fx(
+            self.ele[0], self.ele[2], exclude_included=self.exclude_included, allow_top_equal=allow_top_equal
+        )  # type: ignore
         fx = self.ele[1].fx
         is_fx = (self.is_up() and fx == FX_TYPE.TOP) or (self.is_down() and fx == FX_TYPE.BOTTOM)
         return True if is_fx else self.reset()
@@ -59,7 +62,9 @@ class CEigenFX:
         elif self.ele[2] is None:  # 第三元素
             return self.treat_third_ele(bi)
         else:
-            raise CChanException(f"特征序列3个都找齐了还没处理!! 当前笔:{bi.idx},当前:{str(self)}", ErrCode.SEG_EIGEN_ERR)
+            raise CChanException(
+                f"特征序列3个都找齐了还没处理!! 当前笔:{bi.idx},当前:{str(self)}", ErrCode.SEG_EIGEN_ERR
+            )
 
     def reset(self):
         bi_tmp_list = list(self.lst[1:])
@@ -83,7 +88,7 @@ class CEigenFX:
             end_bi_idx = self.GetPeakBiIdx()
             thred_value = bi_lst[end_bi_idx].get_end_val()
             break_thred = self.ele[0].low if self.is_up() else self.ele[0].high
-            return self.find_revert_fx(bi_lst, end_bi_idx+2, thred_value, break_thred)
+            return self.find_revert_fx(bi_lst, end_bi_idx + 2, thred_value, break_thred)
         else:
             return True
 
@@ -113,8 +118,9 @@ class CEigenFX:
         if not self.exclude_included:
             return True
         assert self.ele[2] and self.ele[1]
-        if (self.is_up() and self.ele[2].low < self.ele[1][-1]._low()) or \
-           (self.is_down() and self.ele[2].high > self.ele[1][-1]._high()):  # 防止第二元素因为合并导致后面没有实际突破
+        if (self.is_up() and self.ele[2].low < self.ele[1][-1]._low()) or (
+            self.is_down() and self.ele[2].high > self.ele[1][-1]._high()
+        ):  # 防止第二元素因为合并导致后面没有实际突破
             return True
         assert len(self.ele[2]) == 1
         ele2_bi = self.ele[2][0]
@@ -131,7 +137,9 @@ class CEigenFX:
         COMMON_COMBINE = False  # 是否用普通分形合并规则处理
         # 如果返回None，表示找到最后了
         first_bi_dir = bi_list[begin_idx].dir  # down则是要找顶分型
-        egien_fx = CEigenFX(revert_bi_dir(first_bi_dir), exclude_included=not COMMON_COMBINE, lv=self.lv)  # 顶分型的话要找上升线段
+        egien_fx = CEigenFX(
+            revert_bi_dir(first_bi_dir), exclude_included=not COMMON_COMBINE, lv=self.lv
+        )  # 顶分型的话要找上升线段
         for bi in bi_list[begin_idx::2]:
             if egien_fx.add(bi):
                 if COMMON_COMBINE:

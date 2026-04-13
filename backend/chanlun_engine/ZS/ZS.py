@@ -7,7 +7,7 @@ from Common.func_util import has_overlap
 from KLine.KLine_Unit import CKLine_Unit
 from Seg.Seg import CSeg
 
-LINE_TYPE = TypeVar('LINE_TYPE', CBi, "CSeg")
+LINE_TYPE = TypeVar("LINE_TYPE", CBi, "CSeg")
 
 
 class CZS(Generic[LINE_TYPE]):
@@ -45,46 +45,60 @@ class CZS(Generic[LINE_TYPE]):
         self._memoize_cache = {}
 
     @property
-    def is_sure(self): return self.__is_sure
+    def is_sure(self):
+        return self.__is_sure
 
     @property
-    def sub_zs_lst(self): return self.__sub_zs_lst
+    def sub_zs_lst(self):
+        return self.__sub_zs_lst
 
     @property
-    def begin(self): return self.__begin
+    def begin(self):
+        return self.__begin
 
     @property
-    def begin_bi(self): return self.__begin_bi
+    def begin_bi(self):
+        return self.__begin_bi
 
     @property
-    def low(self): return self.__low
+    def low(self):
+        return self.__low
 
     @property
-    def high(self): return self.__high
+    def high(self):
+        return self.__high
 
     @property
-    def mid(self): return self.__mid
+    def mid(self):
+        return self.__mid
 
     @property
-    def end(self): return self.__end
+    def end(self):
+        return self.__end
 
     @property
-    def end_bi(self): return self.__end_bi
+    def end_bi(self):
+        return self.__end_bi
 
     @property
-    def peak_high(self): return self.__peak_high
+    def peak_high(self):
+        return self.__peak_high
 
     @property
-    def peak_low(self): return self.__peak_low
+    def peak_low(self):
+        return self.__peak_low
 
     @property
-    def bi_in(self): return self.__bi_in
+    def bi_in(self):
+        return self.__bi_in
 
     @property
-    def bi_out(self): return self.__bi_out
+    def bi_out(self):
+        return self.__bi_out
 
     @property
-    def bi_lst(self): return self.__bi_lst
+    def bi_lst(self):
+        return self.__bi_lst
 
     def update_zs_range(self, lst):
         self.__low: float = max(bi._low() for bi in lst)
@@ -112,17 +126,17 @@ class CZS(Generic[LINE_TYPE]):
         else:
             return _str
 
-    def combine(self, zs2: 'CZS', combine_mode) -> bool:
+    def combine(self, zs2: "CZS", combine_mode) -> bool:
         if zs2.is_one_bi_zs():
             return False
         if self.begin_bi.seg_idx != zs2.begin_bi.seg_idx:
             return False
-        if combine_mode == 'zs':
+        if combine_mode == "zs":
             if not has_overlap(self.low, self.high, zs2.low, zs2.high, equal=True):
                 return False
             self.do_combine(zs2)
             return True
-        elif combine_mode == 'peak':
+        elif combine_mode == "peak":
             if has_overlap(self.peak_low, self.peak_high, zs2.peak_low, zs2.peak_high):
                 self.do_combine(zs2)
                 return True
@@ -131,7 +145,7 @@ class CZS(Generic[LINE_TYPE]):
         else:
             raise CChanException(f"{combine_mode} is unsupport zs conbine mode", ErrCode.PARA_ERROR)
 
-    def do_combine(self, zs2: 'CZS'):
+    def do_combine(self, zs2: "CZS"):
         if len(self.sub_zs_lst) == 0:
             self.__sub_zs_lst.append(self.make_copy())
         self.__sub_zs_lst.append(zs2)
@@ -169,11 +183,11 @@ class CZS(Generic[LINE_TYPE]):
             out_metric = out_bi.cal_macd_metric(config.macd_algo, is_reverse=True)
 
         if config.divergence_rate > 100:  # 保送
-            return True, out_metric/in_metric
+            return True, out_metric / in_metric
         else:
-            return out_metric <= config.divergence_rate*in_metric, out_metric/in_metric
+            return out_metric <= config.divergence_rate * in_metric, out_metric / in_metric
 
-    def init_from_zs(self, zs: 'CZS'):
+    def init_from_zs(self, zs: "CZS"):
         self.__begin = zs.begin
         self.__end = zs.end
         self.__low = zs.low
@@ -185,7 +199,7 @@ class CZS(Generic[LINE_TYPE]):
         self.__bi_in = zs.bi_in
         self.__bi_out = zs.bi_out
 
-    def make_copy(self) -> 'CZS':
+    def make_copy(self) -> "CZS":
         copy = CZS(lst=None, is_sure=self.is_sure)
         copy.init_from_zs(zs=self)
         return copy
@@ -194,8 +208,7 @@ class CZS(Generic[LINE_TYPE]):
         if end_bi is None:
             end_bi = self.get_bi_out()
         assert end_bi is not None
-        return (end_bi.is_down() and end_bi._low() < self.low) or \
-            (end_bi.is_up() and end_bi._high() > self.high)
+        return (end_bi.is_down() and end_bi._low() < self.low) or (end_bi.is_up() and end_bi._high() > self.high)
 
     def out_bi_is_peak(self, end_bi_idx: int):
         # 返回 (是否最低点，bi_out与中枢里面尾部最接近它的差距比例)
@@ -206,9 +219,11 @@ class CZS(Generic[LINE_TYPE]):
         for bi in self.bi_lst:
             if bi.idx > end_bi_idx:
                 break
-            if (self.bi_out.is_down() and bi._low() < self.bi_out._low()) or (self.bi_out.is_up() and bi._high() > self.bi_out._high()):
+            if (self.bi_out.is_down() and bi._low() < self.bi_out._low()) or (
+                self.bi_out.is_up() and bi._high() > self.bi_out._high()
+            ):
                 return False, None
-            r = abs(bi.get_end_val()-self.bi_out.get_end_val())/self.bi_out.get_end_val()
+            r = abs(bi.get_end_val() - self.bi_out.get_end_val()) / self.bi_out.get_end_val()
             if r < peak_rate:
                 peak_rate = r
         return True, peak_rate

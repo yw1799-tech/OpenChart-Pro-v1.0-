@@ -30,7 +30,7 @@ class CSegListChan(CSegListComm):
         if len(self) == 0:
             self.cal_seg_sure(bi_lst, begin_idx=0)
         else:
-            self.cal_seg_sure(bi_lst, begin_idx=self[-1].end_bi.idx+1)
+            self.cal_seg_sure(bi_lst, begin_idx=self[-1].end_bi.idx + 1)
         self.collect_left_seg(bi_lst)
 
     def cal_seg_sure(self, bi_lst: CBiList, begin_idx: int):
@@ -66,8 +66,10 @@ class CSegListChan(CSegListComm):
         end_bi_idx = fx_eigen.GetPeakBiIdx()
         if _test in [True, None]:  # None表示反向分型找到尾部也没找到
             is_true = _test is not None  # 如果是正常结束
-            if not self.add_new_seg(bi_lst, end_bi_idx, is_sure=is_true and fx_eigen.all_bi_is_sure()):  # 防止第一根线段的方向与首尾值异常
-                self.cal_seg_sure(bi_lst, end_bi_idx+1)
+            if not self.add_new_seg(
+                bi_lst, end_bi_idx, is_sure=is_true and fx_eigen.all_bi_is_sure()
+            ):  # 防止第一根线段的方向与首尾值异常
+                self.cal_seg_sure(bi_lst, end_bi_idx + 1)
                 return
             self.lst[-1].eigen_fx = fx_eigen
             if is_true:

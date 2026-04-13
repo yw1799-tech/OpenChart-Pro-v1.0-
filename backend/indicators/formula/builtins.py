@@ -11,6 +11,7 @@ from typing import Any
 # 技术指标函数
 # ============================================================
 
+
 def sma(source: np.ndarray, length: int) -> np.ndarray:
     """简单移动平均"""
     source = np.asarray(source, dtype=np.float64)
@@ -18,7 +19,7 @@ def sma(source: np.ndarray, length: int) -> np.ndarray:
     if length < 1 or length > len(source):
         return out
     cumsum = np.cumsum(source)
-    out[length - 1:] = (cumsum[length - 1:] - np.concatenate([[0], cumsum[:-length]])) / length
+    out[length - 1 :] = (cumsum[length - 1 :] - np.concatenate([[0], cumsum[:-length]])) / length
     return out
 
 
@@ -45,7 +46,7 @@ def wma(source: np.ndarray, length: int) -> np.ndarray:
     weights = np.arange(1, length + 1, dtype=np.float64)
     w_sum = weights.sum()
     for i in range(length - 1, len(source)):
-        out[i] = np.dot(source[i - length + 1: i + 1], weights) / w_sum
+        out[i] = np.dot(source[i - length + 1 : i + 1], weights) / w_sum
     return out
 
 
@@ -104,7 +105,7 @@ def stdev(source: np.ndarray, length: int) -> np.ndarray:
     if length < 1 or length > len(source):
         return out
     for i in range(length - 1, len(source)):
-        out[i] = np.std(source[i - length + 1: i + 1], ddof=0)
+        out[i] = np.std(source[i - length + 1 : i + 1], ddof=0)
     return out
 
 
@@ -115,7 +116,7 @@ def highest(source: np.ndarray, length: int) -> np.ndarray:
     if length < 1 or length > len(source):
         return out
     for i in range(length - 1, len(source)):
-        out[i] = np.max(source[i - length + 1: i + 1])
+        out[i] = np.max(source[i - length + 1 : i + 1])
     return out
 
 
@@ -126,7 +127,7 @@ def lowest(source: np.ndarray, length: int) -> np.ndarray:
     if length < 1 or length > len(source):
         return out
     for i in range(length - 1, len(source)):
-        out[i] = np.min(source[i - length + 1: i + 1])
+        out[i] = np.min(source[i - length + 1 : i + 1])
     return out
 
 
@@ -137,13 +138,14 @@ def sum_func(source: np.ndarray, length: int) -> np.ndarray:
     if length < 1 or length > len(source):
         return out
     cumsum = np.cumsum(source)
-    out[length - 1:] = cumsum[length - 1:] - np.concatenate([[0], cumsum[:-length]])
+    out[length - 1 :] = cumsum[length - 1 :] - np.concatenate([[0], cumsum[:-length]])
     return out
 
 
 # ============================================================
 # 数学函数
 # ============================================================
+
 
 def abs_func(x):
     """绝对值"""
@@ -180,6 +182,7 @@ def log_func(x):
 # ============================================================
 # 信号函数
 # ============================================================
+
 
 def crossover(a: np.ndarray, b) -> np.ndarray:
     """
@@ -314,8 +317,7 @@ def get_registries() -> dict:
     }
 
 
-def plot(series, title: str = "", color: str = "#2196F3", linewidth: int = 1,
-         style: str = "line", **kwargs) -> dict:
+def plot(series, title: str = "", color: str = "#2196F3", linewidth: int = 1, style: str = "line", **kwargs) -> dict:
     """绘制线条"""
     if isinstance(series, np.ndarray):
         data = series.tolist()
@@ -335,9 +337,16 @@ def plot(series, title: str = "", color: str = "#2196F3", linewidth: int = 1,
     return info
 
 
-def plotshape(series, title: str = "", style: str = "triangleup",
-              location: str = "belowbar", color: str = "#4CAF50",
-              size: str = "small", text: str = "", **kwargs) -> dict:
+def plotshape(
+    series,
+    title: str = "",
+    style: str = "triangleup",
+    location: str = "belowbar",
+    color: str = "#4CAF50",
+    size: str = "small",
+    text: str = "",
+    **kwargs,
+) -> dict:
     """绘制形状标记"""
     if isinstance(series, np.ndarray):
         data = series.tolist()
@@ -359,8 +368,9 @@ def plotshape(series, title: str = "", style: str = "triangleup",
     return info
 
 
-def hline(price: float, title: str = "", color: str = "#787878",
-          linestyle: str = "dashed", linewidth: int = 1, **kwargs) -> dict:
+def hline(
+    price: float, title: str = "", color: str = "#787878", linestyle: str = "dashed", linewidth: int = 1, **kwargs
+) -> dict:
     """绘制水平线"""
     info = {
         "type": "hline",
@@ -409,6 +419,7 @@ def bgcolor(condition, color: str = "rgba(76,175,80,0.1)", **kwargs) -> dict:
 # 警报函数
 # ============================================================
 
+
 def alertcondition(condition, title: str = "", message: str = "", **kwargs) -> dict:
     """定义警报条件"""
     if isinstance(condition, np.ndarray):
@@ -431,6 +442,7 @@ def alertcondition(condition, title: str = "", message: str = "", **kwargs) -> d
 # 策略对象
 # ============================================================
 
+
 class _Strategy:
     """策略操作对象"""
 
@@ -442,8 +454,7 @@ class _Strategy:
         self.orders = []
         self.initial_capital = initial_capital
 
-    def entry(self, id: str, direction: str, qty: float = 1.0,
-              when: Any = True, comment: str = "", **kwargs):
+    def entry(self, id: str, direction: str, qty: float = 1.0, when: Any = True, comment: str = "", **kwargs):
         """
         策略入场
 
@@ -461,15 +472,17 @@ class _Strategy:
         else:
             when_data = bool(when)
 
-        self.orders.append({
-            "action": "entry",
-            "id": id,
-            "direction": direction,
-            "qty": qty,
-            "when": when_data,
-            "comment": comment,
-            **kwargs,
-        })
+        self.orders.append(
+            {
+                "action": "entry",
+                "id": id,
+                "direction": direction,
+                "qty": qty,
+                "when": when_data,
+                "comment": comment,
+                **kwargs,
+            }
+        )
 
     def close(self, id: str, when: Any = True, comment: str = "", **kwargs):
         """策略平仓"""
@@ -480,16 +493,17 @@ class _Strategy:
         else:
             when_data = bool(when)
 
-        self.orders.append({
-            "action": "close",
-            "id": id,
-            "when": when_data,
-            "comment": comment,
-            **kwargs,
-        })
+        self.orders.append(
+            {
+                "action": "close",
+                "id": id,
+                "when": when_data,
+                "comment": comment,
+                **kwargs,
+            }
+        )
 
-    def exit(self, id: str, from_entry: str = "", profit: float = 0,
-             loss: float = 0, when: Any = True, **kwargs):
+    def exit(self, id: str, from_entry: str = "", profit: float = 0, loss: float = 0, when: Any = True, **kwargs):
         """策略止盈止损退出"""
         if isinstance(when, np.ndarray):
             when_data = when.tolist()
@@ -498,15 +512,17 @@ class _Strategy:
         else:
             when_data = bool(when)
 
-        self.orders.append({
-            "action": "exit",
-            "id": id,
-            "from_entry": from_entry,
-            "profit": profit,
-            "loss": loss,
-            "when": when_data,
-            **kwargs,
-        })
+        self.orders.append(
+            {
+                "action": "exit",
+                "id": id,
+                "from_entry": from_entry,
+                "profit": profit,
+                "loss": loss,
+                "when": when_data,
+                **kwargs,
+            }
+        )
 
 
 # 全局策略实例
@@ -516,6 +532,7 @@ strategy = _Strategy()
 # ============================================================
 # 导出：构建安全的全局变量字典
 # ============================================================
+
 
 def build_globals(ohlcv: dict[str, np.ndarray], user_params: dict | None = None) -> dict:
     """
@@ -538,7 +555,6 @@ def build_globals(ohlcv: dict[str, np.ndarray], user_params: dict | None = None)
         "low": ohlcv.get("low", np.array([])),
         "close": ohlcv.get("close", np.array([])),
         "volume": ohlcv.get("volume", np.array([])),
-
         # 技术指标
         "sma": sma,
         "ema": ema,
@@ -549,7 +565,6 @@ def build_globals(ohlcv: dict[str, np.ndarray], user_params: dict | None = None)
         "highest": highest,
         "lowest": lowest,
         "sum_func": sum_func,
-
         # 数学函数
         "abs": abs_func,
         "max": max_func,
@@ -557,7 +572,6 @@ def build_globals(ohlcv: dict[str, np.ndarray], user_params: dict | None = None)
         "pow": pow_func,
         "sqrt": sqrt_func,
         "log": log_func,
-
         # 信号函数
         "crossover": crossover,
         "crossunder": crossunder,
@@ -565,29 +579,24 @@ def build_globals(ohlcv: dict[str, np.ndarray], user_params: dict | None = None)
         "falling": falling,
         "valuewhen": valuewhen,
         "barssince": barssince,
-
         # 绘图函数
         "plot": plot,
         "plotshape": plotshape,
         "hline": hline,
         "fill": fill,
         "bgcolor": bgcolor,
-
         # 警报
         "alertcondition": alertcondition,
-
         # 策略（作为独立函数暴露）
         "strategy_entry": strategy.entry,
         "strategy_close": strategy.close,
         "strategy_exit": strategy.exit,
-
         # numpy 基础操作
         "np": np,
         "nan": np.nan,
         "True": True,
         "False": False,
         "None": None,
-
         # 禁止的内置函数置空
         "__builtins__": {},
     }

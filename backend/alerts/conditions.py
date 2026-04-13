@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 # ──────────────────────── 辅助函数 ────────────────────────
 
+
 def _safe_float(value: Any, default: float = 0.0) -> float:
     """安全转换为 float。"""
     try:
@@ -59,7 +60,7 @@ def _sma(data: List[float], period: int) -> List[float]:
         if i < period - 1:
             result.append(sum(data[: i + 1]) / (i + 1))
         else:
-            result.append(sum(data[i - period + 1: i + 1]) / period)
+            result.append(sum(data[i - period + 1 : i + 1]) / period)
     return result
 
 
@@ -156,6 +157,7 @@ def _get_indicator_values(
 
 
 # ──────────────────────── 条件检测器 ────────────────────────
+
 
 def _check_price(condition: Dict, candles: List[Candle], **_kw) -> Tuple[bool, str]:
     """价格条件检测。"""
@@ -282,7 +284,7 @@ def _check_volume(condition: Dict, candles: List[Candle], **_kw) -> Tuple[bool, 
         return False, ""
 
     volumes = [c.volume for c in candles]
-    vol_ma = sum(volumes[-(ma_period + 1):-1]) / ma_period
+    vol_ma = sum(volumes[-(ma_period + 1) : -1]) / ma_period
     current_vol = volumes[-1]
 
     if vol_ma <= 0:
@@ -304,9 +306,17 @@ def _check_change(condition: Dict, candles: List[Candle], **_kw) -> Tuple[bool, 
 
     # 根据 period 确定回看K线数
     period_map = {
-        "1m": 1, "5m": 1, "15m": 1, "30m": 1,
-        "1h": 1, "4h": 1, "1d": 1,
-        "3": 3, "5": 5, "10": 10, "20": 20,
+        "1m": 1,
+        "5m": 1,
+        "15m": 1,
+        "30m": 1,
+        "1h": 1,
+        "4h": 1,
+        "1d": 1,
+        "3": 3,
+        "5": 5,
+        "10": 10,
+        "20": 20,
     }
     # 尝试从 period 中提取数字（如 "5" 表示5根K线）
     lookback = period_map.get(period.lower(), 1)

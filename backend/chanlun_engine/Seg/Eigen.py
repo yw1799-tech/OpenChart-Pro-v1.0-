@@ -12,8 +12,7 @@ class CEigen(CKLine_Combiner[CBi]):
 
     def update_fx(self, _pre: Self, _next: Self, exclude_included=False, allow_top_equal=None):
         super(CEigen, self).update_fx(_pre, _next, exclude_included, allow_top_equal)
-        if (self.fx == FX_TYPE.TOP and _pre.high < self.low) or \
-           (self.fx == FX_TYPE.BOTTOM and _pre.low > self.high):
+        if (self.fx == FX_TYPE.TOP and _pre.high < self.low) or (self.fx == FX_TYPE.BOTTOM and _pre.low > self.high):
             self.gap = True
 
     def __str__(self):
@@ -23,6 +22,6 @@ class CEigen(CKLine_Combiner[CBi]):
         assert self.fx != FX_TYPE.UNKNOWN
         bi_dir = self.lst[0].dir
         if bi_dir == BI_DIR.UP:  # 下降线段
-            return self.get_peak_klu(is_high=False).idx-1
+            return self.get_peak_klu(is_high=False).idx - 1
         else:
-            return self.get_peak_klu(is_high=True).idx-1
+            return self.get_peak_klu(is_high=True).idx - 1

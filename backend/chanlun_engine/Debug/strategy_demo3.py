@@ -30,9 +30,11 @@ if __name__ == "__main__":
     data_src_type = DATA_SRC.BAO_STOCK
     lv_list = [KL_TYPE.K_60M, KL_TYPE.K_15M]
 
-    config = CChanConfig({
-        "trigger_step": True,
-    })
+    config = CChanConfig(
+        {
+            "trigger_step": True,
+        }
+    )
 
     # 快照
     chan_snapshot = CChan(
@@ -42,7 +44,9 @@ if __name__ == "__main__":
         config=config,
     )
     CBaoStock.do_init()
-    data_src = CBaoStock(code, k_type=KL_TYPE.K_15M, begin_date=begin_time, end_date=end_time, autype=AUTYPE.QFQ)  # 获取最小级别
+    data_src = CBaoStock(
+        code, k_type=KL_TYPE.K_15M, begin_date=begin_time, end_date=end_time, autype=AUTYPE.QFQ
+    )  # 获取最小级别
 
     klu_15m_lst_tmp: List[CKLine_Unit] = []  # 存储用于合成当前60M K线的15M k线
 
@@ -66,7 +70,9 @@ if __name__ == "__main__":
             print(klu_15m.time, kl_type, sum(len(klc) for klc in ele_manager))
         # 策略结束：
 
-        if len(klu_15m_lst_tmp) == 4:  # 已经完成4根15分钟K线了，说明这个最新的60分钟K线和里面的4根15分钟K线在将来不会再变化
+        if (
+            len(klu_15m_lst_tmp) == 4
+        ):  # 已经完成4根15分钟K线了，说明这个最新的60分钟K线和里面的4根15分钟K线在将来不会再变化
             """
             把当前完整chan重新保存成chan_snapshot
             如果是序列化方式，这里可以采用pickle.dump()

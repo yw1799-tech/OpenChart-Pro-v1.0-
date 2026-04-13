@@ -66,9 +66,9 @@ class CChan:
         obj.kl_misalign_cnt = self.kl_misalign_cnt
         obj.kl_inconsistent_detail = copy.deepcopy(self.kl_inconsistent_detail, memo)
         obj.g_kl_iter = copy.deepcopy(self.g_kl_iter, memo)
-        if hasattr(self, 'klu_cache'):
+        if hasattr(self, "klu_cache"):
             obj.klu_cache = copy.deepcopy(self.klu_cache, memo)
-        if hasattr(self, 'klu_last_t'):
+        if hasattr(self, "klu_last_t"):
             obj.klu_last_t = copy.deepcopy(self.klu_last_t, memo)
         obj.kl_datas = {}
         for kl_type, ckline in self.kl_datas.items():
@@ -94,7 +94,9 @@ class CChan:
             yield klu
 
     def get_load_stock_iter(self, stockapi_cls, lv):
-        stockapi_instance = stockapi_cls(code=self.code, k_type=lv, begin_date=self.begin_time, end_date=self.end_time, autype=self.autype)
+        stockapi_instance = stockapi_cls(
+            code=self.code, k_type=lv, begin_date=self.begin_time, end_date=self.end_time, autype=self.autype
+        )
         return self.load_stock_data(stockapi_instance, lv)
 
     def add_lv_iter(self, lv_idx, iter):
@@ -131,9 +133,9 @@ class CChan:
 
     def trigger_load(self, inp):
         # {type: [klu, ...]}
-        if not hasattr(self, 'klu_cache'):
+        if not hasattr(self, "klu_cache"):
             self.klu_cache: List[Optional[CKLine_Unit]] = [None for _ in self.lv_list]
-        if not hasattr(self, 'klu_last_t'):
+        if not hasattr(self, "klu_last_t"):
             self.klu_last_t = [CTime(1980, 1, 1, 0, 0) for _ in self.lv_list]
         for lv_idx, lv in enumerate(self.lv_list):
             if lv not in inp:
@@ -172,15 +174,19 @@ class CChan:
         _dict = {}
         if self.data_src == DATA_SRC.BAO_STOCK:
             from DataAPI.BaoStockAPI import CBaoStock
+
             _dict[DATA_SRC.BAO_STOCK] = CBaoStock
         elif self.data_src == DATA_SRC.CCXT:
             from DataAPI.ccxt import CCXT
+
             _dict[DATA_SRC.CCXT] = CCXT
         elif self.data_src == DATA_SRC.CSV:
             from DataAPI.csvAPI import CSV_API
+
             _dict[DATA_SRC.CSV] = CSV_API
         elif self.data_src == DATA_SRC.AKSHARE:
             from DataAPI.AkshareAPI import CAkshare
+
             _dict[DATA_SRC.AKSHARE] = CAkshare
         if self.data_src in _dict:
             return _dict[self.data_src]
@@ -190,6 +196,7 @@ class CChan:
         package_info = self.data_src.split(":")[1]
         package_name, cls_name = package_info.split(".")
         import importlib
+
         module = importlib.import_module(f"DataAPI.{package_name}")
         return getattr(module, cls_name)
 
@@ -214,7 +221,7 @@ class CChan:
             raise CChanException("最高级别没有获得任何数据", ErrCode.NO_DATA)
 
     def set_klu_parent_relation(self, parent_klu, kline_unit, cur_lv, lv_idx):
-        if self.conf.kl_data_check and kltype_lte_day(cur_lv) and kltype_lte_day(self.lv_list[lv_idx-1]):
+        if self.conf.kl_data_check and kltype_lte_day(cur_lv) and kltype_lte_day(self.lv_list[lv_idx - 1]):
             self.check_kl_consitent(parent_klu, kline_unit)
         parent_klu.add_children(kline_unit)
         kline_unit.set_parent(parent_klu)
@@ -250,7 +257,10 @@ class CChan:
                     kline_unit = self.get_next_lv_klu(lv_idx)
                     self.try_set_klu_idx(lv_idx, kline_unit)
                     if not kline_unit.time > self.klu_last_t[lv_idx]:
-                        raise CChanException(f"kline time err, cur={kline_unit.time}, last={self.klu_last_t[lv_idx]}, or refer to quick_guide.md, try set auto=False in the CTime returned by your data source class", ErrCode.KL_NOT_MONOTONOUS)
+                        raise CChanException(
+                            f"kline time err, cur={kline_unit.time}, last={self.klu_last_t[lv_idx]}, or refer to quick_guide.md, try set auto=False in the CTime returned by your data source class",
+                            ErrCode.KL_NOT_MONOTONOUS,
+                        )
                     self.klu_last_t[lv_idx] = kline_unit.time
                 except StopIteration:
                     break
@@ -263,30 +273,37 @@ class CChan:
             self.add_new_kl(cur_lv, kline_unit)
             if parent_klu:
                 self.set_klu_parent_relation(parent_klu, kline_unit, cur_lv, lv_idx)
-            if lv_idx != len(self.lv_list)-1:
-                for _ in self.load_iterator(lv_idx+1, kline_unit, step):
+            if lv_idx != len(self.lv_list) - 1:
+                for _ in self.load_iterator(lv_idx + 1, kline_unit, step):
                     ...
                 self.check_kl_align(kline_unit, lv_idx)
             if lv_idx == 0 and step:
                 yield self
 
     def check_kl_consitent(self, parent_klu, sub_klu):
-        if parent_klu.time.year != sub_klu.time.year or \
-           parent_klu.time.month != sub_klu.time.month or \
-           parent_klu.time.day != sub_klu.time.day:
+        if (
+            parent_klu.time.year != sub_klu.time.year
+            or parent_klu.time.month != sub_klu.time.month
+            or parent_klu.time.day != sub_klu.time.day
+        ):
             self.kl_inconsistent_detail[str(parent_klu.time)].append(sub_klu.time)
             if self.conf.print_warning:
                 print(f"[WARNING-{self.code}]父级别时间是{parent_klu.time}，次级别时间却是{sub_klu.time}")
             if len(self.kl_inconsistent_detail) >= self.conf.max_kl_inconsistent_cnt:
-                raise CChanException(f"父&子级别K线时间不一致条数超过{self.conf.max_kl_inconsistent_cnt}！！", ErrCode.KL_TIME_INCONSISTENT)
+                raise CChanException(
+                    f"父&子级别K线时间不一致条数超过{self.conf.max_kl_inconsistent_cnt}！！",
+                    ErrCode.KL_TIME_INCONSISTENT,
+                )
 
     def check_kl_align(self, kline_unit, lv_idx):
         if self.conf.kl_data_check and len(kline_unit.sub_kl_list) == 0:
             self.kl_misalign_cnt += 1
             if self.conf.print_warning:
-                print(f"[WARNING-{self.code}]当前{kline_unit.time}没在次级别{self.lv_list[lv_idx+1]}找到K线！！")
+                print(f"[WARNING-{self.code}]当前{kline_unit.time}没在次级别{self.lv_list[lv_idx + 1]}找到K线！！")
             if self.kl_misalign_cnt >= self.conf.max_kl_misalgin_cnt:
-                raise CChanException(f"在次级别找不到K线条数超过{self.conf.max_kl_misalgin_cnt}！！", ErrCode.KL_DATA_NOT_ALIGN)
+                raise CChanException(
+                    f"在次级别找不到K线条数超过{self.conf.max_kl_misalgin_cnt}！！", ErrCode.KL_DATA_NOT_ALIGN
+                )
 
     def __getitem__(self, n) -> CKLine_List:
         if isinstance(n, KL_TYPE):
@@ -297,7 +314,7 @@ class CChan:
             raise CChanException("unspoourt query type", ErrCode.COMMON_ERROR)
 
     def get_bsp(self, idx=None) -> List[CBS_Point]:
-        print('[deprecated] use get_latest_bsp instead')
+        print("[deprecated] use get_latest_bsp instead")
         if idx is not None:
             return self[idx].bs_point_lst.getSortedBspList()
         assert len(self.lv_list) == 1
@@ -338,7 +355,7 @@ class CChan:
         self.chan_pickle_restore()
 
     @staticmethod
-    def chan_load_pickle(file_path) -> 'CChan':
+    def chan_load_pickle(file_path) -> "CChan":
         with open(file_path, "rb") as f:
             chan = pickle.load(f)
         chan.chan_pickle_restore()

@@ -34,6 +34,7 @@ class CKLine_Unit:
         self.sup_kl: Optional[CKLine_Unit] = None  # 指向更高级别KLU
 
         from KLine.KLine import CKLine
+
         self.__klc: Optional[CKLine] = None  # 指向KLine
 
         # self.macd: Optional[CMACD_item] = None
@@ -94,17 +95,23 @@ class CKLine_Unit:
             if autofix:
                 self.low = min([self.low, self.open, self.high, self.close])
             else:
-                raise CChanException(f"{self.time} low price={self.low} is not min of [low={self.low}, open={self.open}, high={self.high}, close={self.close}]", ErrCode.KL_DATA_INVALID)
+                raise CChanException(
+                    f"{self.time} low price={self.low} is not min of [low={self.low}, open={self.open}, high={self.high}, close={self.close}]",
+                    ErrCode.KL_DATA_INVALID,
+                )
         if self.high < max([self.low, self.open, self.high, self.close]):
             if autofix:
                 self.high = max([self.low, self.open, self.high, self.close])
             else:
-                raise CChanException(f"{self.time} high price={self.high} is not max of [low={self.low}, open={self.open}, high={self.high}, close={self.close}]", ErrCode.KL_DATA_INVALID)
+                raise CChanException(
+                    f"{self.time} high price={self.high} is not max of [low={self.low}, open={self.open}, high={self.high}, close={self.close}]",
+                    ErrCode.KL_DATA_INVALID,
+                )
 
     def add_children(self, child):
         self.sub_kl_list.append(child)
 
-    def set_parent(self, parent: 'CKLine_Unit'):
+    def set_parent(self, parent: "CKLine_Unit"):
         self.sup_kl = parent
 
     def get_children(self):
@@ -147,7 +154,7 @@ class CKLine_Unit:
                 return True
         return False
 
-    def set_pre_klu(self, pre_klu: Optional['CKLine_Unit']):
+    def set_pre_klu(self, pre_klu: Optional["CKLine_Unit"]):
         if pre_klu is None:
             return
         pre_klu.next = self

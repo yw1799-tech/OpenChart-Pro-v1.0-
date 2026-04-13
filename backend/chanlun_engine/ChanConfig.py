@@ -25,7 +25,7 @@ class CChanConfig:
             is_strict=conf.get("bi_strict", True),
             bi_fx_check=conf.get("bi_fx_check", "strict"),
             gap_as_kl=conf.get("gap_as_kl", False),
-            bi_end_is_peak=conf.get('bi_end_is_peak', True),
+            bi_end_is_peak=conf.get("bi_end_is_peak", True),
             bi_allow_sub_peak=conf.get("bi_allow_sub_peak", True),
         )
         self.seg_conf = CSegConfig(
@@ -57,15 +57,18 @@ class CChanConfig:
         self.cal_kdj = conf.get("cal_kdj", False)
         self.rsi_cycle = conf.get("rsi_cycle", 14)
         self.kdj_cycle = conf.get("kdj_cycle", 9)
-        self.demark_config = conf.get("demark", {
-            'demark_len': 9,
-            'setup_bias': 4,
-            'countdown_bias': 2,
-            'max_countdown': 13,
-            'tiaokong_st': True,
-            'setup_cmp2close': True,
-            'countdown_cmp2close': True,
-        })
+        self.demark_config = conf.get(
+            "demark",
+            {
+                "demark_len": 9,
+                "setup_bias": 4,
+                "countdown_bias": 2,
+                "max_countdown": 13,
+                "tiaokong_st": True,
+                "setup_cmp2close": True,
+                "countdown_cmp2close": True,
+            },
+        )
         self.boll_n = conf.get("boll_n", 20)
 
         self.set_bsp_config(conf)
@@ -75,9 +78,9 @@ class CChanConfig:
     def GetMetricModel(self):
         res: List[CMACD | CTrendModel | BollModel | CDemarkEngine | RSI | KDJ] = [
             CMACD(
-                fastperiod=self.macd_config['fast'],
-                slowperiod=self.macd_config['slow'],
-                signalperiod=self.macd_config['signal'],
+                fastperiod=self.macd_config["fast"],
+                slowperiod=self.macd_config["slow"],
+                signalperiod=self.macd_config["signal"],
             )
         ]
         res.extend(CTrendModel(TREND_TYPE.MEAN, mean_T) for mean_T in self.mean_metrics)
@@ -87,15 +90,17 @@ class CChanConfig:
             res.append(CTrendModel(TREND_TYPE.MIN, trend_T))
         res.append(BollModel(self.boll_n))
         if self.cal_demark:
-            res.append(CDemarkEngine(
-                demark_len=self.demark_config['demark_len'],
-                setup_bias=self.demark_config['setup_bias'],
-                countdown_bias=self.demark_config['countdown_bias'],
-                max_countdown=self.demark_config['max_countdown'],
-                tiaokong_st=self.demark_config['tiaokong_st'],
-                setup_cmp2close=self.demark_config['setup_cmp2close'],
-                countdown_cmp2close=self.demark_config['countdown_cmp2close'],
-            ))
+            res.append(
+                CDemarkEngine(
+                    demark_len=self.demark_config["demark_len"],
+                    setup_bias=self.demark_config["setup_bias"],
+                    countdown_bias=self.demark_config["countdown_bias"],
+                    max_countdown=self.demark_config["max_countdown"],
+                    tiaokong_st=self.demark_config["tiaokong_st"],
+                    setup_cmp2close=self.demark_config["setup_cmp2close"],
+                    countdown_cmp2close=self.demark_config["countdown_cmp2close"],
+                )
+            )
         if self.cal_rsi:
             res.append(RSI(self.rsi_cycle))
         if self.cal_kdj:

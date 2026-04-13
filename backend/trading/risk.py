@@ -19,9 +19,11 @@ logger = logging.getLogger(__name__)
 # 风控配置
 # ============================================================================
 
+
 @dataclass
 class RiskConfig:
     """风控参数配置"""
+
     # 单笔最大仓位（占总资金百分比）
     max_position_pct: float = 10.0
     # 单笔最大亏损（占总资金百分比）
@@ -49,6 +51,7 @@ class RiskConfig:
 # ============================================================================
 # 风控引擎
 # ============================================================================
+
 
 class RiskEngine:
     """
@@ -112,7 +115,10 @@ class RiskEngine:
             if not passed:
                 logger.warning(
                     "风控拒绝: %s (订单: %s %s %s)",
-                    reason, order.symbol, order.side.value, order.size,
+                    reason,
+                    order.symbol,
+                    order.side.value,
+                    order.size,
                 )
                 return False, reason
 
@@ -224,9 +230,7 @@ class RiskEngine:
 
         return round(size, 8)
 
-    def calc_stop_loss(
-        self, entry_price: float, side: OrderSide, pct: Optional[float] = None
-    ) -> float:
+    def calc_stop_loss(self, entry_price: float, side: OrderSide, pct: Optional[float] = None) -> float:
         """计算止损价格"""
         pct = pct or self.config.default_stop_loss_pct
         if side == OrderSide.BUY:
@@ -234,9 +238,7 @@ class RiskEngine:
         else:
             return round(entry_price * (1 + pct / 100), 8)
 
-    def calc_take_profit(
-        self, entry_price: float, side: OrderSide, pct: Optional[float] = None
-    ) -> float:
+    def calc_take_profit(self, entry_price: float, side: OrderSide, pct: Optional[float] = None) -> float:
         """计算止盈价格"""
         pct = pct or self.config.default_take_profit_pct
         if side == OrderSide.BUY:
@@ -249,15 +251,17 @@ class RiskEngine:
     def record_trade(self, order: Order, pnl: float = 0.0):
         """记录交易"""
         self._check_day_reset()
-        self._daily_trades.append({
-            "order_id": order.order_id,
-            "symbol": order.symbol,
-            "side": order.side.value,
-            "size": order.size,
-            "price": order.price,
-            "pnl": pnl,
-            "timestamp": time.time(),
-        })
+        self._daily_trades.append(
+            {
+                "order_id": order.order_id,
+                "symbol": order.symbol,
+                "side": order.side.value,
+                "size": order.size,
+                "price": order.price,
+                "pnl": pnl,
+                "timestamp": time.time(),
+            }
+        )
         self._daily_pnl += pnl
 
     def get_daily_stats(self) -> Dict[str, Any]:

@@ -13,15 +13,17 @@ class KDJ:
         self.pre_kdj = KDJ_Item(50, 50, 50)
 
     def add(self, high, low, close) -> KDJ_Item:
-        self.arr.append({
-            'high': high,
-            'low': low,
-        })
+        self.arr.append(
+            {
+                "high": high,
+                "low": low,
+            }
+        )
         if len(self.arr) > self.period:
             self.arr.pop(0)
 
-        hn = max([x['high'] for x in self.arr])
-        ln = min([x['low'] for x in self.arr])
+        hn = max([x["high"] for x in self.arr])
+        ln = min([x["low"] for x in self.arr])
         cn = close
         rsv = 100 * (cn - ln) / (hn - ln) if hn != ln else 0.0
 

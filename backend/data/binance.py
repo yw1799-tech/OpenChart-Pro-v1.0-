@@ -2,6 +2,7 @@
 Binance 数据源实现 — REST + WebSocket。
 公开数据接口无需 API Key。
 """
+
 import asyncio
 import json
 import time
@@ -17,28 +18,28 @@ logger = logging.getLogger(__name__)
 
 # ---------- Interval → Binance interval 参数映射 ----------
 _INTERVAL_MAP: Dict[Interval, str] = {
-    Interval.M1:  "1m",
-    Interval.M5:  "5m",
+    Interval.M1: "1m",
+    Interval.M5: "5m",
     Interval.M15: "15m",
     Interval.M30: "30m",
-    Interval.H1:  "1h",
-    Interval.H4:  "4h",
-    Interval.D1:  "1d",
-    Interval.W1:  "1w",
-    Interval.MN:  "1M",
+    Interval.H1: "1h",
+    Interval.H4: "4h",
+    Interval.D1: "1d",
+    Interval.W1: "1w",
+    Interval.MN: "1M",
 }
 
 # Interval → WebSocket stream 名称
 _WS_STREAM_MAP: Dict[Interval, str] = {
-    Interval.M1:  "kline_1m",
-    Interval.M5:  "kline_5m",
+    Interval.M1: "kline_1m",
+    Interval.M5: "kline_5m",
     Interval.M15: "kline_15m",
     Interval.M30: "kline_30m",
-    Interval.H1:  "kline_1h",
-    Interval.H4:  "kline_4h",
-    Interval.D1:  "kline_1d",
-    Interval.W1:  "kline_1w",
-    Interval.MN:  "kline_1M",
+    Interval.H1: "kline_1h",
+    Interval.H4: "kline_4h",
+    Interval.D1: "kline_1d",
+    Interval.W1: "kline_1w",
+    Interval.MN: "kline_1M",
 }
 
 _BASE_URL = "https://api.binance.com"
@@ -126,14 +127,16 @@ class BinanceFetcher(DataFetcher):
             if query_upper and query_upper not in raw_symbol.upper() and query_upper not in display_symbol.upper():
                 continue
 
-            symbols.append(Symbol(
-                symbol=display_symbol,
-                name=display_symbol,
-                market=Market.CRYPTO,
-                exchange="binance",
-                base=base,
-                quote=quote,
-            ))
+            symbols.append(
+                Symbol(
+                    symbol=display_symbol,
+                    name=display_symbol,
+                    market=Market.CRYPTO,
+                    exchange="binance",
+                    base=base,
+                    quote=quote,
+                )
+            )
         return symbols
 
     async def get_klines(
@@ -173,15 +176,17 @@ class BinanceFetcher(DataFetcher):
                 # Binance K线数组:
                 # [openTime, open, high, low, close, volume,
                 #  closeTime, quoteVolume, trades, takerBuyBaseVol, takerBuyQuoteVol, ignore]
-                batch.append(Candle(
-                    timestamp=int(row[0]),
-                    open=float(row[1]),
-                    high=float(row[2]),
-                    low=float(row[3]),
-                    close=float(row[4]),
-                    volume=float(row[5]),
-                    turnover=float(row[7]),  # quoteAssetVolume
-                ))
+                batch.append(
+                    Candle(
+                        timestamp=int(row[0]),
+                        open=float(row[1]),
+                        high=float(row[2]),
+                        low=float(row[3]),
+                        close=float(row[4]),
+                        volume=float(row[5]),
+                        turnover=float(row[7]),  # quoteAssetVolume
+                    )
+                )
 
             all_candles.extend(batch)
 
@@ -203,9 +208,7 @@ class BinanceFetcher(DataFetcher):
         unique.sort(key=lambda c: c.timestamp)
         return unique
 
-    async def subscribe_realtime(
-        self, symbol: str, interval: Interval, callback: Callable
-    ) -> None:
+    async def subscribe_realtime(self, symbol: str, interval: Interval, callback: Callable) -> None:
         """
         通过 WebSocket 订阅实时 K 线推送。
         callback 签名: async def callback(candle: Candle, confirm: bool) -> None
@@ -298,9 +301,7 @@ class BinanceFetcher(DataFetcher):
             try:
                 session = await self._ensure_session()
                 logger.info("Binance WS 连接中: %s", _WS_URL)
-                self._ws = await session.ws_connect(
-                    _WS_URL, heartbeat=30, timeout=aiohttp.ClientTimeout(total=30)
-                )
+                self._ws = await session.ws_connect(_WS_URL, heartbeat=30, timeout=aiohttp.ClientTimeout(total=30))
                 logger.info("Binance WS 已连接")
                 reconnect_delay = 1.0
 

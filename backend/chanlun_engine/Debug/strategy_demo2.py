@@ -15,11 +15,13 @@ if __name__ == "__main__":
     data_src_type = DATA_SRC.BAO_STOCK
     lv_list = [KL_TYPE.K_DAY]
 
-    config = CChanConfig({
-        "trigger_step": True,
-        "divergence_rate": 0.8,
-        "min_zs_cnt": 1,
-    })
+    config = CChanConfig(
+        {
+            "trigger_step": True,
+            "divergence_rate": 0.8,
+            "min_zs_cnt": 1,
+        }
+    )
 
     chan = CChan(
         code=code,
@@ -31,7 +33,9 @@ if __name__ == "__main__":
         autype=AUTYPE.QFQ,  # 已经没啥用了这一行
     )
     CBaoStock.do_init()
-    data_src = CBaoStock(code, k_type=KL_TYPE.K_DAY, begin_date=begin_time, end_date=end_time, autype=AUTYPE.QFQ)  # 初始化数据源类
+    data_src = CBaoStock(
+        code, k_type=KL_TYPE.K_DAY, begin_date=begin_time, end_date=end_time, autype=AUTYPE.QFQ
+    )  # 初始化数据源类
 
     is_hold = False
     last_buy_price = None
@@ -49,10 +53,12 @@ if __name__ == "__main__":
             continue
         if cur_lv_chan[-2].fx == FX_TYPE.BOTTOM and last_bsp.is_buy and not is_hold:
             last_buy_price = cur_lv_chan[-1][-1].close
-            print(f'{cur_lv_chan[-1][-1].time}:buy price = {last_buy_price}')
+            print(f"{cur_lv_chan[-1][-1].time}:buy price = {last_buy_price}")
             is_hold = True
         elif cur_lv_chan[-2].fx == FX_TYPE.TOP and not last_bsp.is_buy and is_hold:
             sell_price = cur_lv_chan[-1][-1].close
-            print(f'{cur_lv_chan[-1][-1].time}:sell price = {sell_price}, profit rate = {(sell_price-last_buy_price)/last_buy_price*100:.2f}%')
+            print(
+                f"{cur_lv_chan[-1][-1].time}:sell price = {sell_price}, profit rate = {(sell_price - last_buy_price) / last_buy_price * 100:.2f}%"
+            )
             is_hold = False
     CBaoStock.do_close()

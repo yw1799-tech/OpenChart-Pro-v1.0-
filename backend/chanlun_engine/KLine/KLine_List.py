@@ -19,14 +19,17 @@ from .KLine_Unit import CKLine_Unit
 def get_seglist_instance(seg_config: CSegConfig, lv) -> CSegListComm:
     if seg_config.seg_algo == "chan":
         from Seg.SegListChan import CSegListChan
+
         return CSegListChan(seg_config, lv)
     elif seg_config.seg_algo == "1+1":
-        print(f'Please avoid using seg_algo={seg_config.seg_algo} as it is deprecated and no longer maintained.')
+        print(f"Please avoid using seg_algo={seg_config.seg_algo} as it is deprecated and no longer maintained.")
         from Seg.SegListDYH import CSegListDYH
+
         return CSegListDYH(seg_config, lv)
     elif seg_config.seg_algo == "break":
-        print(f'Please avoid using seg_algo={seg_config.seg_algo} as it is deprecated and no longer maintained.')
+        print(f"Please avoid using seg_algo={seg_config.seg_algo} as it is deprecated and no longer maintained.")
         from Seg.SegListDef import CSegListDef
+
         return CSegListDef(seg_config, lv)
     else:
         raise CChanException(f"unsupport seg algoright:{seg_config.seg_algo}", ErrCode.PARA_ERROR)
@@ -108,9 +111,13 @@ class CKLine_List:
         self.zs_list.cal_bi_zs(self.bi_list, self.seg_list)
         update_zs_in_seg(self.bi_list, self.seg_list, self.zs_list)  # 计算seg的zs_lst，以及中枢的bi_in, bi_out
 
-        self.last_sure_segseg_start_bi_idx = cal_seg(self.seg_list, self.segseg_list, self.last_sure_segseg_start_bi_idx)
+        self.last_sure_segseg_start_bi_idx = cal_seg(
+            self.seg_list, self.segseg_list, self.last_sure_segseg_start_bi_idx
+        )
         self.segzs_list.cal_bi_zs(self.seg_list, self.segseg_list)
-        update_zs_in_seg(self.seg_list, self.segseg_list, self.segzs_list)  # 计算segseg的zs_lst，以及中枢的bi_in, bi_out
+        update_zs_in_seg(
+            self.seg_list, self.segseg_list, self.segzs_list
+        )  # 计算segseg的zs_lst，以及中枢的bi_in, bi_out
 
         # 计算买卖点
         self.seg_bs_point_lst.cal(self.seg_list, self.segseg_list)  # 线段线段买卖点
@@ -131,7 +138,9 @@ class CKLine_List:
                     self.lst[-2].update_fx(self.lst[-3], self.lst[-1])
                 if self.bi_list.update_bi(self.lst[-2], self.lst[-1], self.step_calculation) and self.step_calculation:
                     self.cal_seg_and_zs()
-            elif self.step_calculation and self.bi_list.try_add_virtual_bi(self.lst[-1], need_del_end=True):  # 这里的必要性参见issue#175
+            elif self.step_calculation and self.bi_list.try_add_virtual_bi(
+                self.lst[-1], need_del_end=True
+            ):  # 这里的必要性参见issue#175
                 self.cal_seg_and_zs()
 
     def klu_iter(self, klc_begin_idx=0):
@@ -155,7 +164,7 @@ def cal_seg(bi_list, seg_list: CSegListComm, last_sure_seg_start_bi_idx):
         if bi.seg_idx is not None and bi.idx < last_sure_seg_start_bi_idx:
             break
         if bi.idx > cur_seg.end_bi.idx:
-            bi.set_seg_idx(cur_seg.idx+1)
+            bi.set_seg_idx(cur_seg.idx + 1)
             bi_idx -= 1
             continue
         if bi.idx < cur_seg.start_bi.idx:
@@ -192,10 +201,10 @@ def update_zs_in_seg(bi_list, seg_list, zs_list):
             if zs.is_inside(seg):
                 seg.add_zs(zs)
             assert zs.begin_bi.idx > 0
-            zs.set_bi_in(bi_list[zs.begin_bi.idx-1])
-            if zs.end_bi.idx+1 < len(bi_list):
-                zs.set_bi_out(bi_list[zs.end_bi.idx+1])
-            zs.set_bi_lst(list(bi_list[zs.begin_bi.idx:zs.end_bi.idx+1]))
+            zs.set_bi_in(bi_list[zs.begin_bi.idx - 1])
+            if zs.end_bi.idx + 1 < len(bi_list):
+                zs.set_bi_out(bi_list[zs.end_bi.idx + 1])
+            zs.set_bi_lst(list(bi_list[zs.begin_bi.idx : zs.end_bi.idx + 1]))
             _zs_idx -= 1
 
         if sure_seg_cnt > 2:

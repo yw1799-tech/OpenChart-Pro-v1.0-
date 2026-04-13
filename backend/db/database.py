@@ -175,9 +175,7 @@ class DatabaseManager:
                 PRIMARY KEY (symbol, timestamp)
             )
         """)
-        await conn.execute(
-            f"CREATE INDEX IF NOT EXISTS idx_{table}_ts ON [{table}] (symbol, timestamp DESC)"
-        )
+        await conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_ts ON [{table}] (symbol, timestamp DESC)")
         await conn.commit()
         return table
 
@@ -279,9 +277,7 @@ class DatabaseManager:
                     (market,),
                 )
             else:
-                cursor = await conn.execute(
-                    "SELECT * FROM watchlist ORDER BY sort_order, added_at DESC"
-                )
+                cursor = await conn.execute("SELECT * FROM watchlist ORDER BY sort_order, added_at DESC")
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
 
@@ -356,9 +352,7 @@ class DatabaseManager:
             set_clauses.append("updated_at = ?")
             params.append(int(time.time()))
             params.append(alert_id)
-            await conn.execute(
-                f"UPDATE alerts SET {', '.join(set_clauses)} WHERE id = ?", params
-            )
+            await conn.execute(f"UPDATE alerts SET {', '.join(set_clauses)} WHERE id = ?", params)
             await conn.commit()
 
     async def delete_alert(self, alert_id: str):
@@ -367,9 +361,7 @@ class DatabaseManager:
             await conn.execute("DELETE FROM alerts WHERE id = ?", (alert_id,))
             await conn.commit()
 
-    async def get_alerts(
-        self, symbol: Optional[str] = None, enabled_only: bool = False
-    ) -> List[Dict]:
+    async def get_alerts(self, symbol: Optional[str] = None, enabled_only: bool = False) -> List[Dict]:
         """查询警报列表。"""
         async with self.acquire() as conn:
             sql = "SELECT * FROM alerts WHERE 1=1"
@@ -406,9 +398,7 @@ class DatabaseManager:
 
     # ──────────────────────── Alert History ────────────────────────
 
-    async def add_alert_history(
-        self, alert_id: str, symbol: str, market: str, price: float, message: str
-    ):
+    async def add_alert_history(self, alert_id: str, symbol: str, market: str, price: float, message: str):
         """记录警报触发历史。"""
         async with self.acquire() as conn:
             await conn.execute(
@@ -420,9 +410,7 @@ class DatabaseManager:
             )
             await conn.commit()
 
-    async def get_alert_history(
-        self, alert_id: Optional[str] = None, limit: int = 100
-    ) -> List[Dict]:
+    async def get_alert_history(self, alert_id: Optional[str] = None, limit: int = 100) -> List[Dict]:
         """查询警报触发历史。"""
         async with self.acquire() as conn:
             if alert_id:
@@ -443,9 +431,7 @@ class DatabaseManager:
     async def get_config(self, key: str, default: Optional[str] = None) -> Optional[str]:
         """读取配置值。"""
         async with self.acquire() as conn:
-            cursor = await conn.execute(
-                "SELECT value FROM config WHERE key = ?", (key,)
-            )
+            cursor = await conn.execute("SELECT value FROM config WHERE key = ?", (key,))
             row = await cursor.fetchone()
             return row["value"] if row else default
 
@@ -524,18 +510,14 @@ class DatabaseManager:
                     (mode,),
                 )
             else:
-                cursor = await conn.execute(
-                    "SELECT * FROM formulas ORDER BY updated_at DESC, created_at DESC"
-                )
+                cursor = await conn.execute("SELECT * FROM formulas ORDER BY updated_at DESC, created_at DESC")
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
 
     async def get_formula_by_id(self, formula_id: int) -> Optional[Dict]:
         """按 ID 获取公式。"""
         async with self.acquire() as conn:
-            cursor = await conn.execute(
-                "SELECT * FROM formulas WHERE id = ?", (formula_id,)
-            )
+            cursor = await conn.execute("SELECT * FROM formulas WHERE id = ?", (formula_id,))
             row = await cursor.fetchone()
             return dict(row) if row else None
 
@@ -592,9 +574,7 @@ class DatabaseManager:
     async def get_backtest_report_by_id(self, report_id: str) -> Optional[Dict]:
         """按 ID 获取回测报告。"""
         async with self.acquire() as conn:
-            cursor = await conn.execute(
-                "SELECT * FROM backtest_reports WHERE id = ?", (report_id,)
-            )
+            cursor = await conn.execute("SELECT * FROM backtest_reports WHERE id = ?", (report_id,))
             row = await cursor.fetchone()
             if not row:
                 return None
@@ -606,9 +586,7 @@ class DatabaseManager:
     async def delete_backtest_report(self, report_id: str):
         """删除回测报告。"""
         async with self.acquire() as conn:
-            await conn.execute(
-                "DELETE FROM backtest_reports WHERE id = ?", (report_id,)
-            )
+            await conn.execute("DELETE FROM backtest_reports WHERE id = ?", (report_id,))
             await conn.commit()
 
     # ──────────────────────── Screener Tasks ────────────────────────
@@ -651,9 +629,7 @@ class DatabaseManager:
     async def get_screener_task(self, task_id: str) -> Optional[Dict]:
         """获取选股任务详情。"""
         async with self.acquire() as conn:
-            cursor = await conn.execute(
-                "SELECT * FROM screener_tasks WHERE task_id = ?", (task_id,)
-            )
+            cursor = await conn.execute("SELECT * FROM screener_tasks WHERE task_id = ?", (task_id,))
             row = await cursor.fetchone()
             if not row:
                 return None

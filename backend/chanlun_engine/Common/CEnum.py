@@ -52,16 +52,16 @@ class BI_TYPE(Enum):
     TIAOKONG_VALUE = auto()
 
 
-BSP_MAIN_TYPE = Literal['1', '2', '3']
+BSP_MAIN_TYPE = Literal["1", "2", "3"]
 
 
 class BSP_TYPE(Enum):
-    T1 = '1'
-    T1P = '1p'
-    T2 = '2'
-    T2S = '2s'
-    T3A = '3a'  # 中枢在1类后面
-    T3B = '3b'  # 中枢在1类前面
+    T1 = "1"
+    T1P = "1p"
+    T2 = "2"
+    T2S = "2s"
+    T3A = "3a"  # 中枢在1类后面
+    T3B = "3b"  # 中枢在1类前面
 
     def main_type(self) -> BSP_MAIN_TYPE:
         return self.value[0]  # type: ignore

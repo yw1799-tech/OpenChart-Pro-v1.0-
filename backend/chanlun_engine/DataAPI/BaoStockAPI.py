@@ -77,18 +77,18 @@ class CBaoStock(CCommonStockApi):
             frequency=self.__convert_type(),
             adjustflag=autype_dict[self.autype],
         )
-        if rs.error_code != '0':
+        if rs.error_code != "0":
             raise Exception(rs.error_msg)
-        while rs.error_code == '0' and rs.next():
+        while rs.error_code == "0" and rs.next():
             yield CKLine_Unit(create_item_dict(rs.get_row_data(), GetColumnNameFromFieldList(fields)))
 
     def SetBasciInfo(self):
         rs = bs.query_stock_basic(code=self.code)
-        if rs.error_code != '0':
+        if rs.error_code != "0":
             raise Exception(rs.error_msg)
         code, code_name, ipoDate, outDate, stock_type, status = rs.get_row_data()
         self.name = code_name
-        self.is_stock = (stock_type == '1')
+        self.is_stock = stock_type == "1"
 
     @classmethod
     def do_init(cls):
@@ -103,12 +103,12 @@ class CBaoStock(CCommonStockApi):
 
     def __convert_type(self):
         _dict = {
-            KL_TYPE.K_DAY: 'd',
-            KL_TYPE.K_WEEK: 'w',
-            KL_TYPE.K_MON: 'm',
-            KL_TYPE.K_5M: '5',
-            KL_TYPE.K_15M: '15',
-            KL_TYPE.K_30M: '30',
-            KL_TYPE.K_60M: '60',
+            KL_TYPE.K_DAY: "d",
+            KL_TYPE.K_WEEK: "w",
+            KL_TYPE.K_MON: "m",
+            KL_TYPE.K_5M: "5",
+            KL_TYPE.K_15M: "15",
+            KL_TYPE.K_30M: "30",
+            KL_TYPE.K_60M: "60",
         }
         return _dict[self.k_type]

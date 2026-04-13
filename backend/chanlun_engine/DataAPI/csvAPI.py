@@ -63,7 +63,7 @@ class CSV_API(CCommonStockApi):
         if not os.path.exists(file_path):
             raise CChanException(f"file not exist: {file_path}", ErrCode.SRC_DATA_NOT_FOUND)
 
-        for line_number, line in enumerate(open(file_path, 'r')):
+        for line_number, line in enumerate(open(file_path, "r")):
             if self.headers_exist and line_number == 0:
                 continue
             data = line.strip("\n").split(",")

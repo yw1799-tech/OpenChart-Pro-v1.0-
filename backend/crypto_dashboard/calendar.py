@@ -2,6 +2,7 @@
 经济日历模块
 提供宏观经济事件和加密货币专属事件
 """
+
 import aiohttp
 import logging
 from datetime import datetime, timedelta
@@ -48,9 +49,7 @@ class EconomicCalendar:
             async with aiohttp.ClientSession(timeout=self.timeout) as session:
                 async with session.get(url) as resp:
                     if resp.status != 200:
-                        logger.warning(
-                            "宏观日历API返回 %d，使用内置日历", resp.status
-                        )
+                        logger.warning("宏观日历API返回 %d，使用内置日历", resp.status)
                         return []
 
                     data = await resp.json()
@@ -171,15 +170,23 @@ class EconomicCalendar:
 
         # 组合翻译：先翻译国家前缀，再翻译事件名
         result = name
-        country_prefixes = {"French ": "法国", "German ": "德国", "Italian ": "意大利",
-                           "Spanish ": "西班牙", "Chinese ": "中国", "Japanese ": "日本",
-                           "British ": "英国", "Canadian ": "加拿大", "Australian ": "澳大利亚"}
+        country_prefixes = {
+            "French ": "法国",
+            "German ": "德国",
+            "Italian ": "意大利",
+            "Spanish ": "西班牙",
+            "Chinese ": "中国",
+            "Japanese ": "日本",
+            "British ": "英国",
+            "Canadian ": "加拿大",
+            "Australian ": "澳大利亚",
+        }
         country_cn = ""
         event_part = name
         for prefix, cn in country_prefixes.items():
             if name.startswith(prefix):
                 country_cn = cn
-                event_part = name[len(prefix):]
+                event_part = name[len(prefix) :]
                 break
 
         # 翻译事件部分
@@ -285,9 +292,7 @@ class EconomicCalendar:
                     if days_until_thursday == 0 and d.date() == now.date():
                         days_until_thursday = 7
                     next_thursday = d + timedelta(days=days_until_thursday)
-                    event_time = next_thursday.strftime(
-                        f"%Y-%m-%dT{template['time_of_day']}Z"
-                    )
+                    event_time = next_thursday.strftime(f"%Y-%m-%dT{template['time_of_day']}Z")
                     events.append(
                         {
                             "time": event_time,
@@ -305,9 +310,7 @@ class EconomicCalendar:
                 # FOMC特殊处理
                 for fomc_date in fomc_dates_2026:
                     fomc_dt = datetime.strptime(fomc_date, "%Y-%m-%d")
-                    if fomc_dt > now - timedelta(days=1) and fomc_dt < now + timedelta(
-                        days=60
-                    ):
+                    if fomc_dt > now - timedelta(days=1) and fomc_dt < now + timedelta(days=60):
                         event_time = f"{fomc_date}T{template['time_of_day']}Z"
                         events.append(
                             {
@@ -341,9 +344,7 @@ class EconomicCalendar:
                     if event_dt > now + timedelta(days=60):
                         continue
 
-                    event_time = event_dt.strftime(
-                        f"%Y-%m-%dT{template['time_of_day']}Z"
-                    )
+                    event_time = event_dt.strftime(f"%Y-%m-%dT{template['time_of_day']}Z")
                     events.append(
                         {
                             "time": event_time,
@@ -399,9 +400,7 @@ class EconomicCalendar:
                 headers = {"Accept": "application/json"}
                 async with session.get(url, headers=headers) as resp:
                     if resp.status != 200:
-                        logger.info(
-                            "CoinGecko events API 返回 %d，使用内置事件", resp.status
-                        )
+                        logger.info("CoinGecko events API 返回 %d，使用内置事件", resp.status)
                         return []
 
                     data = await resp.json()
@@ -412,9 +411,7 @@ class EconomicCalendar:
 
                     events = []
                     for item in events_data:
-                        event_type = self._classify_crypto_event(
-                            item.get("type", ""), item.get("title", "")
-                        )
+                        event_type = self._classify_crypto_event(item.get("type", ""), item.get("title", ""))
                         start_date = item.get("start_date", "")
                         if not start_date:
                             continue
@@ -425,9 +422,7 @@ class EconomicCalendar:
                                 "event": item.get("title", ""),
                                 "symbol": item.get("symbol", "").upper(),
                                 "type": event_type,
-                                "importance": self._crypto_event_importance(
-                                    event_type
-                                ),
+                                "importance": self._crypto_event_importance(event_type),
                                 "details": item.get("description", ""),
                                 "source": "coingecko",
                             }
@@ -444,34 +439,19 @@ class EconomicCalendar:
         title_lower = title.lower()
         type_lower = event_type.lower()
 
-        if any(
-            kw in title_lower
-            for kw in ["unlock", "vesting", "release", "解锁"]
-        ):
+        if any(kw in title_lower for kw in ["unlock", "vesting", "release", "解锁"]):
             return "token_unlock"
-        elif any(
-            kw in title_lower
-            for kw in ["upgrade", "fork", "update", "升级", "硬分叉"]
-        ):
+        elif any(kw in title_lower for kw in ["upgrade", "fork", "update", "升级", "硬分叉"]):
             return "network_upgrade"
-        elif any(
-            kw in title_lower
-            for kw in ["mainnet", "launch", "主网"]
-        ):
+        elif any(kw in title_lower for kw in ["mainnet", "launch", "主网"]):
             return "mainnet_launch"
         elif any(kw in title_lower for kw in ["halving", "减半"]):
             return "halving"
         elif any(kw in title_lower for kw in ["airdrop", "空投"]):
             return "airdrop"
-        elif any(
-            kw in title_lower
-            for kw in ["listing", "上线", "上架"]
-        ):
+        elif any(kw in title_lower for kw in ["listing", "上线", "上架"]):
             return "exchange_listing"
-        elif any(
-            kw in title_lower
-            for kw in ["regulation", "sec", "法规", "监管", "etf"]
-        ):
+        elif any(kw in title_lower for kw in ["regulation", "sec", "法规", "监管", "etf"]):
             return "regulation"
         elif "conference" in type_lower or "event" in type_lower:
             return "conference"
@@ -583,9 +563,7 @@ class EconomicCalendar:
         filtered = []
         for event in known_events:
             try:
-                event_dt = datetime.strptime(
-                    event["time"], "%Y-%m-%dT%H:%M:%SZ"
-                )
+                event_dt = datetime.strptime(event["time"], "%Y-%m-%dT%H:%M:%SZ")
                 if now - timedelta(days=1) <= event_dt <= cutoff:
                     filtered.append(event)
             except (ValueError, KeyError):

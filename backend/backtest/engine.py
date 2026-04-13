@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 # 尝试导入vectorbt，失败则使用纯numpy回退
 try:
     import vectorbt as vbt
+
     HAS_VBT = True
     logger.info("VectorBT 已加载，使用向量化回测引擎")
 except ImportError:
@@ -157,9 +158,7 @@ class BacktestEngine:
     # VectorBT 引擎
     # ------------------------------------------------------------------
 
-    def _run_vbt(
-        self, ohlcv: pd.DataFrame, entries: np.ndarray, exits: np.ndarray
-    ) -> tuple:
+    def _run_vbt(self, ohlcv: pd.DataFrame, entries: np.ndarray, exits: np.ndarray) -> tuple:
         """使用VectorBT执行回测"""
         close = ohlcv["close"].values
         price = pd.Series(close, index=ohlcv.index)
@@ -179,16 +178,18 @@ class BacktestEngine:
         trades_list = []
         if trades_df is not None and len(trades_df) > 0:
             for _, row in trades_df.iterrows():
-                trades_list.append({
-                    "entry_time": str(row.get("Entry Timestamp", "")),
-                    "exit_time": str(row.get("Exit Timestamp", "")),
-                    "entry_price": float(row.get("Avg Entry Price", 0)),
-                    "exit_price": float(row.get("Avg Exit Price", 0)),
-                    "size": float(row.get("Size", 0)),
-                    "pnl": float(row.get("PnL", 0)),
-                    "return_pct": float(row.get("Return", 0)) * 100,
-                    "direction": "long",
-                })
+                trades_list.append(
+                    {
+                        "entry_time": str(row.get("Entry Timestamp", "")),
+                        "exit_time": str(row.get("Exit Timestamp", "")),
+                        "entry_price": float(row.get("Avg Entry Price", 0)),
+                        "exit_price": float(row.get("Avg Exit Price", 0)),
+                        "size": float(row.get("Size", 0)),
+                        "pnl": float(row.get("PnL", 0)),
+                        "return_pct": float(row.get("Return", 0)) * 100,
+                        "direction": "long",
+                    }
+                )
 
         equity = pf.value().values
         return trades_list, equity
@@ -197,9 +198,7 @@ class BacktestEngine:
     # 纯numpy回退引擎
     # ------------------------------------------------------------------
 
-    def _run_numpy(
-        self, ohlcv: pd.DataFrame, entries: np.ndarray, exits: np.ndarray
-    ) -> tuple:
+    def _run_numpy(self, ohlcv: pd.DataFrame, entries: np.ndarray, exits: np.ndarray) -> tuple:
         """纯numpy模拟交易引擎"""
         close = ohlcv["close"].values
         n = len(close)
@@ -222,7 +221,7 @@ class BacktestEngine:
                 position = affordable
                 cost = position * slip_price
                 fee = cost * self.commission
-                cash -= (cost + fee)
+                cash -= cost + fee
                 entry_price = slip_price
                 entry_idx = i
 
@@ -234,17 +233,19 @@ class BacktestEngine:
                 pnl = revenue - fee - position * entry_price
                 return_pct = (slip_price / entry_price - 1) * 100
 
-                trades_list.append({
-                    "entry_time": str(ohlcv.index[entry_idx]),
-                    "exit_time": str(ohlcv.index[i]),
-                    "entry_price": round(entry_price, 6),
-                    "exit_price": round(slip_price, 6),
-                    "size": round(position, 6),
-                    "pnl": round(pnl, 2),
-                    "return_pct": round(return_pct, 4),
-                    "direction": "long",
-                })
-                cash += (revenue - fee)
+                trades_list.append(
+                    {
+                        "entry_time": str(ohlcv.index[entry_idx]),
+                        "exit_time": str(ohlcv.index[i]),
+                        "entry_price": round(entry_price, 6),
+                        "exit_price": round(slip_price, 6),
+                        "size": round(position, 6),
+                        "pnl": round(pnl, 2),
+                        "return_pct": round(return_pct, 4),
+                        "direction": "long",
+                    }
+                )
+                cash += revenue - fee
                 position = 0.0
 
             equity[i] = cash + position * price
@@ -255,9 +256,7 @@ class BacktestEngine:
     # 辅助方法
     # ------------------------------------------------------------------
 
-    async def _load_ohlcv(
-        self, symbol: str, interval: str, start_date: str, end_date: str
-    ) -> Optional[pd.DataFrame]:
+    async def _load_ohlcv(self, symbol: str, interval: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
         """
         从数据库/CSV加载K线数据。
         返回包含 open/high/low/close/volume 列的 DataFrame，index 为 datetime。
@@ -301,9 +300,7 @@ class BacktestEngine:
         close = ohlcv["close"].values
         return self.initial_capital * (close / close[0])
 
-    def _build_heatmap(
-        self, results: List[Dict], param_x: str, param_y: str
-    ) -> Dict[str, Any]:
+    def _build_heatmap(self, results: List[Dict], param_x: str, param_y: str) -> Dict[str, Any]:
         """构建两参数热力图数据"""
         df = pd.DataFrame(results)
         x_vals = sorted(df[param_x].unique())

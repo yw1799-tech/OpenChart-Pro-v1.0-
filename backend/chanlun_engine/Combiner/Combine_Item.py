@@ -6,6 +6,7 @@ class CCombine_Item:
         from Bi.Bi import CBi
         from KLine.KLine_Unit import CKLine_Unit
         from Seg.Seg import CSeg
+
         if isinstance(item, CBi):
             self.time_begin = item.begin_klc.idx
             self.time_end = item.end_klc.idx

@@ -2,6 +2,7 @@
 OpenChart Pro — FastAPI 入口
 所有 API 路由 + WebSocket + 静态文件服务
 """
+
 import os
 import json
 import uuid
@@ -27,16 +28,19 @@ logger = logging.getLogger(__name__)
 # Pydantic 请求/响应模型
 # ---------------------------------------------------------------------------
 
+
 class IndicatorCalcRequest(BaseModel):
     symbol: str
     interval: str
     indicators: List[Dict[str, Any]]  # [{"name": "MA", "params": {"period": 20}}]
     limit: int = 500
 
+
 class FormulaRequest(BaseModel):
     code: str
     symbol: Optional[str] = None
     interval: Optional[str] = None
+
 
 class AlertCreate(BaseModel):
     symbol: str
@@ -49,6 +53,7 @@ class AlertCreate(BaseModel):
     repeat_mode: str = "once"
     cooldown: int = 300
 
+
 class AlertUpdate(BaseModel):
     enabled: Optional[bool] = None
     condition: Optional[Dict[str, Any]] = None
@@ -57,6 +62,7 @@ class AlertUpdate(BaseModel):
     notify_methods: Optional[List[str]] = None
     repeat_mode: Optional[str] = None
     cooldown: Optional[int] = None
+
 
 class BacktestRunRequest(BaseModel):
     symbol: str
@@ -67,6 +73,7 @@ class BacktestRunRequest(BaseModel):
     strategy_code: str = ""
     strategy_type: str = "openscript"
     config: Dict[str, Any] = {}
+
 
 class BacktestOptimizeRequest(BaseModel):
     symbol: str
@@ -79,6 +86,7 @@ class BacktestOptimizeRequest(BaseModel):
     config: Dict[str, Any] = {}
     param_grid: Dict[str, Any] = {}
 
+
 class ScreenerFilterRequest(BaseModel):
     markets: List[str] = ["crypto"]
     filters: List[Dict[str, Any]] = []
@@ -86,40 +94,49 @@ class ScreenerFilterRequest(BaseModel):
     sort_order: str = "desc"
     limit: int = 50
 
+
 class ScreenerAIRequest(BaseModel):
     market: str = "crypto"
     hours: int = 24
     min_score: int = 60
 
+
 class ScreenerAIRecommendRequest(BaseModel):
     market: str = "crypto"
+
 
 class ScreenerTechSignalsRequest(BaseModel):
     market: str = "crypto"
     signals: List[str] = ["macd_cross", "rsi_oversold", "volume_breakout"]
     symbols: List[str] = []  # 前端可传入指定品种列表
 
+
 class WatchlistAddRequest(BaseModel):
     symbol: str
     market: str = "crypto"
     note: str = ""
 
+
 class WatchlistUpdateRequest(BaseModel):
     note: Optional[str] = None
     sort_order: Optional[int] = None
 
+
 class SettingsUpdate(BaseModel):
     settings: Dict[str, Any]
+
 
 # ---------------------------------------------------------------------------
 # 数据库辅助
 # ---------------------------------------------------------------------------
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "openchart.db")
 
+
 async def get_db() -> aiosqlite.Connection:
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     return db
+
 
 async def init_db():
     """初始化 SQLite 表结构"""
@@ -239,22 +256,23 @@ async def init_db():
             "sound_volume": str(config.SOUND_VOLUME),
         }
         for k, v in default_settings.items():
-            await db.execute(
-                "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v)
-            )
+            await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
         await db.commit()
     finally:
         await db.close()
 
+
 # ---------------------------------------------------------------------------
 # 生命周期
 # ---------------------------------------------------------------------------
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
     yield
+
 
 # ---------------------------------------------------------------------------
 # FastAPI App
@@ -275,15 +293,45 @@ app.add_middleware(
 market_router = APIRouter(prefix="/api", tags=["市场数据"])
 
 MARKETS = [
-    {"id": "crypto", "name": "加密货币", "icon": "bitcoin", "description": "BTC, ETH 等主流加密货币", "default_symbol": "BTC-USDT", "currency": "USDT"},
-    {"id": "us", "name": "美股", "icon": "dollar-sign", "description": "NYSE, NASDAQ 美国股票", "default_symbol": "AAPL", "currency": "USD"},
-    {"id": "hk", "name": "港股", "icon": "landmark", "description": "HKEX 香港股票", "default_symbol": "0700.HK", "currency": "HKD"},
-    {"id": "cn", "name": "A股", "icon": "bar-chart-2", "description": "SSE, SZSE 中国A股", "default_symbol": "600519", "currency": "CNY"},
+    {
+        "id": "crypto",
+        "name": "加密货币",
+        "icon": "bitcoin",
+        "description": "BTC, ETH 等主流加密货币",
+        "default_symbol": "BTC-USDT",
+        "currency": "USDT",
+    },
+    {
+        "id": "us",
+        "name": "美股",
+        "icon": "dollar-sign",
+        "description": "NYSE, NASDAQ 美国股票",
+        "default_symbol": "AAPL",
+        "currency": "USD",
+    },
+    {
+        "id": "hk",
+        "name": "港股",
+        "icon": "landmark",
+        "description": "HKEX 香港股票",
+        "default_symbol": "0700.HK",
+        "currency": "HKD",
+    },
+    {
+        "id": "cn",
+        "name": "A股",
+        "icon": "bar-chart-2",
+        "description": "SSE, SZSE 中国A股",
+        "default_symbol": "600519",
+        "currency": "CNY",
+    },
 ]
+
 
 @market_router.get("/markets")
 async def get_markets():
     return {"markets": MARKETS}
+
 
 @market_router.get("/symbols")
 async def search_symbols(
@@ -292,6 +340,7 @@ async def search_symbols(
 ):
     """搜索品种列表（从交易所API获取）"""
     from backend.data.models import Market as MktEnum
+
     try:
         mkt = MktEnum(market)
     except ValueError:
@@ -299,6 +348,7 @@ async def search_symbols(
 
     try:
         from backend.data.fetcher import get_fetcher
+
         fetcher = get_fetcher(mkt)
         symbols = await fetcher.get_symbols(q)
         return {
@@ -318,6 +368,7 @@ async def search_symbols(
     except Exception as e:
         logger.warning(f"get_symbols failed for {market}: {e}")
         return {"symbols": []}
+
 
 def _guess_market(symbol: str, market_hint: str) -> str:
     """根据symbol格式自动推断市场，避免用OKX查美股代码"""
@@ -340,6 +391,7 @@ def _guess_market(symbol: str, market_hint: str) -> str:
         return "us"
     return market_hint
 
+
 @market_router.get("/klines")
 async def get_klines(
     symbol: str = Query(...),
@@ -352,6 +404,7 @@ async def get_klines(
     market = _guess_market(symbol, market)
 
     from backend.data.models import Market as MktEnum, Interval as IntEnum
+
     try:
         mkt = MktEnum(market)
     except ValueError:
@@ -364,6 +417,7 @@ async def get_klines(
 
     try:
         from backend.data.fetcher import get_fetcher
+
         fetcher = get_fetcher(mkt)
         candles = await fetcher.get_klines(symbol, iv, limit, end_time_ms=end_time)
         return {
@@ -387,33 +441,36 @@ async def get_klines(
         logger.error(f"get_klines error: {e}")
         raise HTTPException(502, f"Failed to fetch klines: {e}")
 
+
 # ---------------------------------------------------------------------------
 # Router: Indicators
 # ---------------------------------------------------------------------------
 indicator_router = APIRouter(prefix="/api/indicators", tags=["指标"])
 
+
 @indicator_router.get("")
 async def list_indicators():
     """从注册表返回全部指标元数据"""
     from backend.indicators.registry import INDICATOR_REGISTRY
+
     seen = set()
     indicators = []
     for ind_id, meta in INDICATOR_REGISTRY.items():
         if id(meta) in seen:
             continue
         seen.add(id(meta))
-        indicators.append({
-            "name": ind_id,
-            "label": meta["name"],
-            "category": meta["category"],
-            "overlay": meta["overlay"],
-            "params": [
-                {"key": p["name"], "type": p["type"], "default": p["default"]}
-                for p in meta["params"]
-            ],
-            "outputs": meta["outputs"],
-        })
+        indicators.append(
+            {
+                "name": ind_id,
+                "label": meta["name"],
+                "category": meta["category"],
+                "overlay": meta["overlay"],
+                "params": [{"key": p["name"], "type": p["type"], "default": p["default"]} for p in meta["params"]],
+                "outputs": meta["outputs"],
+            }
+        )
     return {"indicators": indicators}
+
 
 @indicator_router.post("/calculate")
 async def calculate_indicators(req: IndicatorCalcRequest):
@@ -475,8 +532,7 @@ async def calculate_indicators(req: IndicatorCalcRequest):
             elif isinstance(raw, np.ndarray):
                 arr = np.where(np.isnan(raw), None, raw)
                 results[name] = [
-                    {"t": timestamps[i], "v": float(arr[i]) if arr[i] is not None else None}
-                    for i in range(len(arr))
+                    {"t": timestamps[i], "v": float(arr[i]) if arr[i] is not None else None} for i in range(len(arr))
                 ]
             else:
                 results[name] = []
@@ -490,15 +546,18 @@ async def calculate_indicators(req: IndicatorCalcRequest):
         "results": results,
     }
 
+
 # ---------------------------------------------------------------------------
 # Router: Formula（公式编辑器）
 # ---------------------------------------------------------------------------
 formula_router = APIRouter(prefix="/api/formula", tags=["公式编辑器"])
 
+
 @formula_router.post("/validate")
 async def validate_formula(req: FormulaRequest):
     """验证公式语法 — 使用 OpenScript 解析器"""
     from backend.indicators.formula.executor import validate_and_preview
+
     try:
         result = validate_and_preview(req.code)
         return {
@@ -510,6 +569,7 @@ async def validate_formula(req: FormulaRequest):
         }
     except Exception as e:
         return {"valid": False, "errors": [str(e)], "warnings": []}
+
 
 @formula_router.post("/execute")
 async def execute_formula(req: FormulaRequest):
@@ -524,6 +584,7 @@ async def execute_formula(req: FormulaRequest):
     if req.symbol and req.interval:
         from backend.data.models import Market as MktEnum, Interval as IntEnum
         from backend.data.fetcher import get_fetcher
+
         try:
             mkt = MktEnum("crypto")
             iv = IntEnum(req.interval)
@@ -573,7 +634,10 @@ async def execute_formula(req: FormulaRequest):
         if isinstance(lst, (list, tuple)):
             return [_sanitize_value(v) if not isinstance(v, (list, tuple, dict)) else _sanitize_list(v) for v in lst]
         if isinstance(lst, dict):
-            return {k: _sanitize_list(v) if isinstance(v, (list, tuple, dict)) else _sanitize_value(v) for k, v in lst.items()}
+            return {
+                k: _sanitize_list(v) if isinstance(v, (list, tuple, dict)) else _sanitize_value(v)
+                for k, v in lst.items()
+            }
         return _sanitize_value(lst)
 
     try:
@@ -588,8 +652,7 @@ async def execute_formula(req: FormulaRequest):
                     raw_data = raw_data.tolist()
                 if isinstance(raw_data, list):
                     plot_item["data"] = [
-                        {"t": timestamps[i] if i < len(timestamps) else i,
-                         "v": _sanitize_value(v)}
+                        {"t": timestamps[i] if i < len(timestamps) else i, "v": _sanitize_value(v)}
                         for i, v in enumerate(raw_data)
                     ]
             plots.append(_sanitize_list(plot_item))
@@ -605,10 +668,12 @@ async def execute_formula(req: FormulaRequest):
     except (ExecutionError, Exception) as e:
         return {"result": [], "logs": [f"执行错误: {str(e)}"], "error": str(e)}
 
+
 # ---------------------------------------------------------------------------
 # Router: Alerts
 # ---------------------------------------------------------------------------
 alert_router = APIRouter(prefix="/api/alerts", tags=["警报"])
+
 
 @alert_router.get("")
 async def list_alerts():
@@ -639,6 +704,7 @@ async def list_alerts():
     finally:
         await db.close()
 
+
 @alert_router.post("")
 async def create_alert(req: AlertCreate):
     alert_id = str(uuid.uuid4())
@@ -651,16 +717,25 @@ async def create_alert(req: AlertCreate):
                last_triggered, created_at, updated_at)
                VALUES (?,?,?,?,?,?,?,?,?,?,1,0,NULL,?,?)""",
             (
-                alert_id, req.symbol, req.market, req.condition_type,
-                json.dumps(req.condition), req.message, req.label,
-                json.dumps(req.notify_methods), req.repeat_mode, req.cooldown,
-                now, now,
+                alert_id,
+                req.symbol,
+                req.market,
+                req.condition_type,
+                json.dumps(req.condition),
+                req.message,
+                req.label,
+                json.dumps(req.notify_methods),
+                req.repeat_mode,
+                req.cooldown,
+                now,
+                now,
             ),
         )
         await db.commit()
         return {"id": alert_id, "status": "created"}
     finally:
         await db.close()
+
 
 @alert_router.put("/{alert_id}")
 async def update_alert(alert_id: str, req: AlertUpdate):
@@ -703,6 +778,7 @@ async def update_alert(alert_id: str, req: AlertUpdate):
     finally:
         await db.close()
 
+
 @alert_router.delete("/{alert_id}")
 async def delete_alert(alert_id: str):
     db = await get_db()
@@ -712,6 +788,7 @@ async def delete_alert(alert_id: str):
         return {"id": alert_id, "status": "deleted"}
     finally:
         await db.close()
+
 
 @alert_router.get("/history")
 async def get_alert_history(
@@ -726,9 +803,7 @@ async def get_alert_history(
                 (symbol, limit),
             )
         else:
-            cursor = await db.execute(
-                "SELECT * FROM alert_history ORDER BY triggered_at DESC LIMIT ?", (limit,)
-            )
+            cursor = await db.execute("SELECT * FROM alert_history ORDER BY triggered_at DESC LIMIT ?", (limit,))
         rows = await cursor.fetchall()
         return {
             "history": [
@@ -747,23 +822,28 @@ async def get_alert_history(
     finally:
         await db.close()
 
+
 # ---------------------------------------------------------------------------
 # Router: Backtest
 # ---------------------------------------------------------------------------
 backtest_router = APIRouter(prefix="/api/backtest", tags=["回测"])
 
+
 @backtest_router.post("/run")
 async def run_backtest(req: BacktestRunRequest):
     """启动回测 — 调用 BacktestEngine"""
     from backend.backtest.engine import BacktestEngine
+
     backtest_id = str(uuid.uuid4())
 
     bt_config = req.config or {}
-    engine = BacktestEngine({
-        "initial_capital": bt_config.get("initial_capital", 100000),
-        "commission": bt_config.get("commission", 0.001),
-        "slippage": bt_config.get("slippage", 0.0005),
-    })
+    engine = BacktestEngine(
+        {
+            "initial_capital": bt_config.get("initial_capital", 100000),
+            "commission": bt_config.get("commission", 0.001),
+            "slippage": bt_config.get("slippage", 0.0005),
+        }
+    )
 
     try:
         report = await engine.run(
@@ -786,8 +866,12 @@ async def run_backtest(req: BacktestRunRequest):
                     trades, monthly_returns, optimization, created_at)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
-                    backtest_id, req.strategy_code, req.symbol, req.interval,
-                    req.start_date, req.end_date,
+                    backtest_id,
+                    req.strategy_code,
+                    req.symbol,
+                    req.interval,
+                    req.start_date,
+                    req.end_date,
                     json.dumps(report.get("summary", {})),
                     json.dumps(report.get("equity_curve", [])),
                     json.dumps(report.get("benchmark_curve", [])),
@@ -815,6 +899,7 @@ async def run_backtest(req: BacktestRunRequest):
             "message": f"回测执行失败: {str(e)}",
         }
 
+
 @backtest_router.get("/report/{backtest_id}")
 async def get_backtest_report(backtest_id: str):
     db = await get_db()
@@ -841,10 +926,12 @@ async def get_backtest_report(backtest_id: str):
     finally:
         await db.close()
 
+
 @backtest_router.post("/optimize")
 async def run_optimization(req: BacktestOptimizeRequest):
     """参数优化 — 调用 BacktestEngine.optimize"""
     from backend.backtest.engine import BacktestEngine
+
     task_id = str(uuid.uuid4())
 
     engine = BacktestEngine()
@@ -862,15 +949,18 @@ async def run_optimization(req: BacktestOptimizeRequest):
         logger.error(f"参数优化失败: {e}")
         return {"id": task_id, "status": "error", "message": f"优化失败: {str(e)}"}
 
+
 # ---------------------------------------------------------------------------
 # Router: Screener
 # ---------------------------------------------------------------------------
 screener_router = APIRouter(prefix="/api/screener", tags=["筛选器"])
 
+
 @screener_router.post("/filter")
 async def screener_filter(req: ScreenerFilterRequest):
     """规则筛选 — 调用 ScreenerEngine"""
     from backend.screener.rules import ScreenerEngine
+
     engine = ScreenerEngine()
     try:
         result = await engine.screen(
@@ -890,8 +980,10 @@ async def screener_filter(req: ScreenerFilterRequest):
         logger.error(f"筛选执行失败: {e}")
         return {"count": 0, "results": [], "error": str(e)}
 
+
 # AI分析任务缓存
 _ai_tasks: Dict[str, Dict] = {}
+
 
 @screener_router.post("/ai-analyze")
 async def screener_ai_analyze(req: ScreenerAIRequest):
@@ -905,10 +997,13 @@ async def screener_ai_analyze(req: ScreenerAIRequest):
             _ai_tasks[task_id]["progress"] = "正在采集新闻..."
             # 从数据库settings表读取LLM配置
             from backend.screener.ai_analyzer import AIAnalyzer
+
             llm_settings = {}
             try:
                 db = await get_db()
-                cursor = await db.execute("SELECT key, value FROM settings WHERE key LIKE 'deepseek_%' OR key LIKE 'qwen_%' OR key = 'llm_provider'")
+                cursor = await db.execute(
+                    "SELECT key, value FROM settings WHERE key LIKE 'deepseek_%' OR key LIKE 'qwen_%' OR key = 'llm_provider'"
+                )
                 rows = await cursor.fetchall()
                 for row in rows:
                     llm_settings[row[0]] = row[1].strip('"') if row[1].startswith('"') else row[1]
@@ -916,15 +1011,15 @@ async def screener_ai_analyze(req: ScreenerAIRequest):
             except Exception:
                 pass
 
-            provider = llm_settings.get('llm_provider', 'deepseek')
-            if provider == 'qwen':
-                api_key = llm_settings.get('qwen_api_key', '')
-                base_url = llm_settings.get('qwen_base_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1')
-                model = llm_settings.get('qwen_model', 'qwen-turbo')
+            provider = llm_settings.get("llm_provider", "deepseek")
+            if provider == "qwen":
+                api_key = llm_settings.get("qwen_api_key", "")
+                base_url = llm_settings.get("qwen_base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+                model = llm_settings.get("qwen_model", "qwen-turbo")
             else:
-                api_key = llm_settings.get('deepseek_api_key', '')
-                base_url = llm_settings.get('deepseek_base_url', 'https://api.deepseek.com')
-                model = llm_settings.get('deepseek_model', 'deepseek-chat')
+                api_key = llm_settings.get("deepseek_api_key", "")
+                base_url = llm_settings.get("deepseek_base_url", "https://api.deepseek.com")
+                model = llm_settings.get("deepseek_model", "deepseek-chat")
 
             if not api_key:
                 _ai_tasks[task_id] = {"status": "error", "result": None, "error": "LLM API Key 未配置，请在设置中填入"}
@@ -955,6 +1050,7 @@ async def screener_ai_analyze(req: ScreenerAIRequest):
     asyncio.create_task(_run_analysis())
     return {"task_id": task_id, "status": "pending"}
 
+
 @screener_router.get("/ai-status/{task_id}")
 async def screener_ai_status(task_id: str):
     """查询 AI 分析状态"""
@@ -969,6 +1065,7 @@ async def screener_ai_status(task_id: str):
 # 缓存：避免频繁调用 LLM
 _ai_recommend_cache: Dict[str, Dict] = {}  # {market: {data, timestamp}}
 
+
 @screener_router.post("/ai-recommend")
 async def screener_ai_recommend(req: ScreenerAIRecommendRequest):
     """
@@ -977,6 +1074,7 @@ async def screener_ai_recommend(req: ScreenerAIRecommendRequest):
     结果缓存 5 分钟。
     """
     import time as _time
+
     market = req.market
 
     # 检查缓存
@@ -999,15 +1097,15 @@ async def screener_ai_recommend(req: ScreenerAIRecommendRequest):
         except Exception:
             pass
 
-        provider = llm_settings.get('llm_provider', 'deepseek')
-        if provider == 'qwen':
-            api_key = llm_settings.get('qwen_api_key', '')
-            base_url = llm_settings.get('qwen_base_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1')
-            model = llm_settings.get('qwen_model', 'qwen-turbo')
+        provider = llm_settings.get("llm_provider", "deepseek")
+        if provider == "qwen":
+            api_key = llm_settings.get("qwen_api_key", "")
+            base_url = llm_settings.get("qwen_base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+            model = llm_settings.get("qwen_model", "qwen-turbo")
         else:
-            api_key = llm_settings.get('deepseek_api_key', '')
-            base_url = llm_settings.get('deepseek_base_url', 'https://api.deepseek.com')
-            model = llm_settings.get('deepseek_model', 'deepseek-chat')
+            api_key = llm_settings.get("deepseek_api_key", "")
+            base_url = llm_settings.get("deepseek_base_url", "https://api.deepseek.com")
+            model = llm_settings.get("deepseek_model", "deepseek-chat")
 
         has_llm = bool(api_key and len(api_key) > 5)
 
@@ -1015,6 +1113,7 @@ async def screener_ai_recommend(req: ScreenerAIRecommendRequest):
         news_items = []
         try:
             from backend.screener.news import NewsCollector
+
             collector = NewsCollector()
             news_items = await collector.fetch_all(market=market)
             await collector.close()
@@ -1028,18 +1127,31 @@ async def screener_ai_recommend(req: ScreenerAIRecommendRequest):
         # 并行获取实时价格（asyncio.gather加速）
         from backend.data.models import Market as MktEnum, Interval
         from backend.data.fetcher import get_fetcher
-        market_enum = MktEnum.CRYPTO if market == 'crypto' else MktEnum.US if market == 'us' else MktEnum.HK if market == 'hk' else MktEnum.CN
+
+        market_enum = (
+            MktEnum.CRYPTO
+            if market == "crypto"
+            else MktEnum.US
+            if market == "us"
+            else MktEnum.HK
+            if market == "hk"
+            else MktEnum.CN
+        )
         fetcher = get_fetcher(market_enum)
 
         async def _fetch_price(symbol, market, fetcher):
             try:
                 fetch_sym = symbol
-                if market == 'hk' and not symbol.endswith('.HK'):
-                    code = symbol.lstrip('0') or '0'
-                    fetch_sym = code.zfill(4) + '.HK'
+                if market == "hk" and not symbol.endswith(".HK"):
+                    code = symbol.lstrip("0") or "0"
+                    fetch_sym = code.zfill(4) + ".HK"
                 klines = await fetcher.get_klines(fetch_sym, Interval.D1, limit=2)
                 if klines and len(klines) >= 2:
-                    chg = round((klines[-1].close - klines[-2].close) / klines[-2].close * 100, 2) if klines[-2].close else 0
+                    chg = (
+                        round((klines[-1].close - klines[-2].close) / klines[-2].close * 100, 2)
+                        if klines[-2].close
+                        else 0
+                    )
                     return symbol, round(klines[-1].close, 2), chg
                 elif klines and len(klines) == 1:
                     return symbol, round(klines[-1].close, 2), 0
@@ -1051,7 +1163,7 @@ async def screener_ai_recommend(req: ScreenerAIRecommendRequest):
         price_map = {}
         batch_size = 5
         for i in range(0, len(recommendations), batch_size):
-            batch = recommendations[i:i+batch_size]
+            batch = recommendations[i : i + batch_size]
             tasks = [_fetch_price(rec["symbol"], market, fetcher) for rec in batch]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for result in results:
@@ -1072,12 +1184,13 @@ async def screener_ai_recommend(req: ScreenerAIRecommendRequest):
         if has_llm and news_items:
             try:
                 from openai import AsyncOpenAI
+
                 client = AsyncOpenAI(api_key=api_key, base_url=base_url)
 
                 market_names = {"crypto": "加密货币", "us": "美股", "hk": "港股", "cn": "A股"}
                 market_name = market_names.get(market, market)
                 symbols_str = ", ".join([f"{r['symbol']}({r['name']})" for r in recommendations])
-                news_str = "\n".join([f"- {n.get('title','')}" for n in news_items[:25]])
+                news_str = "\n".join([f"- {n.get('title', '')}" for n in news_items[:25]])
 
                 # 获取价格信息
                 price_info = []
@@ -1125,12 +1238,13 @@ async def screener_ai_recommend(req: ScreenerAIRecommendRequest):
                         max_tokens=1500,
                         temperature=0.3,
                     ),
-                    timeout=20
+                    timeout=20,
                 )
                 import json as _json
+
                 content = resp.choices[0].message.content.strip()
                 if "```" in content:
-                    content = content.split("```")[1].replace("json","").strip()
+                    content = content.split("```")[1].replace("json", "").strip()
                 ai_results = _json.loads(content)
 
                 # 用AI结果更新推荐，并过滤只保留AI选出的
@@ -1141,19 +1255,21 @@ async def screener_ai_recommend(req: ScreenerAIRecommendRequest):
                 for ai_rec in ai_results:
                     sym = ai_rec.get("symbol", "")
                     base = rec_map.get(sym, {})
-                    filtered.append({
-                        "symbol": sym,
-                        "name": base.get("name", ""),
-                        "market": market,
-                        "price": base.get("price"),
-                        "change_pct": base.get("change_pct", 0),
-                        "score": ai_rec.get("score", 50),
-                        "hot_topic": ai_rec.get("hot_topic", ""),
-                        "reason": ai_rec.get("reason", ""),
-                        "action": ai_rec.get("action", "watch"),
-                        "risk": ai_rec.get("risk", ""),
-                        "signals": [],
-                    })
+                    filtered.append(
+                        {
+                            "symbol": sym,
+                            "name": base.get("name", ""),
+                            "market": market,
+                            "price": base.get("price"),
+                            "change_pct": base.get("change_pct", 0),
+                            "score": ai_rec.get("score", 50),
+                            "hot_topic": ai_rec.get("hot_topic", ""),
+                            "reason": ai_rec.get("reason", ""),
+                            "action": ai_rec.get("action", "watch"),
+                            "risk": ai_rec.get("risk", ""),
+                            "signals": [],
+                        }
+                    )
 
                 if filtered:
                     # 过滤掉action=avoid/sell的，只保留有操作价值的
@@ -1170,6 +1286,7 @@ async def screener_ai_recommend(req: ScreenerAIRecommendRequest):
 
         # 清理NaN/None值，防止JSON序列化错误
         import math
+
         for rec in recommendations:
             for k in ("price", "change_pct", "score"):
                 v = rec.get(k)
@@ -1191,6 +1308,7 @@ async def screener_ai_recommend(req: ScreenerAIRecommendRequest):
 
     except Exception as e:
         import traceback
+
         print(f"[AI推荐] 异常: {e}")
         traceback.print_exc()
         fallback = _get_default_hot_symbols(market)
@@ -1213,7 +1331,15 @@ async def screener_tech_signals(req: ScreenerTechSignalsRequest):
 
     try:
         symbol_list = req.symbols if req.symbols else _get_hot_symbol_list(req.market)
-        market_enum = MktEnum.CRYPTO if req.market == 'crypto' else MktEnum.US if req.market == 'us' else MktEnum.HK if req.market == 'hk' else MktEnum.CN
+        market_enum = (
+            MktEnum.CRYPTO
+            if req.market == "crypto"
+            else MktEnum.US
+            if req.market == "us"
+            else MktEnum.HK
+            if req.market == "hk"
+            else MktEnum.CN
+        )
         fetcher = get_fetcher(market_enum)
 
         signals = []
@@ -1223,11 +1349,11 @@ async def screener_tech_signals(req: ScreenerTechSignalsRequest):
             try:
                 # 港股加.HK后缀
                 fetch_sym = symbol
-                if req.market == 'hk' and not symbol.endswith('.HK'):
-                    code = symbol.lstrip('0') or '0'
+                if req.market == "hk" and not symbol.endswith(".HK"):
+                    code = symbol.lstrip("0") or "0"
                     while len(code) < 4:
-                        code = '0' + code
-                    fetch_sym = code + '.HK'
+                        code = "0" + code
+                    fetch_sym = code + ".HK"
                 klines = await fetcher.get_klines(fetch_sym, Interval.D1, limit=50)
                 print(f"[TechScan] {fetch_sym}: {len(klines) if klines else 0} klines")
                 if not klines or len(klines) < 20:
@@ -1271,7 +1397,9 @@ async def screener_tech_signals(req: ScreenerTechSignalsRequest):
 
                 # 量比
                 vol_ma = _sma(volume, 20)
-                vol_ratio = round(float(volume[-1] / vol_ma[-1]), 1) if not np.isnan(vol_ma[-1]) and vol_ma[-1] > 0 else 1.0
+                vol_ratio = (
+                    round(float(volume[-1] / vol_ma[-1]), 1) if not np.isnan(vol_ma[-1]) and vol_ma[-1] > 0 else 1.0
+                )
 
                 # 放量突破
                 if vol_ratio >= 2.0 and change_pct > 0:
@@ -1297,7 +1425,12 @@ async def screener_tech_signals(req: ScreenerTechSignalsRequest):
                 if len(close) >= 10:
                     ma5 = _sma(close, 5)
                     ma10 = _sma(close, 10)
-                    if not np.isnan(ma5[-1]) and not np.isnan(ma10[-1]) and not np.isnan(ma5[-2]) and not np.isnan(ma10[-2]):
+                    if (
+                        not np.isnan(ma5[-1])
+                        and not np.isnan(ma10[-1])
+                        and not np.isnan(ma5[-2])
+                        and not np.isnan(ma10[-2])
+                    ):
                         if ma5[-2] <= ma10[-2] and ma5[-1] > ma10[-1]:
                             signal_type = (signal_type + "+MA金叉") if signal_type else "MA5/10金叉"
                         elif ma5[-2] >= ma10[-2] and ma5[-1] < ma10[-1]:
@@ -1308,16 +1441,18 @@ async def screener_tech_signals(req: ScreenerTechSignalsRequest):
                     signal_type = "暂无明显信号"
 
                 if True:  # 始终添加（让用户看到所有品种的技术面状态）
-                    signals.append({
-                        "symbol": symbol,
-                        "price": round(latest, 4),
-                        "change_pct": change_pct,
-                        "signal_type": signal_type,
-                        "rsi": rsi_val,
-                        "macd_trend": macd_trend,
-                        "volume_ratio": vol_ratio,
-                        "market": req.market,
-                    })
+                    signals.append(
+                        {
+                            "symbol": symbol,
+                            "price": round(latest, 4),
+                            "change_pct": change_pct,
+                            "signal_type": signal_type,
+                            "rsi": rsi_val,
+                            "macd_trend": macd_trend,
+                            "volume_ratio": vol_ratio,
+                            "market": req.market,
+                        }
+                    )
 
             except Exception as e:
                 logger.debug(f"技术扫描 {symbol} 异常: {e}")
@@ -1376,7 +1511,7 @@ def _build_keyword_recommendations(market: str, news_items: list) -> list:
     scores = {sym: 0 for sym in market_symbols}
 
     # 扫描新闻标题匹配关键词
-    for news in (news_items or []):
+    for news in news_items or []:
         title = (news.get("title", "") + " " + news.get("summary", "")).lower()
         for sym, keywords in market_symbols.items():
             for kw in keywords:
@@ -1390,18 +1525,20 @@ def _build_keyword_recommendations(market: str, news_items: list) -> list:
     recs = []
     for sym, score in sorted_syms:
         base_score = max(50, min(90, 50 + score))
-        recs.append({
-            "symbol": sym,
-            "name": "",
-            "market": market,
-            "price": None,
-            "change_pct": 0,
-            "score": base_score,
-            "hot_topic": "热门品种" if score == 0 else "新闻热点",
-            "reason": "基于新闻关键词匹配" if score > 0 else "市场热门品种",
-            "action": "watch",
-            "signals": [],
-        })
+        recs.append(
+            {
+                "symbol": sym,
+                "name": "",
+                "market": market,
+                "price": None,
+                "change_pct": 0,
+                "score": base_score,
+                "hot_topic": "热门品种" if score == 0 else "新闻热点",
+                "reason": "基于新闻关键词匹配" if score > 0 else "市场热门品种",
+                "action": "watch",
+                "signals": [],
+            }
+        )
 
     return recs
 
@@ -1514,18 +1651,20 @@ def _get_default_hot_symbols(market: str) -> list:
 
     result = []
     for item in defaults.get(market, defaults["crypto"]):
-        result.append({
-            "symbol": item["symbol"],
-            "name": item["name"],
-            "market": market,
-            "price": None,
-            "change_pct": 0,
-            "score": 60,
-            "hot_topic": item["hot_topic"],
-            "reason": "市场热门品种",
-            "action": "watch",
-            "signals": [],
-        })
+        result.append(
+            {
+                "symbol": item["symbol"],
+                "name": item["name"],
+                "market": market,
+                "price": None,
+                "change_pct": 0,
+                "score": 60,
+                "hot_topic": item["hot_topic"],
+                "reason": "市场热门品种",
+                "action": "watch",
+                "signals": [],
+            }
+        )
     return result
 
 
@@ -1533,27 +1672,105 @@ def _get_hot_symbol_list(market: str) -> list:
     """返回热门品种代码列表（用于技术扫描）"""
     lists = {
         "crypto": [
-            "BTC-USDT", "ETH-USDT", "SOL-USDT", "BNB-USDT", "XRP-USDT",
-            "DOGE-USDT", "ADA-USDT", "AVAX-USDT", "DOT-USDT", "MATIC-USDT",
-            "LINK-USDT", "UNI-USDT", "ATOM-USDT", "FIL-USDT", "APT-USDT",
+            "BTC-USDT",
+            "ETH-USDT",
+            "SOL-USDT",
+            "BNB-USDT",
+            "XRP-USDT",
+            "DOGE-USDT",
+            "ADA-USDT",
+            "AVAX-USDT",
+            "DOT-USDT",
+            "MATIC-USDT",
+            "LINK-USDT",
+            "UNI-USDT",
+            "ATOM-USDT",
+            "FIL-USDT",
+            "APT-USDT",
         ],
         "us": [
-            "NVDA", "TSLA", "AAPL", "MSFT", "GOOGL", "AMZN", "META", "AMD",
-            "NFLX", "JPM", "BAC", "V", "MA", "UNH", "JNJ", "PFE", "WMT",
-            "HD", "CRM", "ORCL", "AVGO", "MU", "INTC", "COIN", "PLTR",
-            "SNOW", "SQ", "SHOP",
+            "NVDA",
+            "TSLA",
+            "AAPL",
+            "MSFT",
+            "GOOGL",
+            "AMZN",
+            "META",
+            "AMD",
+            "NFLX",
+            "JPM",
+            "BAC",
+            "V",
+            "MA",
+            "UNH",
+            "JNJ",
+            "PFE",
+            "WMT",
+            "HD",
+            "CRM",
+            "ORCL",
+            "AVGO",
+            "MU",
+            "INTC",
+            "COIN",
+            "PLTR",
+            "SNOW",
+            "SQ",
+            "SHOP",
         ],
         "hk": [
-            "00700", "09988", "09888", "01810", "09618", "03690", "02318",
-            "00388", "01024", "02015", "09866", "00941", "01211", "02269",
-            "09999", "01299", "00175", "09868", "02020", "00005",
+            "00700",
+            "09988",
+            "09888",
+            "01810",
+            "09618",
+            "03690",
+            "02318",
+            "00388",
+            "01024",
+            "02015",
+            "09866",
+            "00941",
+            "01211",
+            "02269",
+            "09999",
+            "01299",
+            "00175",
+            "09868",
+            "02020",
+            "00005",
         ],
         "cn": [
-            "600519", "000858", "000568", "300750", "002594", "601012",
-            "600438", "000001", "601318", "601398", "600036", "002415",
-            "300059", "688981", "002230", "600276", "300760", "603259",
-            "000651", "000333", "600887", "600048", "601668", "002371",
-            "688008", "300274", "002459", "600893", "002179", "300033",
+            "600519",
+            "000858",
+            "000568",
+            "300750",
+            "002594",
+            "601012",
+            "600438",
+            "000001",
+            "601318",
+            "601398",
+            "600036",
+            "002415",
+            "300059",
+            "688981",
+            "002230",
+            "600276",
+            "300760",
+            "603259",
+            "000651",
+            "000333",
+            "600887",
+            "600048",
+            "601668",
+            "002371",
+            "688008",
+            "300274",
+            "002459",
+            "600893",
+            "002179",
+            "300033",
         ],
     }
     return lists.get(market, lists["crypto"])
@@ -1564,10 +1781,12 @@ def _get_hot_symbol_list(market: str) -> list:
 # ---------------------------------------------------------------------------
 aijudge_router = APIRouter(prefix="/api/aijudge", tags=["AI研判"])
 
+
 class AIJudgeRequest(BaseModel):
     symbol: str
     market: str = "crypto"
     interval: str = "1D"
+
 
 @aijudge_router.post("/analyze")
 async def ai_judge_analyze(req: AIJudgeRequest):
@@ -1582,9 +1801,9 @@ async def ai_judge_analyze(req: AIJudgeRequest):
 
     # 1. 获取K线数据（港股需要转换symbol: 00700→0700.HK）
     fetch_symbol = req.symbol
-    if market == 'hk' and not req.symbol.endswith('.HK'):
-        code = req.symbol.lstrip('0') or '0'
-        fetch_symbol = code.zfill(4) + '.HK'
+    if market == "hk" and not req.symbol.endswith(".HK"):
+        code = req.symbol.lstrip("0") or "0"
+        fetch_symbol = code.zfill(4) + ".HK"
 
     try:
         mkt = MktEnum(market)
@@ -1624,20 +1843,34 @@ async def ai_judge_analyze(req: AIJudgeRequest):
 
     # 技术信号判断
     tech_signals = []
-    if ma5 > ma20: tech_signals.append("MA5>MA20 多头排列")
-    else: tech_signals.append("MA5<MA20 空头排列")
-    if ma60 and price > ma60: tech_signals.append("价格在MA60之上")
-    elif ma60: tech_signals.append("价格在MA60之下")
-    if dif > dea and macd_data["dif"][-2] <= macd_data["dea"][-2]: tech_signals.append("MACD金叉")
-    elif dif < dea and macd_data["dif"][-2] >= macd_data["dea"][-2]: tech_signals.append("MACD死叉")
-    if hist > 0: tech_signals.append("MACD柱状线为正")
-    else: tech_signals.append("MACD柱状线为负")
-    if rsi14 > 70: tech_signals.append("RSI超买区(>70)")
-    elif rsi14 < 30: tech_signals.append("RSI超卖区(<30)")
-    elif rsi14 > 50: tech_signals.append("RSI偏多")
-    else: tech_signals.append("RSI偏空")
-    if price > boll_upper: tech_signals.append("突破布林上轨")
-    elif price < boll_lower: tech_signals.append("跌破布林下轨")
+    if ma5 > ma20:
+        tech_signals.append("MA5>MA20 多头排列")
+    else:
+        tech_signals.append("MA5<MA20 空头排列")
+    if ma60 and price > ma60:
+        tech_signals.append("价格在MA60之上")
+    elif ma60:
+        tech_signals.append("价格在MA60之下")
+    if dif > dea and macd_data["dif"][-2] <= macd_data["dea"][-2]:
+        tech_signals.append("MACD金叉")
+    elif dif < dea and macd_data["dif"][-2] >= macd_data["dea"][-2]:
+        tech_signals.append("MACD死叉")
+    if hist > 0:
+        tech_signals.append("MACD柱状线为正")
+    else:
+        tech_signals.append("MACD柱状线为负")
+    if rsi14 > 70:
+        tech_signals.append("RSI超买区(>70)")
+    elif rsi14 < 30:
+        tech_signals.append("RSI超卖区(<30)")
+    elif rsi14 > 50:
+        tech_signals.append("RSI偏多")
+    else:
+        tech_signals.append("RSI偏空")
+    if price > boll_upper:
+        tech_signals.append("突破布林上轨")
+    elif price < boll_lower:
+        tech_signals.append("跌破布林下轨")
 
     indicators_summary = {
         "价格": f"{price:,.2f}",
@@ -1660,30 +1893,46 @@ async def ai_judge_analyze(req: AIJudgeRequest):
     news_summary = []
     try:
         from backend.screener.news import NewsCollector
+
         collector = NewsCollector()
         news = await collector.fetch_all(market=market)
         await collector.close()
 
-        symbol_lower = req.symbol.lower().replace("-usdt","").replace("-usd","").replace(".hk","")
+        symbol_lower = req.symbol.lower().replace("-usdt", "").replace("-usd", "").replace(".hk", "")
         # 品种名称映射（用于关键词匹配）
         name_map = {
-            "00700": ["腾讯","tencent"], "09988": ["阿里","alibaba"], "09888": ["百度","baidu"],
-            "01810": ["小米","xiaomi"], "02015": ["理想","li auto","lixiang"], "09866": ["蔚来","nio"],
-            "01211": ["比亚迪","byd"], "03690": ["美团","meituan"], "09618": ["京东","jd"],
-            "600519": ["茅台","maotai"], "300750": ["宁德","catl"], "002594": ["比亚迪","byd"],
-            "000001": ["平安","pingan"], "601398": ["工商银行","icbc"],
-            "nvda": ["nvidia","英伟达"], "tsla": ["tesla","特斯拉"], "aapl": ["apple","苹果"],
-            "msft": ["microsoft","微软"], "googl": ["google","谷歌"], "meta": ["facebook","meta"],
-            "btc": ["bitcoin","比特币"], "eth": ["ethereum","以太坊"], "sol": ["solana"],
+            "00700": ["腾讯", "tencent"],
+            "09988": ["阿里", "alibaba"],
+            "09888": ["百度", "baidu"],
+            "01810": ["小米", "xiaomi"],
+            "02015": ["理想", "li auto", "lixiang"],
+            "09866": ["蔚来", "nio"],
+            "01211": ["比亚迪", "byd"],
+            "03690": ["美团", "meituan"],
+            "09618": ["京东", "jd"],
+            "600519": ["茅台", "maotai"],
+            "300750": ["宁德", "catl"],
+            "002594": ["比亚迪", "byd"],
+            "000001": ["平安", "pingan"],
+            "601398": ["工商银行", "icbc"],
+            "nvda": ["nvidia", "英伟达"],
+            "tsla": ["tesla", "特斯拉"],
+            "aapl": ["apple", "苹果"],
+            "msft": ["microsoft", "微软"],
+            "googl": ["google", "谷歌"],
+            "meta": ["facebook", "meta"],
+            "btc": ["bitcoin", "比特币"],
+            "eth": ["ethereum", "以太坊"],
+            "sol": ["solana"],
         }
         keywords = name_map.get(symbol_lower, [symbol_lower])
 
         # 分层筛选
-        direct_match = []   # 直接提到品种的
-        market_news = []     # 同市场的通用新闻
+        direct_match = []  # 直接提到品种的
+        market_news = []  # 同市场的通用新闻
 
         for n in news:
-            text = (n.get("title","") + " " + n.get("content","")).lower()
+            text = (n.get("title", "") + " " + n.get("content", "")).lower()
             # 品种/公司名直接匹配
             if any(kw in text for kw in keywords):
                 direct_match.append(n)
@@ -1696,7 +1945,7 @@ async def ai_judge_analyze(req: AIJudgeRequest):
         if remaining > 0:
             relevant.extend(market_news[:remaining])
 
-        news_summary = [{"title": n.get("title",""), "source": n.get("source","")} for n in relevant]
+        news_summary = [{"title": n.get("title", ""), "source": n.get("source", "")} for n in relevant]
     except Exception:
         pass
 
@@ -1708,19 +1957,20 @@ async def ai_judge_analyze(req: AIJudgeRequest):
         # 加密货币：恐惧贪婪、资金费率、多空比、链上数据
         try:
             from backend.crypto_dashboard.sentiment import SentimentData
+
             sentiment = SentimentData()
             fg, fr, ls = await asyncio.gather(
                 sentiment.get_fear_greed_index(),
                 sentiment.get_funding_rate(),
                 sentiment.get_long_short_ratio(),
-                return_exceptions=True
+                return_exceptions=True,
             )
             if not isinstance(fg, Exception) and fg:
                 onchain_summary["恐惧贪婪指数"] = f"{fg.get('value', '?')} ({fg.get('label_cn', fg.get('label', ''))})"
             if not isinstance(fr, Exception) and fr:
                 current = fr.get("current", {})
                 rate = current.get("fundingRate", current.get("rate", 0))
-                onchain_summary["资金费率"] = f"{float(rate)*100:.4f}%"
+                onchain_summary["资金费率"] = f"{float(rate) * 100:.4f}%"
             if not isinstance(ls, Exception) and ls:
                 current = ls.get("current", {})
                 ratio = current.get("ratio", ls.get("ratio", "?"))
@@ -1765,7 +2015,7 @@ async def ai_judge_analyze(req: AIJudgeRequest):
         prev_close = float(close[-2]) if len(close) >= 2 else price
         onchain_summary["涨停价"] = f"{prev_close * 1.1:,.2f}"
         onchain_summary["跌停价"] = f"{prev_close * 0.9:,.2f}"
-        onchain_summary["距涨停"] = f"{((prev_close*1.1 - price)/price*100):+.2f}%"
+        onchain_summary["距涨停"] = f"{((prev_close * 1.1 - price) / price * 100):+.2f}%"
         returns = np.diff(np.log(close[-30:])) if len(close) >= 30 else np.array([])
         if len(returns) > 0:
             annual_vol = float(np.std(returns) * np.sqrt(252) * 100)
@@ -1776,23 +2026,27 @@ async def ai_judge_analyze(req: AIJudgeRequest):
     llm_verdict = None
     try:
         import sqlite3, aiosqlite
+
         llm_settings = {}
         async with aiosqlite.connect(DB_PATH) as db:
-            async for row in await db.execute("SELECT key, value FROM settings WHERE key LIKE 'deepseek_%' OR key LIKE 'qwen_%' OR key = 'llm_provider'"):
+            async for row in await db.execute(
+                "SELECT key, value FROM settings WHERE key LIKE 'deepseek_%' OR key LIKE 'qwen_%' OR key = 'llm_provider'"
+            ):
                 llm_settings[row[0]] = row[1].strip('"') if row[1].startswith('"') else row[1]
 
-        provider = llm_settings.get('llm_provider', 'deepseek')
-        if provider == 'qwen':
-            api_key = llm_settings.get('qwen_api_key', '')
-            base_url = llm_settings.get('qwen_base_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1')
-            model = llm_settings.get('qwen_model', 'qwen-turbo')
+        provider = llm_settings.get("llm_provider", "deepseek")
+        if provider == "qwen":
+            api_key = llm_settings.get("qwen_api_key", "")
+            base_url = llm_settings.get("qwen_base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+            model = llm_settings.get("qwen_model", "qwen-turbo")
         else:
-            api_key = llm_settings.get('deepseek_api_key', '')
-            base_url = llm_settings.get('deepseek_base_url', 'https://api.deepseek.com/v1')
-            model = llm_settings.get('deepseek_model', 'deepseek-chat')
+            api_key = llm_settings.get("deepseek_api_key", "")
+            base_url = llm_settings.get("deepseek_base_url", "https://api.deepseek.com/v1")
+            model = llm_settings.get("deepseek_model", "deepseek-chat")
 
         if api_key:
             from openai import AsyncOpenAI
+
             client = AsyncOpenAI(api_key=api_key, base_url=base_url)
 
             # 构建市场数据部分
@@ -1805,7 +2059,9 @@ async def ai_judge_analyze(req: AIJudgeRequest):
 
             onchain_text = ""
             if onchain_summary:
-                onchain_text = f"\n## {extra_section_title}\n" + "\n".join(f"- {k}: {v}" for k, v in onchain_summary.items())
+                onchain_text = f"\n## {extra_section_title}\n" + "\n".join(
+                    f"- {k}: {v}" for k, v in onchain_summary.items()
+                )
 
             role_desc = {
                 "crypto": "加密货币量化交易分析师",
@@ -1820,11 +2076,11 @@ async def ai_judge_analyze(req: AIJudgeRequest):
 {json.dumps(indicators_summary, ensure_ascii=False, indent=2)}
 
 ## 技术信号
-{chr(10).join('- ' + s for s in tech_signals)}
+{chr(10).join("- " + s for s in tech_signals)}
 {onchain_text}
 
 ## 近期相关新闻与舆情
-{chr(10).join('- ' + n['title'] for n in news_summary) if news_summary else '- 无相关新闻'}
+{chr(10).join("- " + n["title"] for n in news_summary) if news_summary else "- 无相关新闻"}
 
 请综合以上「技术面」「链上数据」「市场情绪」「新闻舆情」四个维度进行分析。
 
@@ -1845,8 +2101,10 @@ async def ai_judge_analyze(req: AIJudgeRequest):
 }}"""
 
             response = await asyncio.wait_for(
-                client.chat.completions.create(model=model, messages=[{"role":"user","content":prompt}], max_tokens=1000, temperature=0.3),
-                timeout=30
+                client.chat.completions.create(
+                    model=model, messages=[{"role": "user", "content": prompt}], max_tokens=1000, temperature=0.3
+                ),
+                timeout=30,
             )
             result_text = (response.choices[0].message.content or "").strip()
             # 提取JSON
@@ -1855,17 +2113,27 @@ async def ai_judge_analyze(req: AIJudgeRequest):
                 json_lines = []
                 in_block = False
                 for line in lines:
-                    if line.strip().startswith("```") and not in_block: in_block = True; continue
-                    elif line.strip() == "```" and in_block: break
-                    elif in_block: json_lines.append(line)
+                    if line.strip().startswith("```") and not in_block:
+                        in_block = True
+                        continue
+                    elif line.strip() == "```" and in_block:
+                        break
+                    elif in_block:
+                        json_lines.append(line)
                 result_text = "\n".join(json_lines).strip()
-            if result_text and result_text[0] not in ('{','['):
-                start = result_text.find('{')
-                if start != -1: result_text = result_text[start:]
+            if result_text and result_text[0] not in ("{", "["):
+                start = result_text.find("{")
+                if start != -1:
+                    result_text = result_text[start:]
             llm_verdict = json.loads(result_text)
     except Exception as e:
         logger.warning(f"AI研判LLM调用失败: {e}")
-        llm_verdict = {"direction": "观望", "confidence": 50, "reasoning": f"LLM分析暂不可用: {str(e)[:50]}", "risk_warning": "请自行判断"}
+        llm_verdict = {
+            "direction": "观望",
+            "confidence": 50,
+            "reasoning": f"LLM分析暂不可用: {str(e)[:50]}",
+            "risk_warning": "请自行判断",
+        }
 
     return {
         "symbol": req.symbol,
@@ -1879,15 +2147,18 @@ async def ai_judge_analyze(req: AIJudgeRequest):
         "verdict": llm_verdict,
     }
 
+
 # ---------------------------------------------------------------------------
 # Router: Dashboard
 # ---------------------------------------------------------------------------
 dashboard_router = APIRouter(prefix="/api/dashboard", tags=["仪表盘"])
 
+
 @dashboard_router.get("/fear-greed")
 async def get_fear_greed():
     """恐惧贪婪指数 — 调用 SentimentData"""
     from backend.crypto_dashboard.sentiment import SentimentData
+
     sd = SentimentData()
     try:
         return await sd.get_fear_greed_index()
@@ -1895,10 +2166,12 @@ async def get_fear_greed():
         logger.error(f"获取恐惧贪婪指数失败: {e}")
         return {"value": None, "label": "Unknown", "label_cn": "获取失败", "history": [], "source": "error"}
 
+
 @dashboard_router.get("/funding-rate")
 async def get_funding_rate(symbol: str = Query("BTC-USDT-SWAP")):
     """资金费率 — 调用 SentimentData"""
     from backend.crypto_dashboard.sentiment import SentimentData
+
     sd = SentimentData()
     try:
         return await sd.get_funding_rate(symbol)
@@ -1906,10 +2179,12 @@ async def get_funding_rate(symbol: str = Query("BTC-USDT-SWAP")):
         logger.error(f"获取资金费率失败: {e}")
         return {"symbol": symbol, "current": None, "history": [], "source": "error"}
 
+
 @dashboard_router.get("/open-interest")
 async def get_open_interest(symbol: str = Query("BTC-USDT-SWAP")):
     """未平仓合约 — 调用 SentimentData"""
     from backend.crypto_dashboard.sentiment import SentimentData
+
     sd = SentimentData()
     try:
         return await sd.get_open_interest(symbol)
@@ -1917,10 +2192,12 @@ async def get_open_interest(symbol: str = Query("BTC-USDT-SWAP")):
         logger.error(f"获取持仓量失败: {e}")
         return {"symbol": symbol, "oi": None, "source": "error"}
 
+
 @dashboard_router.get("/long-short-ratio")
 async def get_long_short_ratio(coin: str = Query("BTC")):
     """多空比 — 调用 SentimentData"""
     from backend.crypto_dashboard.sentiment import SentimentData
+
     sd = SentimentData()
     try:
         return await sd.get_long_short_ratio(coin)
@@ -1928,10 +2205,12 @@ async def get_long_short_ratio(coin: str = Query("BTC")):
         logger.error(f"获取多空比失败: {e}")
         return {"coin": coin, "current": None, "history": [], "source": "error"}
 
+
 @dashboard_router.get("/exchange-flow")
 async def get_exchange_flow(coin: str = Query("BTC")):
     """交易所资金流向 — 调用 OnChainData"""
     from backend.crypto_dashboard.onchain import OnChainData
+
     oc = OnChainData()
     try:
         return await oc.get_exchange_flow(coin)
@@ -1939,10 +2218,12 @@ async def get_exchange_flow(coin: str = Query("BTC")):
         logger.error(f"获取交易所流向失败: {e}")
         return {"netflow": [], "inflow": [], "outflow": [], "source": "error"}
 
+
 @dashboard_router.get("/whale-transactions")
 async def get_whale_transactions(coin: str = Query("BTC"), limit: int = Query(20)):
     """巨鲸交易 — 调用 OnChainData"""
     from backend.crypto_dashboard.onchain import OnChainData
+
     oc = OnChainData()
     try:
         txs = await oc.get_whale_transactions(coin)
@@ -1951,10 +2232,12 @@ async def get_whale_transactions(coin: str = Query("BTC"), limit: int = Query(20
         logger.error(f"获取巨鲸交易失败: {e}")
         return {"coin": coin, "transactions": []}
 
+
 @dashboard_router.get("/calendar")
 async def get_calendar():
     """经济日历 — 调用 EconomicCalendar"""
     from backend.crypto_dashboard.calendar import EconomicCalendar
+
     cal = EconomicCalendar()
     try:
         macro = await cal.get_macro_events()
@@ -1964,10 +2247,12 @@ async def get_calendar():
         logger.error(f"获取经济日历失败: {e}")
         return {"events": []}
 
+
 @dashboard_router.get("/onchain")
 async def get_onchain(coin: str = Query("BTC"), metric: str = Query("active_addresses")):
     """链上数据 — 调用 OnChainData"""
     from backend.crypto_dashboard.onchain import OnChainData
+
     oc = OnChainData()
     try:
         if metric == "active_addresses":
@@ -1987,10 +2272,12 @@ async def get_onchain(coin: str = Query("BTC"), metric: str = Query("active_addr
         logger.error(f"获取链上数据失败: {e}")
         return {"coin": coin, "metric": metric, "data": []}
 
+
 # ---------------------------------------------------------------------------
 # Router: Watchlist
 # ---------------------------------------------------------------------------
 watchlist_router = APIRouter(prefix="/api/watchlist", tags=["自选列表"])
+
 
 @watchlist_router.get("")
 async def get_watchlist():
@@ -2014,6 +2301,7 @@ async def get_watchlist():
     finally:
         await db.close()
 
+
 @watchlist_router.post("")
 async def add_to_watchlist(req: WatchlistAddRequest):
     item_id = str(uuid.uuid4())
@@ -2029,8 +2317,10 @@ async def add_to_watchlist(req: WatchlistAddRequest):
     finally:
         await db.close()
 
+
 class WatchlistReorderRequest(BaseModel):
     items: List[Dict[str, Any]]  # [{"id": "xxx", "sort_order": 0}, ...]
+
 
 @watchlist_router.put("/reorder")
 async def reorder_watchlist(req: WatchlistReorderRequest):
@@ -2049,6 +2339,7 @@ async def reorder_watchlist(req: WatchlistReorderRequest):
         return {"status": "ok", "updated": len(req.items)}
     finally:
         await db.close()
+
 
 @watchlist_router.put("/{item_id}")
 async def update_watchlist_item(item_id: str, req: WatchlistUpdateRequest):
@@ -2071,6 +2362,7 @@ async def update_watchlist_item(item_id: str, req: WatchlistUpdateRequest):
     finally:
         await db.close()
 
+
 @watchlist_router.delete("/{item_id}")
 async def remove_from_watchlist(item_id: str):
     db = await get_db()
@@ -2081,10 +2373,12 @@ async def remove_from_watchlist(item_id: str):
     finally:
         await db.close()
 
+
 # ---------------------------------------------------------------------------
 # Router: Settings
 # ---------------------------------------------------------------------------
 settings_router = APIRouter(prefix="/api/settings", tags=["设置"])
+
 
 @settings_router.get("")
 async def get_settings():
@@ -2105,6 +2399,7 @@ async def get_settings():
     finally:
         await db.close()
 
+
 @settings_router.put("")
 async def update_settings(req: SettingsUpdate):
     db = await get_db()
@@ -2120,10 +2415,12 @@ async def update_settings(req: SettingsUpdate):
     finally:
         await db.close()
 
+
 # ---------------------------------------------------------------------------
 # Router: 缠论分析
 # ---------------------------------------------------------------------------
 chanlun_router = APIRouter(prefix="/api/chanlun", tags=["缠论"])
+
 
 @chanlun_router.get("")
 async def get_chanlun(
@@ -2150,6 +2447,7 @@ async def get_chanlun(
     market = _guess_market(symbol, market)
 
     from backend.data.models import Market as MktEnum, Interval as IntEnum
+
     try:
         mkt = MktEnum(market)
     except ValueError:
@@ -2162,6 +2460,7 @@ async def get_chanlun(
     # 1. 获取K线数据
     try:
         from backend.data.fetcher import get_fetcher
+
         fetcher = get_fetcher(mkt)
         candles = await fetcher.get_klines(symbol, iv, limit)
     except Exception as e:
@@ -2191,6 +2490,7 @@ async def get_chanlun(
 
     try:
         from backend.chanlun_engine.chanlun_service import analyze
+
         result = analyze(candle_dicts)
     except Exception as e:
         logger.error(f"[Chanlun] 缠论分析失败: {e}", exc_info=True)
@@ -2203,6 +2503,7 @@ async def get_chanlun(
 async def chanlun_from_data(req: Dict[str, Any]):
     """直接用前端传来的K线数据做缠论分析，确保数据一致"""
     import sys as _sys, os as _os
+
     candles = req.get("candles", [])
     if not candles or len(candles) < 30:
         return {"bi_list": [], "seg_list": [], "zs_list": [], "bsp_list": []}
@@ -2211,6 +2512,7 @@ async def chanlun_from_data(req: Dict[str, Any]):
         _sys.path.insert(0, _engine_dir)
     try:
         from backend.chanlun_engine.chanlun_service import analyze
+
         return analyze(candles)
     except Exception as e:
         return {"bi_list": [], "seg_list": [], "zs_list": [], "bsp_list": [], "error": str(e)}
@@ -2220,15 +2522,17 @@ async def chanlun_from_data(req: Dict[str, Any]):
 # 艾略特波浪分析端点
 # ---------------------------------------------------------------------------
 
+
 @chanlun_router.post("/elliott-wave/from-data")
 async def elliott_wave_from_data(req: Dict[str, Any]):
     """用前端传来的可见区域K线数据做艾略特波浪分析"""
-    candles    = req.get("candles", [])
+    candles = req.get("candles", [])
     bar_offset = int(req.get("bar_offset", 0))
     if not candles or len(candles) < 30:
         return {"patterns": [], "predictions": []}
     try:
         from backend.elliott_wave.service import analyze
+
         return analyze(candles, bar_offset=bar_offset)
     except Exception as e:
         logger.error(f"艾略特波浪分析失败: {e}", exc_info=True)
@@ -2253,6 +2557,7 @@ async def chanlun_verdict(
     market = _guess_market(symbol, market)
 
     from backend.data.models import Market as MktEnum, Interval as IntEnum
+
     try:
         mkt = MktEnum(market)
     except ValueError:
@@ -2276,9 +2581,9 @@ async def chanlun_verdict(
     # 并行获取三个周期的K线数据
     # 港股symbol转换
     fetch_symbol = symbol
-    if market == 'hk' and not symbol.endswith('.HK'):
-        code = symbol.lstrip('0') or '0'
-        fetch_symbol = code.zfill(4) + '.HK'
+    if market == "hk" and not symbol.endswith(".HK"):
+        code = symbol.lstrip("0") or "0"
+        fetch_symbol = code.zfill(4) + ".HK"
 
     async def _fetch_and_analyze(tf_label, tf_enum):
         try:
@@ -2287,14 +2592,21 @@ async def chanlun_verdict(
             if not candles:
                 return tf_label, None, []
             candle_dicts = [
-                {"timestamp": c.timestamp, "open": c.open, "high": c.high,
-                 "low": c.low, "close": c.close, "volume": c.volume}
+                {
+                    "timestamp": c.timestamp,
+                    "open": c.open,
+                    "high": c.high,
+                    "low": c.low,
+                    "close": c.close,
+                    "volume": c.volume,
+                }
                 for c in candles
             ]
             result = chanlun_analyze(candle_dicts)
             return tf_label, result, candle_dicts
         except Exception as e:
             import traceback
+
             print(f"[ChanlunVerdict] {tf_label} 分析失败: {e}")
             traceback.print_exc()
             return tf_label, None, []
@@ -2390,12 +2702,14 @@ async def chanlun_verdict(
                     position = "价格在中枢下方"
             else:
                 position = "价格在中枢内"
-            zs_info.append({
-                "tf": tf_label,
-                "zg": round(zs["zg"], 2),
-                "zd": round(zs["zd"], 2),
-                "position": position,
-            })
+            zs_info.append(
+                {
+                    "tf": tf_label,
+                    "zg": round(zs["zg"], 2),
+                    "zd": round(zs["zd"], 2),
+                    "position": position,
+                }
+            )
         return zs_info
 
     def _extract_bsp(tf_label, result):
@@ -2407,13 +2721,15 @@ async def chanlun_verdict(
         active = []
         # 只关注最近的买卖点（最后3个）
         for bsp in bsp_list[-3:]:
-            active.append({
-                "tf": tf_label,
-                "type": bsp["type"],
-                "is_buy": bsp["is_buy"],
-                "price": round(bsp["y"], 2),
-                "desc": f"{tf_label} {'买点' if bsp['is_buy'] else '卖点'} {bsp['type']}",
-            })
+            active.append(
+                {
+                    "tf": tf_label,
+                    "type": bsp["type"],
+                    "is_buy": bsp["is_buy"],
+                    "price": round(bsp["y"], 2),
+                    "desc": f"{tf_label} {'买点' if bsp['is_buy'] else '卖点'} {bsp['type']}",
+                }
+            )
         return active
 
     def _generate_verdict(levels, zhongshu_all, active_bsp_all):
@@ -2532,49 +2848,63 @@ async def chanlun_verdict(
         # 生成等待信号
         if action == "wait":
             if small and small["last_bi_dir"] == "down":
-                next_signals.append({
-                    "desc": f"{tf_labels[0]}第一类买点",
-                    "condition": f"{tf_labels[0]}下跌笔完成+背驰",
-                    "importance": "操作级别信号",
-                })
+                next_signals.append(
+                    {
+                        "desc": f"{tf_labels[0]}第一类买点",
+                        "condition": f"{tf_labels[0]}下跌笔完成+背驰",
+                        "importance": "操作级别信号",
+                    }
+                )
             if medium and medium["last_bi_dir"] == "down":
-                next_signals.append({
-                    "desc": f"{tf_labels[1]}第一类买点",
-                    "condition": f"{tf_labels[1]}下跌笔完成+背驰",
-                    "importance": "确认信号",
-                })
+                next_signals.append(
+                    {
+                        "desc": f"{tf_labels[1]}第一类买点",
+                        "condition": f"{tf_labels[1]}下跌笔完成+背驰",
+                        "importance": "确认信号",
+                    }
+                )
             if large and large["last_bi_dir"] == "down":
-                next_signals.append({
-                    "desc": f"{tf_labels[2]}背驰信号",
-                    "condition": f"{tf_labels[2]}下跌力度衰减+MACD面积缩小",
-                    "importance": "大级别转折",
-                })
+                next_signals.append(
+                    {
+                        "desc": f"{tf_labels[2]}背驰信号",
+                        "condition": f"{tf_labels[2]}下跌力度衰减+MACD面积缩小",
+                        "importance": "大级别转折",
+                    }
+                )
         elif action in ("hold_long", "buy"):
             if small:
-                next_signals.append({
-                    "desc": f"{tf_labels[0]}第一类卖点",
-                    "condition": f"{tf_labels[0]}上涨笔完成+背驰",
-                    "importance": "减仓信号",
-                })
+                next_signals.append(
+                    {
+                        "desc": f"{tf_labels[0]}第一类卖点",
+                        "condition": f"{tf_labels[0]}上涨笔完成+背驰",
+                        "importance": "减仓信号",
+                    }
+                )
             if medium and medium["last_bi_dir"] == "up":
-                next_signals.append({
-                    "desc": f"{tf_labels[1]}第一类卖点",
-                    "condition": f"{tf_labels[1]}上涨背驰",
-                    "importance": "清仓信号",
-                })
+                next_signals.append(
+                    {
+                        "desc": f"{tf_labels[1]}第一类卖点",
+                        "condition": f"{tf_labels[1]}上涨背驰",
+                        "importance": "清仓信号",
+                    }
+                )
 
         # 关键价位
         for l in valid_levels:
-            key_prices.append({
-                "price": round(l["last_bi_from"], 2),
-                "desc": f"{l['tf']}笔起点",
-                "type": "reference",
-            })
-            key_prices.append({
-                "price": round(l["last_bi_to"], 2),
-                "desc": f"{l['tf']}笔终点",
-                "type": "support" if l["last_bi_dir"] == "down" else "resistance",
-            })
+            key_prices.append(
+                {
+                    "price": round(l["last_bi_from"], 2),
+                    "desc": f"{l['tf']}笔起点",
+                    "type": "reference",
+                }
+            )
+            key_prices.append(
+                {
+                    "price": round(l["last_bi_to"], 2),
+                    "desc": f"{l['tf']}笔终点",
+                    "type": "support" if l["last_bi_dir"] == "down" else "resistance",
+                }
+            )
 
         # 加入中枢关键价位
         for zs in zhongshu_all:
@@ -2655,6 +2985,7 @@ app.include_router(chanlun_router)
 # ---------------------------------------------------------------------------
 fibonacci_router = APIRouter(prefix="/api/fibonacci", tags=["斐波那契"])
 
+
 @fibonacci_router.post("/analyze")
 async def fibonacci_analyze(req: Dict[str, Any]):
     """
@@ -2702,15 +3033,17 @@ async def fibonacci_analyze(req: Dict[str, Any]):
         fib.fit(df, high_col=high_col, low_col=low_col, close_col=close_col)
 
         # 序列化pivot点
-        pivots_out = [
-            {"x": p.index, "y": p.price, "is_high": p.is_high}
-            for p in fib.pivots
-        ]
+        pivots_out = [{"x": p.index, "y": p.price, "is_high": p.is_high} for p in fib.pivots]
 
         if mode == "extension":
             ext = fib.get_extension()
             if ext is None:
-                return {"mode": "extension", "error": "ZigZag枢轴点不足（至少需要3个）", "levels": [], "pivots": pivots_out}
+                return {
+                    "mode": "extension",
+                    "error": "ZigZag枢轴点不足（至少需要3个）",
+                    "levels": [],
+                    "pivots": pivots_out,
+                }
             levels = [{"ratio": lv.ratio, "price": lv.price, "label": lv.label} for lv in ext.levels]
             return {
                 "mode": "extension",
@@ -2728,7 +3061,12 @@ async def fibonacci_analyze(req: Dict[str, Any]):
         else:
             ret = fib.get_retracement()
             if ret is None:
-                return {"mode": "retracement", "error": "ZigZag枢轴点不足（至少需要2个）", "levels": [], "pivots": pivots_out}
+                return {
+                    "mode": "retracement",
+                    "error": "ZigZag枢轴点不足（至少需要2个）",
+                    "levels": [],
+                    "pivots": pivots_out,
+                }
             levels = [{"ratio": lv.ratio, "price": lv.price, "label": lv.label} for lv in ret.levels]
             return {
                 "mode": "retracement",
@@ -2743,7 +3081,9 @@ async def fibonacci_analyze(req: Dict[str, Any]):
         logger.error(f"[Fibonacci] 分析失败: {e}", exc_info=True)
         return {"error": f"斐波那契分析失败: {str(e)}", "levels": [], "pivots": []}
 
+
 app.include_router(fibonacci_router)
+
 
 # ---------------------------------------------------------------------------
 # WebSocket 端点
@@ -2751,6 +3091,7 @@ app.include_router(fibonacci_router)
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await hub.handle_client(websocket)
+
 
 # ---------------------------------------------------------------------------
 # 静态文件服务（必须放在所有路由注册之后）
@@ -2764,4 +3105,5 @@ if os.path.isdir(_frontend_dir):
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("backend.main:app", host=config.HOST, port=config.PORT, reload=config.DEBUG)

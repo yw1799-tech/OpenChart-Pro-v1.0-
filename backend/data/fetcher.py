@@ -1,9 +1,11 @@
 """
 数据源工厂，根据 market 类型自动选择对应的数据源。
 """
+
 from abc import ABC, abstractmethod
 from typing import List, Optional
 from backend.data.models import Symbol, Candle, Market, Interval
+
 
 class DataFetcher(ABC):
     # 子类可设置，用于区分同一fetcher服务不同市场
@@ -14,7 +16,9 @@ class DataFetcher(ABC):
         pass
 
     @abstractmethod
-    async def get_klines(self, symbol: str, interval: Interval, limit: int = 500, end_time_ms: Optional[int] = None) -> List[Candle]:
+    async def get_klines(
+        self, symbol: str, interval: Interval, limit: int = 500, end_time_ms: Optional[int] = None
+    ) -> List[Candle]:
         pass
 
     @abstractmethod
@@ -25,7 +29,9 @@ class DataFetcher(ABC):
     async def unsubscribe(self, symbol: str) -> None:
         pass
 
+
 _fetcher_cache: dict = {}
+
 
 def get_fetcher(market: Market) -> DataFetcher:
     """获取数据源实例（单例缓存，避免重复创建 session）。"""

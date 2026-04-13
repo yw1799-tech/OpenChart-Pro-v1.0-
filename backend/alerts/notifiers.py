@@ -120,9 +120,7 @@ class WebhookNotifier(NotifierBase):
 
         return success_count > 0
 
-    def _format_payload(
-        self, url: str, message: str, alert: Dict[str, Any], timestamp: int
-    ) -> Dict[str, Any]:
+    def _format_payload(self, url: str, message: str, alert: Dict[str, Any], timestamp: int) -> Dict[str, Any]:
         """根据 URL 特征自动适配不同平台的消息格式。"""
         url_lower = url.lower()
 
@@ -157,9 +155,7 @@ class WebhookNotifier(NotifierBase):
                         "title": f"警报触发: {alert.get('symbol', '')}",
                         "description": message,
                         "color": 16744576,  # 橙色
-                        "timestamp": time.strftime(
-                            "%Y-%m-%dT%H:%M:%SZ", time.gmtime(timestamp)
-                        ),
+                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(timestamp)),
                     }
                 ],
             }

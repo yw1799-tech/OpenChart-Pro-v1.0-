@@ -149,10 +149,7 @@ class AlertManager:
             return []
 
         # 筛选该品种的活跃警报
-        relevant_alerts = [
-            a for a in self._alerts.values()
-            if a.get("symbol") == symbol and a.get("enabled", True)
-        ]
+        relevant_alerts = [a for a in self._alerts.values() if a.get("symbol") == symbol and a.get("enabled", True)]
 
         if not relevant_alerts:
             return []
@@ -180,11 +177,13 @@ class AlertManager:
 
             if triggered:
                 await self._on_triggered(alert, message, current_price)
-                triggered_list.append({
-                    "alert": alert,
-                    "message": message,
-                    "price": current_price,
-                })
+                triggered_list.append(
+                    {
+                        "alert": alert,
+                        "message": message,
+                        "price": current_price,
+                    }
+                )
 
         return triggered_list
 

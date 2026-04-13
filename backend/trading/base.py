@@ -16,14 +16,17 @@ logger = logging.getLogger(__name__)
 # 枚举类型
 # ============================================================================
 
+
 class OrderSide(Enum):
     """订单方向"""
+
     BUY = "buy"
     SELL = "sell"
 
 
 class OrderType(Enum):
     """订单类型"""
+
     MARKET = "market"
     LIMIT = "limit"
     STOP = "stop"
@@ -32,6 +35,7 @@ class OrderType(Enum):
 
 class OrderStatus(Enum):
     """订单状态"""
+
     PENDING = "pending"
     OPEN = "open"
     PARTIALLY_FILLED = "partially_filled"
@@ -43,6 +47,7 @@ class OrderStatus(Enum):
 
 class PositionSide(Enum):
     """仓位方向"""
+
     LONG = "long"
     SHORT = "short"
 
@@ -51,9 +56,11 @@ class PositionSide(Enum):
 # 数据结构
 # ============================================================================
 
+
 @dataclass
 class Order:
     """订单"""
+
     order_id: str = ""
     symbol: str = ""
     side: OrderSide = OrderSide.BUY
@@ -74,6 +81,7 @@ class Order:
 @dataclass
 class Position:
     """持仓"""
+
     symbol: str = ""
     side: PositionSide = PositionSide.LONG
     size: float = 0.0
@@ -90,6 +98,7 @@ class Position:
 @dataclass
 class Balance:
     """账户余额"""
+
     currency: str = ""
     total: float = 0.0
     available: float = 0.0
@@ -101,6 +110,7 @@ class Balance:
 @dataclass
 class TradeRecord:
     """成交记录"""
+
     trade_id: str = ""
     order_id: str = ""
     symbol: str = ""
@@ -115,6 +125,7 @@ class TradeRecord:
 # ============================================================================
 # 交易接口基类
 # ============================================================================
+
 
 class TradingBase(ABC):
     """
@@ -191,9 +202,7 @@ class TradingBase(ABC):
     # ──────────────── 交易记录 ────────────────
 
     @abstractmethod
-    async def get_trades(
-        self, symbol: str, limit: int = 50
-    ) -> List[TradeRecord]:
+    async def get_trades(self, symbol: str, limit: int = 50) -> List[TradeRecord]:
         """获取最近成交记录。"""
         ...
 
@@ -219,9 +228,7 @@ class TradingBase(ABC):
             **kwargs,
         )
 
-    async def limit_buy(
-        self, symbol: str, size: float, price: float, **kwargs
-    ) -> Optional[Order]:
+    async def limit_buy(self, symbol: str, size: float, price: float, **kwargs) -> Optional[Order]:
         """限价买入"""
         return await self.place_order(
             symbol=symbol,
@@ -232,9 +239,7 @@ class TradingBase(ABC):
             **kwargs,
         )
 
-    async def limit_sell(
-        self, symbol: str, size: float, price: float, **kwargs
-    ) -> Optional[Order]:
+    async def limit_sell(self, symbol: str, size: float, price: float, **kwargs) -> Optional[Order]:
         """限价卖出"""
         return await self.place_order(
             symbol=symbol,

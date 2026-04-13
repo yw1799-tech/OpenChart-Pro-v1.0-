@@ -21,7 +21,7 @@ FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
 # 通用请求头
 _HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json, text/html, application/xhtml+xml, application/xml;q=0.9, */*;q=0.8",
     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
 }
@@ -182,16 +182,18 @@ class NewsCollector:
             clean_content = re.sub(r"<[^>]+>", "", content)
 
             pub_time = item.get("showtime", "")
-            news_list.append({
-                "source": "eastmoney",
-                "title": title.strip(),
-                "content": clean_content.strip(),
-                "url": item.get("url_w", item.get("url_m", "")),
-                "published_at": pub_time,
-                "market": "cn",
-                "category": "cn_finance",
-                "tags": _extract_tags_from_text(clean_content),
-            })
+            news_list.append(
+                {
+                    "source": "eastmoney",
+                    "title": title.strip(),
+                    "content": clean_content.strip(),
+                    "url": item.get("url_w", item.get("url_m", "")),
+                    "published_at": pub_time,
+                    "market": "cn",
+                    "category": "cn_finance",
+                    "tags": _extract_tags_from_text(clean_content),
+                }
+            )
 
         logger.info(f"东方财富快讯获取 {len(news_list)} 条")
         return news_list
@@ -207,7 +209,10 @@ class NewsCollector:
         if not api_key:
             try:
                 import sqlite3
-                conn = sqlite3.connect(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "openchart.db"))
+
+                conn = sqlite3.connect(
+                    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "openchart.db")
+                )
                 row = conn.execute("SELECT value FROM settings WHERE key='finnhub_api_key'").fetchone()
                 if row:
                     api_key = row[0].strip('"')
@@ -237,18 +242,20 @@ class NewsCollector:
             pub_ts = item.get("datetime", 0)
             pub_time = datetime.fromtimestamp(pub_ts, tz=timezone.utc).isoformat() if pub_ts else ""
 
-            news_list.append({
-                "source": "finnhub",
-                "title": item.get("headline", ""),
-                "content": item.get("summary", ""),
-                "url": item.get("url", ""),
-                "image": item.get("image", ""),
-                "published_at": pub_time,
-                "market": "us",
-                "category": item.get("category", category),
-                "related": item.get("related", ""),
-                "tags": _extract_tags_from_text(item.get("headline", "")),
-            })
+            news_list.append(
+                {
+                    "source": "finnhub",
+                    "title": item.get("headline", ""),
+                    "content": item.get("summary", ""),
+                    "url": item.get("url", ""),
+                    "image": item.get("image", ""),
+                    "published_at": pub_time,
+                    "market": "us",
+                    "category": item.get("category", category),
+                    "related": item.get("related", ""),
+                    "tags": _extract_tags_from_text(item.get("headline", "")),
+                }
+            )
 
         logger.info(f"Finnhub新闻获取 {len(news_list)} 条")
         return news_list
@@ -322,16 +329,18 @@ class NewsCollector:
                     except Exception:
                         pub_time = str(pub_ts)
 
-                news_list.append({
-                    "source": "wallstreetcn",
-                    "title": title,
-                    "content": clean_content[:500],
-                    "url": f"https://wallstreetcn.com/live/{item.get('id', '')}",
-                    "published_at": pub_time,
-                    "market": "global",
-                    "category": "global_finance",
-                    "tags": _extract_tags_from_text(clean_content),
-                })
+                news_list.append(
+                    {
+                        "source": "wallstreetcn",
+                        "title": title,
+                        "content": clean_content[:500],
+                        "url": f"https://wallstreetcn.com/live/{item.get('id', '')}",
+                        "published_at": pub_time,
+                        "market": "global",
+                        "category": "global_finance",
+                        "tags": _extract_tags_from_text(clean_content),
+                    }
+                )
 
             logger.info(f"华尔街见闻快讯获取 {len(news_list)} 条")
             return news_list
@@ -391,16 +400,18 @@ class NewsCollector:
                 pub_time_str = item.get("time", "")
                 pub_time = pub_time_str  # 保留原始时间字符串
 
-                news_list.append({
-                    "source": "jin10",
-                    "title": title,
-                    "content": clean_text[:500],
-                    "url": "https://www.jin10.com/flash",
-                    "published_at": pub_time,
-                    "market": "global",
-                    "category": "macro",
-                    "tags": _extract_tags_from_text(clean_text),
-                })
+                news_list.append(
+                    {
+                        "source": "jin10",
+                        "title": title,
+                        "content": clean_text[:500],
+                        "url": "https://www.jin10.com/flash",
+                        "published_at": pub_time,
+                        "market": "global",
+                        "category": "macro",
+                        "tags": _extract_tags_from_text(clean_text),
+                    }
+                )
 
             logger.info(f"金十数据快讯获取 {len(news_list)} 条")
             return news_list
@@ -471,16 +482,18 @@ class NewsCollector:
                     except Exception:
                         pub_time = str(pub_ts)
 
-                news_list.append({
-                    "source": "sina_finance",
-                    "title": title,
-                    "content": clean_intro[:500],
-                    "url": item.get("url", ""),
-                    "published_at": pub_time,
-                    "market": "cn",
-                    "category": "cn_finance",
-                    "tags": _extract_tags_from_text(title + " " + clean_intro),
-                })
+                news_list.append(
+                    {
+                        "source": "sina_finance",
+                        "title": title,
+                        "content": clean_intro[:500],
+                        "url": item.get("url", ""),
+                        "published_at": pub_time,
+                        "market": "cn",
+                        "category": "cn_finance",
+                        "tags": _extract_tags_from_text(title + " " + clean_intro),
+                    }
+                )
 
             logger.info(f"新浪财经获取 {len(news_list)} 条")
             return news_list
@@ -493,9 +506,7 @@ class NewsCollector:
     # RSS 通用解析
     # ------------------------------------------------------------------
 
-    async def _parse_rss_feed(
-        self, source_name: str, feed_url: str, market: str = "global"
-    ) -> List[Dict[str, Any]]:
+    async def _parse_rss_feed(self, source_name: str, feed_url: str, market: str = "global") -> List[Dict[str, Any]]:
         """解析单个RSS源"""
         try:
             import feedparser
@@ -526,16 +537,18 @@ class NewsCollector:
                 summary = entry.get("summary", "")
                 clean_summary = re.sub(r"<[^>]+>", "", summary)[:500]
 
-                news_list.append({
-                    "source": f"rss_{source_name}",
-                    "title": entry.get("title", ""),
-                    "content": clean_summary.strip(),
-                    "url": entry.get("link", ""),
-                    "published_at": published,
-                    "market": market,
-                    "category": market,
-                    "tags": _extract_tags_from_text(entry.get("title", "")),
-                })
+                news_list.append(
+                    {
+                        "source": f"rss_{source_name}",
+                        "title": entry.get("title", ""),
+                        "content": clean_summary.strip(),
+                        "url": entry.get("link", ""),
+                        "published_at": published,
+                        "market": market,
+                        "category": market,
+                        "tags": _extract_tags_from_text(entry.get("title", "")),
+                    }
+                )
 
             return news_list
 

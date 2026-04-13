@@ -92,37 +92,37 @@ class CZSList:
         while self.zs_lst and self.zs_lst[-1].begin_bi.idx >= self.last_sure_pos:
             self.zs_lst.pop()
         if self.config.zs_algo == "normal":
-            for seg in seg_lst[self.last_seg_idx:]:
+            for seg in seg_lst[self.last_seg_idx :]:
                 if not self.seg_need_cal(seg):
                     continue
                 self.clear_free_lst()
-                seg_bi_lst = bi_lst[seg.start_bi.idx:seg.end_bi.idx+1]
+                seg_bi_lst = bi_lst[seg.start_bi.idx : seg.end_bi.idx + 1]
                 self.add_zs_from_bi_range(seg_bi_lst, seg.dir, seg.is_sure)
 
             # 处理未生成新线段的部分
             if len(seg_lst):
                 self.clear_free_lst()
-                self.add_zs_from_bi_range(bi_lst[seg_lst[-1].end_bi.idx+1:], revert_bi_dir(seg_lst[-1].dir), False)
+                self.add_zs_from_bi_range(bi_lst[seg_lst[-1].end_bi.idx + 1 :], revert_bi_dir(seg_lst[-1].dir), False)
         elif self.config.zs_algo == "over_seg":
             assert self.config.one_bi_zs is False
             self.clear_free_lst()
-            begin_bi_idx = self.zs_lst[-1].end_bi.idx+1 if self.zs_lst else 0
+            begin_bi_idx = self.zs_lst[-1].end_bi.idx + 1 if self.zs_lst else 0
             for bi in bi_lst[begin_bi_idx:]:
                 self.update_overseg_zs(bi)
         elif self.config.zs_algo == "auto":
             sure_seg_appear = False
             exist_sure_seg = seg_lst.exist_sure_seg()
-            for seg in seg_lst[self.last_seg_idx:]:
+            for seg in seg_lst[self.last_seg_idx :]:
                 if seg.is_sure:
                     sure_seg_appear = True
                 if not self.seg_need_cal(seg):
                     continue
                 if seg.is_sure or (not sure_seg_appear and exist_sure_seg):
                     self.clear_free_lst()
-                    self.add_zs_from_bi_range(bi_lst[seg.start_bi.idx:seg.end_bi.idx+1], seg.dir, seg.is_sure)
+                    self.add_zs_from_bi_range(bi_lst[seg.start_bi.idx : seg.end_bi.idx + 1], seg.dir, seg.is_sure)
                 else:
                     self.clear_free_lst()
-                    for bi in bi_lst[seg.start_bi.idx:]:
+                    for bi in bi_lst[seg.start_bi.idx :]:
                         self.update_overseg_zs(bi)
                     break
         else:
@@ -133,9 +133,18 @@ class CZSList:
         if len(self.zs_lst) and len(self.free_item_lst) == 0:
             if bi.next is None:
                 return
-            if bi.idx - self.zs_lst[-1].end_bi.idx <= 1 and self.zs_lst[-1].in_range(bi.next) and self.zs_lst[-1].try_add_to_end(bi):
+            if (
+                bi.idx - self.zs_lst[-1].end_bi.idx <= 1
+                and self.zs_lst[-1].in_range(bi.next)
+                and self.zs_lst[-1].try_add_to_end(bi)
+            ):
                 return
-        if len(self.zs_lst) and len(self.free_item_lst) == 0 and self.zs_lst[-1].in_range(bi) and bi.idx - self.zs_lst[-1].end_bi.idx <= 1:
+        if (
+            len(self.zs_lst)
+            and len(self.free_item_lst) == 0
+            and self.zs_lst[-1].in_range(bi)
+            and bi.idx - self.zs_lst[-1].end_bi.idx <= 1
+        ):
             return
         self.add_to_free_lst(bi, bi.is_sure, zs_algo="over_seg")
 
@@ -157,5 +166,7 @@ class CZSList:
     def try_combine(self):
         if not self.config.need_combine:
             return
-        while len(self.zs_lst) >= 2 and self.zs_lst[-2].combine(self.zs_lst[-1], combine_mode=self.config.zs_combine_mode):
+        while len(self.zs_lst) >= 2 and self.zs_lst[-2].combine(
+            self.zs_lst[-1], combine_mode=self.config.zs_combine_mode
+        ):
             self.zs_lst = self.zs_lst[:-1]  # 合并后删除最后一个

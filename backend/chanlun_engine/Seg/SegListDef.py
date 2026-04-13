@@ -36,16 +36,26 @@ class CSegListDef(CSegListComm):
         for idx, bi in enumerate(bi_lst):
             if idx < 2:
                 continue
-            if peak_bi and ((bi.is_up() and peak_bi.is_up() and bi._high() >= peak_bi._high()) or (bi.is_down() and peak_bi.is_down() and bi._low() <= peak_bi._low())):
+            if peak_bi and (
+                (bi.is_up() and peak_bi.is_up() and bi._high() >= peak_bi._high())
+                or (bi.is_down() and peak_bi.is_down() and bi._low() <= peak_bi._low())
+            ):
                 peak_bi = bi
                 continue
-            if self.sure_seg_update_end and len(self) and bi.dir == self[-1].dir and ((bi.is_up() and bi._high() >= self[-1].end_bi._high()) or (bi.is_down() and bi._low() <= self[-1].end_bi._low())):
+            if (
+                self.sure_seg_update_end
+                and len(self)
+                and bi.dir == self[-1].dir
+                and (
+                    (bi.is_up() and bi._high() >= self[-1].end_bi._high())
+                    or (bi.is_down() and bi._low() <= self[-1].end_bi._low())
+                )
+            ):
                 self.update_last_end(bi_lst, bi.idx)
                 peak_bi = None
                 continue
-            pre_bi = bi_lst[idx-2]
-            if (bi.is_up() and is_up_seg(bi, pre_bi)) or \
-               (bi.is_down() and is_down_seg(bi, pre_bi)):
+            pre_bi = bi_lst[idx - 2]
+            if (bi.is_up() and is_up_seg(bi, pre_bi)) or (bi.is_down() and is_down_seg(bi, pre_bi)):
                 if peak_bi is None:
                     if len(self) == 0 or bi.dir != self[-1].dir:
                         peak_bi = bi

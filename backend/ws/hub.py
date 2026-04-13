@@ -2,6 +2,7 @@
 WebSocket 推送中心
 管理所有客户端连接，按订阅关系分发数据。
 """
+
 import json
 import asyncio
 import uuid
@@ -10,10 +11,11 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger(__name__)
 
+
 class WebSocketHub:
     def __init__(self):
-        self.connections = {}       # client_id -> websocket
-        self.subscriptions = {}     # client_id -> {"symbol": str, "interval": str}
+        self.connections = {}  # client_id -> websocket
+        self.subscriptions = {}  # client_id -> {"symbol": str, "interval": str}
 
     async def handle_client(self, websocket: WebSocket):
         """处理新的WebSocket连接"""
@@ -43,31 +45,28 @@ class WebSocketHub:
 
         if action == "subscribe":
             self.subscriptions[client_id] = {"symbol": symbol, "interval": interval}
-            await self._send(client_id, {
-                "type": "subscription_result",
-                "action": "subscribe",
-                "symbol": symbol,
-                "status": "ok",
-                "message": ""
-            })
+            await self._send(
+                client_id,
+                {"type": "subscription_result", "action": "subscribe", "symbol": symbol, "status": "ok", "message": ""},
+            )
         elif action == "unsubscribe":
             self.subscriptions.pop(client_id, None)
-            await self._send(client_id, {
-                "type": "subscription_result",
-                "action": "unsubscribe",
-                "symbol": symbol,
-                "status": "ok",
-                "message": ""
-            })
+            await self._send(
+                client_id,
+                {
+                    "type": "subscription_result",
+                    "action": "unsubscribe",
+                    "symbol": symbol,
+                    "status": "ok",
+                    "message": "",
+                },
+            )
         elif action == "switch":
             self.subscriptions[client_id] = {"symbol": symbol, "interval": interval}
-            await self._send(client_id, {
-                "type": "subscription_result",
-                "action": "switch",
-                "symbol": symbol,
-                "status": "ok",
-                "message": ""
-            })
+            await self._send(
+                client_id,
+                {"type": "subscription_result", "action": "switch", "symbol": symbol, "status": "ok", "message": ""},
+            )
 
     async def broadcast_kline(self, symbol, market, interval, candle_data, indicators=None):
         """向所有订阅了该品种的客户端推送K线数据"""
@@ -77,7 +76,7 @@ class WebSocketHub:
             "market": market,
             "interval": interval,
             "data": candle_data,
-            "indicators": indicators or {}
+            "indicators": indicators or {},
         }
         for client_id, sub in list(self.subscriptions.items()):
             if sub.get("symbol") == symbol and sub.get("interval") == interval:
@@ -106,6 +105,7 @@ class WebSocketHub:
             except Exception:
                 self.connections.pop(client_id, None)
                 self.subscriptions.pop(client_id, None)
+
 
 # 全局实例
 hub = WebSocketHub()

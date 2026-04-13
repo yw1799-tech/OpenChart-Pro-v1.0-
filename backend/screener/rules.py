@@ -16,13 +16,14 @@ logger = logging.getLogger(__name__)
 # 指标计算（纯numpy）
 # ======================================================================
 
+
 def _sma(arr: np.ndarray, period: int) -> np.ndarray:
     out = np.full_like(arr, np.nan, dtype=np.float64)
     if len(arr) < period:
         return out
     cumsum = np.cumsum(arr)
     cumsum[period:] = cumsum[period:] - cumsum[:-period]
-    out[period - 1:] = cumsum[period - 1:] / period
+    out[period - 1 :] = cumsum[period - 1 :] / period
     return out
 
 
@@ -41,7 +42,7 @@ def _rsi(close: np.ndarray, period: int = 14) -> float:
     """计算最新RSI值"""
     if len(close) < period + 1:
         return np.nan
-    delta = np.diff(close[-(period + 1):])
+    delta = np.diff(close[-(period + 1) :])
     gain = np.mean(delta[delta > 0]) if np.any(delta > 0) else 0.0
     loss = np.mean(-delta[delta < 0]) if np.any(delta < 0) else 1e-10
     rs = gain / loss if loss > 0 else 100.0
@@ -70,6 +71,7 @@ def _bollinger(close: np.ndarray, period=20, std_dev=2.0):
 # 筛选引擎
 # ======================================================================
 
+
 class ScreenerEngine:
     """
     规则筛选引擎。
@@ -89,22 +91,22 @@ class ScreenerEngine:
     """
 
     FILTER_TYPES = {
-        "price_above",          # 价格高于某值
-        "price_below",          # 价格低于某值
-        "change_pct_above",     # 涨幅大于
-        "change_pct_below",     # 跌幅大于（传负值或正值表示绝对值）
-        "volume_above_ma",      # 成交量大于MA均量
-        "turnover_above",       # 成交额大于
-        "rsi_above",            # RSI高于
-        "rsi_below",            # RSI低于
-        "macd_golden_cross",    # MACD金叉
-        "macd_death_cross",     # MACD死叉
-        "price_above_ma",       # 价格在均线上方
-        "price_below_ma",       # 价格在均线下方
-        "boll_upper_break",     # 突破布林上轨
-        "boll_lower_break",     # 跌破布林下轨
-        "new_high",             # N日新高
-        "new_low",              # N日新低
+        "price_above",  # 价格高于某值
+        "price_below",  # 价格低于某值
+        "change_pct_above",  # 涨幅大于
+        "change_pct_below",  # 跌幅大于（传负值或正值表示绝对值）
+        "volume_above_ma",  # 成交量大于MA均量
+        "turnover_above",  # 成交额大于
+        "rsi_above",  # RSI高于
+        "rsi_below",  # RSI低于
+        "macd_golden_cross",  # MACD金叉
+        "macd_death_cross",  # MACD死叉
+        "price_above_ma",  # 价格在均线上方
+        "price_below_ma",  # 价格在均线下方
+        "boll_upper_break",  # 突破布林上轨
+        "boll_lower_break",  # 跌破布林下轨
+        "new_high",  # N日新高
+        "new_low",  # N日新低
     }
 
     async def screen(
@@ -339,9 +341,7 @@ class ScreenerEngine:
 
             db = await get_database()
             collection_name = f"kline_{symbol.lower().replace('/', '_')}_1d"
-            cursor = db[collection_name].find(
-                {}, {"_id": 0}
-            ).sort("timestamp", -1).limit(limit_bars)
+            cursor = db[collection_name].find({}, {"_id": 0}).sort("timestamp", -1).limit(limit_bars)
 
             records = await cursor.to_list(length=None)
             if not records:

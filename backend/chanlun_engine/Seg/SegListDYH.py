@@ -46,17 +46,26 @@ class CSegListDYH(CSegListComm):
                 continue
             if len(self) > 0 and bi.dir != self[-1].end_bi.dir:
                 continue
-            if bi.is_down() and bi_lst[idx-1]._high() < next_begin_bi._low():
+            if bi.is_down() and bi_lst[idx - 1]._high() < next_begin_bi._low():
                 continue
-            if bi.is_up() and bi_lst[idx-1]._low() > next_begin_bi._high():
+            if bi.is_up() and bi_lst[idx - 1]._low() > next_begin_bi._high():
                 continue
-            if self.sure_seg_update_end and len(self) and ((bi.is_down() and bi._low() < self[-1].end_bi._low()) or (bi.is_up() and bi._high() > self[-1].end_bi._high())):
+            if (
+                self.sure_seg_update_end
+                and len(self)
+                and (
+                    (bi.is_down() and bi._low() < self[-1].end_bi._low())
+                    or (bi.is_up() and bi._high() > self[-1].end_bi._high())
+                )
+            ):
                 self[-1].end_bi = bi
-                if idx != BI_LEN-1:
-                    next_begin_bi = bi_lst[idx+1]
+                if idx != BI_LEN - 1:
+                    next_begin_bi = bi_lst[idx + 1]
                     continue
-            if (len(self) == 0 or bi.idx - self[-1].end_bi.idx >= 4) and (situation1(bi, bi_lst[idx + 2], bi_lst[idx - 2]) or situation2(bi, bi_lst[idx + 2], bi_lst[idx - 2])):
-                self.add_new_seg(bi_lst, idx-1)
+            if (len(self) == 0 or bi.idx - self[-1].end_bi.idx >= 4) and (
+                situation1(bi, bi_lst[idx + 2], bi_lst[idx - 2]) or situation2(bi, bi_lst[idx + 2], bi_lst[idx - 2])
+            ):
+                self.add_new_seg(bi_lst, idx - 1)
                 next_begin_bi = bi
 
     def cal_bi_unsure(self, bi_lst: CBiList):
@@ -65,12 +74,13 @@ class CSegListDYH(CSegListComm):
         last_seg_dir = self[-1].end_bi.dir
         end_bi = None
         peak_value = float("inf") if last_seg_dir == BI_DIR.UP else float("-inf")
-        for bi in bi_lst[self[-1].end_bi.idx+3:]:
+        for bi in bi_lst[self[-1].end_bi.idx + 3 :]:
             if bi.dir == last_seg_dir:
                 continue
             cur_value = bi._low() if last_seg_dir == BI_DIR.UP else bi._high()
-            if (last_seg_dir == BI_DIR.UP and cur_value < peak_value) or \
-               (last_seg_dir == BI_DIR.DOWN and cur_value > peak_value):
+            if (last_seg_dir == BI_DIR.UP and cur_value < peak_value) or (
+                last_seg_dir == BI_DIR.DOWN and cur_value > peak_value
+            ):
                 end_bi = bi
                 peak_value = cur_value
         if end_bi:
@@ -82,7 +92,7 @@ class CSegListDYH(CSegListComm):
         last_bi = self[-1].end_bi
         peak_value = last_bi.get_end_val()
         new_peak_bi = None
-        for bi in bi_lst[self[-1].end_bi.idx+1:]:
+        for bi in bi_lst[self[-1].end_bi.idx + 1 :]:
             if bi.dir != last_bi.dir:
                 continue
             if bi.is_down() and bi._low() < peak_value:

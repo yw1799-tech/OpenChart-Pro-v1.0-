@@ -42,15 +42,17 @@ class TrendDirection(Enum):
 @dataclass
 class PivotPoint:
     """ZigZag枢轴点"""
-    index: int              # 在原始数据中的索引
-    price: float            # 价格
-    is_high: bool           # True=高点, False=低点
+
+    index: int  # 在原始数据中的索引
+    price: float  # 价格
+    is_high: bool  # True=高点, False=低点
     bar_time: Optional[pd.Timestamp] = None
 
 
 @dataclass
 class FibLevel:
     """单个斐波那契水平"""
+
     ratio: float
     price: float
     label: str = ""
@@ -66,9 +68,10 @@ class FibLevel:
 @dataclass
 class FibRetracementResult:
     """斐波那契回撤结果"""
+
     trend: TrendDirection
-    start_point: PivotPoint     # 趋势起点
-    end_point: PivotPoint       # 趋势终点
+    start_point: PivotPoint  # 趋势起点
+    end_point: PivotPoint  # 趋势终点
     levels: List[FibLevel]
     price_range: float
 
@@ -93,13 +96,14 @@ class FibRetracementResult:
 @dataclass
 class FibExtensionResult:
     """斐波那契扩展结果 (三点法)"""
+
     trend: TrendDirection
-    point_a: PivotPoint         # 趋势起点
-    point_b: PivotPoint         # 趋势终点
-    point_c: PivotPoint         # 回撤终点
+    point_a: PivotPoint  # 趋势起点
+    point_b: PivotPoint  # 趋势终点
+    point_c: PivotPoint  # 回撤终点
     levels: List[FibLevel]
-    trend_range: float          # |B - A|
-    retracement_ratio: float    # C回撤了多少
+    trend_range: float  # |B - A|
+    retracement_ratio: float  # C回撤了多少
 
     def get_price_at_level(self, ratio: float) -> float:
         if self.trend == TrendDirection.UP:
@@ -123,8 +127,8 @@ class FibExtensionResult:
 # ATR 计算 (复现 Pine Script ta.atr)
 # ============================================================
 
-def _calc_atr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray,
-              period: int = 10) -> np.ndarray:
+
+def _calc_atr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 10) -> np.ndarray:
     """
     计算ATR序列，使用RMA（与Pine Script ta.atr一致）。
 
@@ -142,11 +146,7 @@ def _calc_atr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray,
     tr = np.zeros(n)
     tr[0] = highs[0] - lows[0]
     for i in range(1, n):
-        tr[i] = max(
-            highs[i] - lows[i],
-            abs(highs[i] - closes[i - 1]),
-            abs(lows[i] - closes[i - 1])
-        )
+        tr[i] = max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
 
     # RMA (Wilder's Moving Average)
     if n < period:
@@ -161,7 +161,7 @@ def _calc_atr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray,
         atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period
 
     # 填充前period-1根
-    atr[:period - 1] = atr[period - 1]
+    atr[: period - 1] = atr[period - 1]
 
     return atr
 
@@ -169,6 +169,7 @@ def _calc_atr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray,
 # ============================================================
 # ZigZag 算法 —— 完全复现 TradingView/ZigZag/7
 # ============================================================
+
 
 def _find_pivot_highs(highs: np.ndarray, depth: int) -> Dict[int, float]:
     """
@@ -247,7 +248,7 @@ def zigzag_pivots(
         dev_thresholds = np.where(
             closes > 0,
             atr / closes * 100.0 * deviation,
-            deviation  # fallback
+            deviation,  # fallback
         )
     else:
         dev_thresholds = np.full(n, deviation)
@@ -299,6 +300,7 @@ def zigzag_pivots(
 # ============================================================
 # 斐波那契回撤
 # ============================================================
+
 
 def calc_fibonacci_retracement(
     pivots: List[PivotPoint],
@@ -376,6 +378,7 @@ def calc_fibonacci_retracement(
 # 斐波那契扩展 (三点法)
 # ============================================================
 
+
 def calc_fibonacci_extension(
     pivots: List[PivotPoint],
     levels: Optional[List[float]] = None,
@@ -440,6 +443,7 @@ def calc_fibonacci_extension(
 # 高层API
 # ============================================================
 
+
 class AutoFibonacci:
     """
     自动斐波那契分析器
@@ -502,7 +506,9 @@ class AutoFibonacci:
             timestamps = df.index.values
 
         self._pivots = zigzag_pivots(
-            highs, lows, closes,
+            highs,
+            lows,
+            closes,
             deviation=self.deviation,
             depth=self.depth,
             timestamps=timestamps,
@@ -521,7 +527,9 @@ class AutoFibonacci:
     ) -> "AutoFibonacci":
         """用numpy数组拟合。"""
         self._pivots = zigzag_pivots(
-            highs, lows, closes,
+            highs,
+            lows,
+            closes,
             deviation=self.deviation,
             depth=self.depth,
             timestamps=timestamps,
@@ -654,8 +662,7 @@ class AutoFibonacci:
         if ret:
             trend_cn = "上升" if ret.trend == TrendDirection.UP else "下降"
             lines.append(f"\n--- 回撤 ({trend_cn}) ---")
-            lines.append(f"  {ret.start_point.price:.4f} -> {ret.end_point.price:.4f}  "
-                         f"幅度={ret.price_range:.4f}")
+            lines.append(f"  {ret.start_point.price:.4f} -> {ret.end_point.price:.4f}  幅度={ret.price_range:.4f}")
             for lv in ret.levels:
                 lines.append(f"  {lv.ratio:>7.3f} => {lv.price:.4f}")
 
@@ -663,8 +670,7 @@ class AutoFibonacci:
         if ext:
             trend_cn = "上升" if ext.trend == TrendDirection.UP else "下降"
             lines.append(f"\n--- 扩展 ({trend_cn} A->B->C) ---")
-            lines.append(f"  A={ext.point_a.price:.4f} B={ext.point_b.price:.4f} "
-                         f"C={ext.point_c.price:.4f}")
+            lines.append(f"  A={ext.point_a.price:.4f} B={ext.point_b.price:.4f} C={ext.point_c.price:.4f}")
             lines.append(f"  趋势幅度={ext.trend_range:.4f}  回撤={ext.retracement_ratio:.1%}")
             for lv in ext.levels:
                 lines.append(f"  {lv.ratio:>7.3f} => {lv.price:.4f}")
@@ -675,6 +681,7 @@ class AutoFibonacci:
 # ============================================================
 # 便捷函数
 # ============================================================
+
 
 def auto_fib_retracement(
     df: pd.DataFrame,
@@ -733,9 +740,9 @@ if __name__ == "__main__":
     for fname in data_files:
         fpath = os.path.join(parent_dir, fname)
         if os.path.exists(fpath):
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print(f"分析文件: {fname}")
-            print(f"{'='*60}")
+            print(f"{'=' * 60}")
 
             df = pd.read_csv(fpath)
 
@@ -756,8 +763,7 @@ if __name__ == "__main__":
 
             # 使用TV标准参数
             fib = AutoFibonacci(deviation=3.0, depth=10, dynamic_deviation=True)
-            fib.fit(df, high_col=col_map["high"], low_col=col_map["low"],
-                    close_col=col_map["close"])
+            fib.fit(df, high_col=col_map["high"], low_col=col_map["low"], close_col=col_map["close"])
             print(fib.summary())
 
             # 查找当前价格的支撑/阻力
@@ -775,11 +781,13 @@ if __name__ == "__main__":
         n = 200
         t = np.arange(n)
         price = 100 + 0.5 * t + 15 * np.sin(t / 20) + np.random.randn(n) * 3
-        df = pd.DataFrame({
-            "high": price + np.abs(np.random.randn(n)) * 2,
-            "low": price - np.abs(np.random.randn(n)) * 2,
-            "close": price + np.random.randn(n) * 0.5,
-        })
+        df = pd.DataFrame(
+            {
+                "high": price + np.abs(np.random.randn(n)) * 2,
+                "low": price - np.abs(np.random.randn(n)) * 2,
+                "close": price + np.random.randn(n) * 0.5,
+            }
+        )
 
         fib = AutoFibonacci(deviation=3.0, depth=5, dynamic_deviation=True)
         fib.fit(df)

@@ -11,20 +11,22 @@ if __name__ == "__main__":
     data_src = DATA_SRC.BAO_STOCK
     lv_list = [KL_TYPE.K_DAY]
 
-    config = CChanConfig({
-        "bi_strict": True,
-        "trigger_step": False,
-        "skip_step": 0,
-        "divergence_rate": float("inf"),
-        "bsp2_follow_1": False,
-        "bsp3_follow_1": False,
-        "min_zs_cnt": 0,
-        "bs1_peak": False,
-        "macd_algo": "peak",
-        "bs_type": '1,2,3a,1p,2s,3b',
-        "print_warning": True,
-        "zs_algo": "normal",
-    })
+    config = CChanConfig(
+        {
+            "bi_strict": True,
+            "trigger_step": False,
+            "skip_step": 0,
+            "divergence_rate": float("inf"),
+            "bsp2_follow_1": False,
+            "bsp3_follow_1": False,
+            "min_zs_cnt": 0,
+            "bs1_peak": False,
+            "macd_algo": "peak",
+            "bs_type": "1,2,3a,1p,2s,3b",
+            "print_warning": True,
+            "zs_algo": "normal",
+        }
+    )
 
     plot_config = {
         "plot_kline": True,
@@ -60,7 +62,7 @@ if __name__ == "__main__":
             #     '2023/06/01': ('marker here', 'up', 'red'),
             #     '2023/06/08': ('marker here', 'down')
             # },
-        }
+        },
     }
     chan = CChan(
         code=code,
