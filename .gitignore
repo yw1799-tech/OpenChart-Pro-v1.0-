@@ -1,11 +1,44 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
-data/openchart.db
-data/*.db
-server.log
-.env
-node_modules/
 *.egg-info/
 dist/
 build/
+*.egg
+
+# 环境变量
+.env
+.env.local
+.env.production
+!.env.example
+
+# 数据库
+data/*.db
+
+# 日志
+*.log
+server.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Node
+node_modules/
+
+# 临时文件
+*.tmp
+*.bak
+chanlun_comparison.png
+
+# 审计临时脚本
+backend/chanlun_engine/chanpy_*.py
+backend/chanlun_engine/full_audit.py
