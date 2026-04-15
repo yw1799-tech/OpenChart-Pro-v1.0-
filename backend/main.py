@@ -49,6 +49,7 @@ from backend.signals.binding import StrategyBindingManager
 from backend.signals.monitor import MonitorEngine
 from backend.signals.strategies import list_strategies
 from backend.trading.simulator import simulator as trading_simulator
+from backend.watchpool.anomaly_scanner import AnomalyScanner
 from backend.ws.hub import hub
 
 # ═══════════════════════════════════════════════════════════════════
@@ -79,6 +80,9 @@ monitor_engine: Optional[MonitorEngine] = None
 # 持仓追踪器 (Phase 5, 启动时初始化)
 portfolio_tracker: Optional[PortfolioTracker] = None
 portfolio_manager: Optional[PortfolioManager] = None
+
+# 异动扫描器 (Phase 3A 通道②)
+anomaly_scanner: Optional[AnomalyScanner] = None
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -205,6 +209,12 @@ async def lifespan(app: FastAPI):
     portfolio_tracker.start(check_interval_sec=300)
     logger.info("PortfolioTracker started")
 
+    # 6.5 Phase 3A 通道②：异动扫描器（每 5 分钟拉数据源涨幅榜，仅交易时段）
+    global anomaly_scanner
+    anomaly_scanner = AnomalyScanner(db=db, ws_hub=hub)
+    anomaly_scanner.start(check_interval_sec=300)
+    logger.info("AnomalyScanner started")
+
     # 7. Phase 7 交易模拟器（默认开启 dry-run 模式）
     await trading_simulator.connect()
 
@@ -229,6 +239,8 @@ async def lifespan(app: FastAPI):
 
     # ─── 关闭 ───
     logger.info("OpenChart Pro shutting down...")
+    if anomaly_scanner:
+        await anomaly_scanner.stop()
     if portfolio_tracker:
         await portfolio_tracker.stop()
     if monitor_engine:

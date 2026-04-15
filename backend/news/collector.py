@@ -134,10 +134,16 @@ class RSSCollector(NewsCollector):
         items: List[Dict[str, Any]] = []
         for entry in parsed.entries[:50]:  # 单次最多 50 条
             try:
-                title = entry.get("title", "")
+                title = (entry.get("title", "") or "").strip()
+                if not title:
+                    continue
+                # 摘要优先级: summary > description > content[0].value
                 summary = entry.get("summary", "") or entry.get("description", "")
-                link = entry.get("link", "")
-                # published_parsed 是 time.struct_time
+                if not summary and isinstance(entry.get("content"), list) and entry["content"]:
+                    summary = entry["content"][0].get("value", "")
+                # 链接：link / id (Atom 中 id 常为 URL)
+                link = entry.get("link", "") or entry.get("id", "")
+                # 时间 published > updated > 当前时间
                 pub = entry.get("published_parsed") or entry.get("updated_parsed")
                 if pub:
                     pub_ms = int(time.mktime(pub) * 1000)
@@ -248,12 +254,194 @@ class EastmoneyFlashCollector(RESTCollector):
 
 
 class OKXAnnouncementCollector(RESTCollector):
-    """OKX 公告采集器（占位简化实现：返回空，Phase 3B 完善）。"""
+    """OKX 公告采集器（v2 实装，按类型拉新上线公告）。"""
 
     def _parse_response(self, text: str) -> List[Dict[str, Any]]:
-        # OKX 公告需要先拿类型再按类型拉详情，复杂度较高
-        # Phase 3A 暂返回空，避免阻塞调度器
-        return []
+        import json
+        try:
+            data = json.loads(text)
+        except Exception:
+            return []
+        items: List[Dict[str, Any]] = []
+        try:
+            details = data.get("data", {}).get("details") or data.get("data", []) or []
+            # OKX 接口可能返回不同结构
+            for entry in details if isinstance(details, list) else []:
+                ann_list = entry.get("details", []) if isinstance(entry, dict) else []
+                for ann in ann_list:
+                    title = ann.get("title", "")
+                    url = ann.get("url", "")
+                    pub_ms = int(ann.get("pTime", 0))
+                    n = self._normalize(title, "", url, pub_ms or None)
+                    if n:
+                        items.append(n)
+        except Exception as e:
+            logger.warning(f"[OKX] 公告解析失败: {e}")
+        return items[:30]
+
+
+class BinanceAnnouncementCollector(RESTCollector):
+    """Binance 公告采集器。"""
+
+    def _parse_response(self, text: str) -> List[Dict[str, Any]]:
+        import json
+        try:
+            data = json.loads(text)
+        except Exception:
+            return []
+        items: List[Dict[str, Any]] = []
+        try:
+            articles = data.get("data", {}).get("articles", [])
+            for art in articles[:30]:
+                title = art.get("title", "")
+                code = art.get("code", "")
+                # 文章链接
+                url = f"https://www.binance.com/en/support/announcement/{code}" if code else ""
+                pub_ms = int(art.get("releaseDate", 0))
+                n = self._normalize(title, "", url, pub_ms or None)
+                if n:
+                    items.append(n)
+        except Exception as e:
+            logger.warning(f"[Binance] 公告解析失败: {e}")
+        return items
+
+
+class JinseFinanceCollector(RESTCollector):
+    """金色财经快讯采集器（中文加密新闻）。"""
+
+    def _parse_response(self, text: str) -> List[Dict[str, Any]]:
+        import json
+        try:
+            data = json.loads(text)
+        except Exception:
+            return []
+        items: List[Dict[str, Any]] = []
+        try:
+            for it in data.get("list", []) or data.get("data", []) or []:
+                # 金色快讯的字段: extra, title, summary
+                extra = it.get("extra", {}) if isinstance(it.get("extra"), dict) else {}
+                title = extra.get("title") or it.get("title") or ""
+                summary = extra.get("summary") or it.get("summary") or ""
+                url = extra.get("topic_url") or it.get("link") or ""
+                pub_sec = int(it.get("created_at", 0) or extra.get("published_at", 0))
+                pub_ms = pub_sec * 1000 if pub_sec < 1e11 else pub_sec
+                n = self._normalize(title, summary, url, pub_ms or None)
+                if n:
+                    items.append(n)
+        except Exception as e:
+            logger.warning(f"[金色] 解析失败: {e}")
+        return items[:30]
+
+
+class CailianpressCollector(RESTCollector):
+    """财联社电报采集器（A 股最高时效新闻源之一）。"""
+
+    def _parse_response(self, text: str) -> List[Dict[str, Any]]:
+        import json
+        try:
+            data = json.loads(text)
+        except Exception:
+            return []
+        items: List[Dict[str, Any]] = []
+        try:
+            for telegrams in [data.get("data", {}).get("roll_data", []), data.get("data", []) if isinstance(data.get("data"), list) else []]:
+                if not telegrams:
+                    continue
+                for tg in telegrams:
+                    title = tg.get("title") or tg.get("brief") or ""
+                    if not title and tg.get("content"):
+                        # 没标题用内容前 100 字作标题
+                        title = tg["content"][:100]
+                    content = tg.get("content", "") or tg.get("brief", "")
+                    url = tg.get("shareurl", "") or f"https://www.cls.cn/detail/{tg.get('id', '')}"
+                    pub_sec = int(tg.get("ctime", 0) or 0)
+                    pub_ms = pub_sec * 1000 if pub_sec < 1e11 else pub_sec
+                    n = self._normalize(title, content, url, pub_ms or None)
+                    if n:
+                        items.append(n)
+        except Exception as e:
+            logger.warning(f"[财联社] 解析失败: {e}")
+        return items[:50]
+
+
+class SinaFinanceCollector(RESTCollector):
+    """新浪财经滚动新闻采集器。"""
+
+    def _parse_response(self, text: str) -> List[Dict[str, Any]]:
+        import json
+        import time as _time
+        # 新浪可能返回 jsonp 或 json
+        try:
+            # 尝试直接 json
+            data = json.loads(text)
+        except Exception:
+            try:
+                # 剥离 jsonp 包装
+                import re as _re
+                m = _re.search(r"\((\{.*\})\)", text, _re.DOTALL)
+                if not m:
+                    return []
+                data = json.loads(m.group(1))
+            except Exception:
+                return []
+        items: List[Dict[str, Any]] = []
+        try:
+            arr = (data.get("result", {}).get("data", []) or
+                   data.get("data", []) or [])
+            for it in arr:
+                title = it.get("title", "")
+                url = it.get("url", "")
+                pub_sec = int(it.get("ctime", 0) or it.get("create_time", 0))
+                pub_ms = pub_sec * 1000 if pub_sec and pub_sec < 1e11 else (pub_sec or int(_time.time() * 1000))
+                summary = it.get("intro", "") or it.get("summary", "")
+                n = self._normalize(title, summary, url, pub_ms)
+                if n:
+                    items.append(n)
+        except Exception as e:
+            logger.warning(f"[新浪] 解析失败: {e}")
+        return items[:30]
+
+
+class YicaiCollector(RESTCollector):
+    """第一财经新闻采集器。"""
+
+    def _parse_response(self, text: str) -> List[Dict[str, Any]]:
+        import json
+        try:
+            data = json.loads(text)
+        except Exception:
+            return []
+        items: List[Dict[str, Any]] = []
+        try:
+            arr = data.get("DocList", []) or data.get("data", []) or []
+            for it in arr:
+                title = it.get("NewsTitle", "") or it.get("title", "")
+                url = it.get("WeixinShareLink", "") or it.get("url", "")
+                pub_str = it.get("PublishDate", "") or it.get("publish_time", "")
+                pub_ms = self._parse_iso_time(pub_str)
+                summary = it.get("Source", "") or ""
+                n = self._normalize(title, summary, url, pub_ms)
+                if n:
+                    items.append(n)
+        except Exception as e:
+            logger.warning(f"[第一财经] 解析失败: {e}")
+        return items[:30]
+
+    def _parse_iso_time(self, s: str) -> int:
+        if not s:
+            return int(time.time() * 1000)
+        try:
+            from datetime import datetime, timezone, timedelta
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+                try:
+                    dt = datetime.strptime(s.split(".")[0], fmt)
+                    dt = dt.replace(tzinfo=timezone(timedelta(hours=8)))
+                    return int(dt.timestamp() * 1000)
+                except ValueError:
+                    continue
+        except Exception:
+            pass
+        return int(time.time() * 1000)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -274,14 +462,22 @@ class ScraperCollector(NewsCollector):
 
 
 def create_collector(source_config: Dict[str, Any]) -> NewsCollector:
-    """根据 source_config['type'] 和 name 创建对应的 collector。"""
+    """根据 source_config['name'] 优先用专用解析；其次按 type 走通用 RSS/REST/Scraper。"""
     typ = source_config.get("type", "rss")
     name = source_config.get("name", "")
 
-    if name == "东方财富7x24":
-        return EastmoneyFlashCollector(source_config)
-    if name == "OKX公告":
-        return OKXAnnouncementCollector(source_config)
+    # 专用 collector（按 name 精确匹配）
+    SPECIAL = {
+        "东方财富7x24": EastmoneyFlashCollector,
+        "OKX公告": OKXAnnouncementCollector,
+        "Binance公告": BinanceAnnouncementCollector,
+        "金色财经": JinseFinanceCollector,
+        "财联社电报": CailianpressCollector,
+        "新浪财经": SinaFinanceCollector,
+        "第一财经": YicaiCollector,
+    }
+    if name in SPECIAL:
+        return SPECIAL[name](source_config)
 
     if typ == "rss":
         return RSSCollector(source_config)
@@ -289,5 +485,4 @@ def create_collector(source_config: Dict[str, Any]) -> NewsCollector:
         return RESTCollector(source_config)
     if typ == "scraper":
         return ScraperCollector(source_config)
-
-    return RSSCollector(source_config)  # 默认 RSS
+    return RSSCollector(source_config)

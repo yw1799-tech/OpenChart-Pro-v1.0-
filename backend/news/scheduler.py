@@ -20,6 +20,30 @@ from backend.news.sources import get_enabled_sources
 logger = logging.getLogger(__name__)
 
 
+def _infer_stock_market(symbol: str) -> str:
+    """
+    根据 symbol 推断市场。
+    返回 'us' / 'hk' / 'cn' / 'crypto' / 'unknown'
+    候选池只接受 us/hk/cn（加密 6 币种走专属监控通道）。
+    """
+    if not symbol:
+        return "unknown"
+    s = symbol.upper()
+    # 加密 USDT 对
+    if s.endswith("-USDT") or s.endswith("-USD") or s.endswith("-USDC"):
+        return "crypto"
+    # 港股: 如 0700.HK / 9988.HK
+    if s.endswith(".HK"):
+        return "hk"
+    # A 股: 6 位纯数字 (主板/科创板/创业板)
+    if s.isdigit() and len(s) == 6:
+        return "cn"
+    # 美股: 1-5 位纯字母
+    if s.isalpha() and 1 <= len(s) <= 5:
+        return "us"
+    return "unknown"
+
+
 class NewsScheduler:
     """
     后台采集调度器。
@@ -127,6 +151,7 @@ class NewsScheduler:
             pool_syms = set()
 
         saved_count = 0
+        pool_added_count = 0
         for raw_news, _ in new_items:
             try:
                 # 内容 hash 去重（DB 查）
@@ -149,11 +174,65 @@ class NewsScheduler:
                     # 高分（★★★+）实时推送给前端
                     if score_result["importance"] >= 3:
                         await self._broadcast_news(news_record)
+                    # PRD F6.1: ★★★+ 新闻涉及的股票自动推入候选池（加密 6 币种跳过）
+                    if score_result["importance"] >= 3:
+                        added = await self._auto_add_to_pool(news_record, score_result)
+                        pool_added_count += added
             except Exception as e:
                 logger.exception(f"[{collector.name}] 处理单条新闻异常: {e}")
 
-        if saved_count > 0:
-            logger.info(f"[{collector.name}] 入库 {saved_count} 条新闻 (共 {len(new_items)} 条新)")
+        if saved_count > 0 or pool_added_count > 0:
+            logger.info(
+                f"[{collector.name}] 入库 {saved_count} 条新闻 (共 {len(new_items)} 条新)"
+                + (f", 新闻驱动入池 {pool_added_count} 只" if pool_added_count else "")
+            )
+
+    async def _auto_add_to_pool(
+        self, news: Dict[str, Any], score_result: Dict[str, Any]
+    ) -> int:
+        """
+        PRD F6.1 新闻事件驱动入池：
+        ★★★+ 新闻涉及的股票自动推入候选池。加密 6 币种跳过。
+        返回新增入池数量。
+        """
+        cats = score_result.get("categories") or []
+        if not cats:
+            return 0
+        importance = score_result.get("importance", 0)
+        # 评分公式：基础 50 + (importance - 2) × 8 = 58 (★★★) / 66 (★★★★) / 74 (★★★★★)
+        score = 50 + (importance - 2) * 8
+        added = 0
+        for sym in cats:
+            market = _infer_stock_market(sym)
+            if market not in ("us", "hk", "cn"):
+                continue  # 加密币种跳过 (DB CHECK 也会拒绝)
+            try:
+                pool_id = await self.db.add_to_pool(
+                    symbol=sym,
+                    market=market,
+                    source="news",
+                    score=score,
+                    reason=f"新闻 ★{importance}: {news.get('title', '')[:80]}",
+                )
+                # WebSocket 推送 pool_update
+                await self.ws_hub.broadcast_pool_update(
+                    "added",
+                    {
+                        "id": pool_id,
+                        "symbol": sym,
+                        "market": market,
+                        "source": "news",
+                        "score": score,
+                        "reason": f"新闻 ★{importance}",
+                    },
+                )
+                added += 1
+            except ValueError:
+                # market CHECK 拒绝（理论上 _infer_stock_market 已过滤）
+                pass
+            except Exception as e:
+                logger.debug(f"自动入池 {sym}/{market} 失败: {e}")
+        return added
 
     async def _broadcast_news(self, news: Dict[str, Any]):
         """通过 WebSocket Hub 推送高价值新闻到前端。"""
