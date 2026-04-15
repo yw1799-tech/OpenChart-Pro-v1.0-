@@ -888,27 +888,44 @@ function initChart() {
     console.warn('[Chart] 无法订阅缩放/滚动事件:', e);
   }
 
-  // 懒加载历史 K 线 — 使用 KLineChart v10 原生 loadMore 回调
-  // 官方机制：拖到最左边时会自动调用传入的回调，参数 timestamp 是当前数据最早 K 线的时间戳
+  // ════════════════════════════════════════════════════════════
+  // 懒加载历史 K 线 (双触发机制 + 详细日志)
+  //
+  // KLineChart v10 提供两种触发方式，单一方式都不够可靠：
+  //   1. chart.loadMore(callback): 官方机制，拖到最左时触发
+  //      但库内部互斥锁 _loading 由库管理，下一次拖动前必须复位
+  //   2. OnVisibleRangeChange 事件: 可视范围变化时触发
+  //      可靠，但需手动判断"是否接近左边界"
+  //
+  // 我们同时注册两个，共用 fetchMore() 函数（自带 _loadMoreFetching 锁防并发）
+  // ════════════════════════════════════════════════════════════
+
   window._loadMoreNoMore = false;
   window._loadMoreFetching = false;
 
-  chart.loadMore(async (timestamp) => {
-    if (window._loadMoreFetching || window._loadMoreNoMore) return;
+  async function fetchMore(reason) {
+    if (window._loadMoreFetching) {
+      console.log(`[loadMore] skip(fetching) reason=${reason}`);
+      return;
+    }
+    if (window._loadMoreNoMore) {
+      console.log(`[loadMore] skip(noMore) reason=${reason}`);
+      return;
+    }
+    const dataList = chart.getDataList();
+    if (!dataList || !dataList.length) {
+      console.log(`[loadMore] skip(empty dataList) reason=${reason}`);
+      return;
+    }
+
     window._loadMoreFetching = true;
     try {
       const s   = window.currentSymbol;
       const iv  = window.currentInterval;
       const mkt = window.currentMarket === 'a' ? 'cn' : (window.currentMarket || 'crypto');
-      // timestamp 为空时兜底：用 dataList 最早一根
-      let endTs = timestamp;
-      if (!endTs) {
-        const dataList = chart.getDataList();
-        if (!dataList || !dataList.length) { window._loadMoreFetching = false; return; }
-        endTs = dataList[0].timestamp;
-      }
+      const endTs = dataList[0].timestamp;
 
-      console.log(`[Chart] loadMore 请求 ${s}/${iv} end_time=${endTs}`);
+      console.log(`[loadMore] FETCH start reason=${reason} ${s}/${iv}/${mkt} end_time=${endTs}`);
       const resp = await fetch(
         `/api/klines?symbol=${encodeURIComponent(s)}&interval=${encodeURIComponent(iv)}&limit=500&market=${encodeURIComponent(mkt)}&end_time=${endTs}`
       );
@@ -917,7 +934,7 @@ function initChart() {
       const raw = d.candles || d.data || d;
       if (!Array.isArray(raw) || raw.length === 0) {
         window._loadMoreNoMore = true;
-        console.log('[Chart] 无更多历史K线');
+        console.log(`[loadMore] DONE no-more reason=${reason}`);
         return;
       }
       const more = raw.map(k => ({
@@ -931,17 +948,60 @@ function initChart() {
       }));
       if (more.length < 500) window._loadMoreNoMore = true;
       chart.applyMoreData(more, more.length < 500);
-      console.log(`[Chart] 懒加载 ${more.length} 根历史K线，总计: ${chart.getDataList().length}`);
+      console.log(`[loadMore] DONE +${more.length} (total=${chart.getDataList().length}) reason=${reason}`);
 
       if (typeof isChanlunActive === 'function' && isChanlunActive()) {
         setTimeout(() => loadChanlun(), 800);
       }
     } catch (e) {
-      console.error('[Chart] 懒加载历史K线失败:', e);
+      console.error(`[loadMore] FAIL reason=${reason}:`, e);
     } finally {
       window._loadMoreFetching = false;
     }
-  });
+  }
+
+  // 触发方式 1: KLineChart 原生 loadMore 回调
+  try {
+    chart.loadMore(() => fetchMore('loadMore-callback'));
+    console.log('[Chart] chart.loadMore() 已注册');
+  } catch (e) {
+    console.warn('[Chart] chart.loadMore() 注册失败:', e);
+  }
+
+  // 触发方式 2: OnVisibleRangeChange 事件 (v10 可视区变化时触发，更可靠)
+  try {
+    let _vrcDebounce = null;
+    chart.subscribeAction(klinecharts.ActionType.OnVisibleRangeChange, (range) => {
+      if (!range) return;
+      // 当可视区左边界距数据起点 ≤ 30 根时触发
+      const from = range.from;
+      if (typeof from !== 'number') return;
+      if (from > 30) return;
+      // 防抖：拖动期间会高频触发，等用户停手 200ms 再 fetch
+      clearTimeout(_vrcDebounce);
+      _vrcDebounce = setTimeout(() => fetchMore(`vrc(from=${from})`), 200);
+    });
+    console.log('[Chart] OnVisibleRangeChange 已订阅');
+  } catch (e) {
+    console.warn('[Chart] OnVisibleRangeChange 订阅失败:', e);
+  }
+
+  // 触发方式 3 (兜底): OnScroll - 部分版本 OnVisibleRangeChange 不触发，用滚动事件兜底
+  try {
+    let _scrollDebounce = null;
+    chart.subscribeAction(klinecharts.ActionType.OnScroll, () => {
+      clearTimeout(_scrollDebounce);
+      _scrollDebounce = setTimeout(() => {
+        const range = chart.getVisibleRange();
+        if (range && typeof range.from === 'number' && range.from <= 30) {
+          fetchMore(`scroll(from=${range.from})`);
+        }
+      }, 250);
+    });
+    console.log('[Chart] OnScroll 兜底已订阅');
+  } catch (e) {
+    console.warn('[Chart] OnScroll 订阅失败:', e);
+  }
 
   console.log('[Chart] 初始化完成');
 }
