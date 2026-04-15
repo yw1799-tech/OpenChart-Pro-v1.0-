@@ -650,13 +650,203 @@ class DatabaseManager:
             await conn.execute("DELETE FROM backtest_reports WHERE id = ?", (report_id,))
             await conn.commit()
 
-    # Phase 3A/3B/4/5 的 CRUD 方法将在对应模块实现时追加
-    # 新表已在 _create_tables 中声明:
-    #   - flash_news (Phase 3A)
-    #   - watch_pool (Phase 3A)
-    #   - pool_score_history (Phase 3B)
-    #   - strategy_bindings (Phase 4)
-    #   - signals (Phase 4)
+    # ──────────────────────── Flash News (Phase 3A) ────────────────────────
+
+    async def save_flash_news(self, news: Dict[str, Any]) -> bool:
+        """
+        保存一条新闻快讯。news 必须包含: id, title, source, url, published_at。
+        其他字段可选。返回 True=新插入，False=已存在（去重命中）。
+        """
+        async with self.acquire() as conn:
+            cursor = await conn.execute(
+                """
+                INSERT OR IGNORE INTO flash_news (
+                    id, title, content, source, url,
+                    published_at, collected_at,
+                    importance, sentiment, categories, impact_tags, keywords,
+                    is_holding_related, l2_score,
+                    impact_on_crypto,
+                    is_macro_data, macro_type, macro_actual, macro_forecast, macro_previous,
+                    macro_deviation_pct, macro_impact_strength,
+                    ai_analysis, event_id, content_hash, simhash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    news["id"],
+                    news["title"],
+                    news.get("content", ""),
+                    news["source"],
+                    news.get("url", ""),
+                    news["published_at"],
+                    news.get("collected_at", int(time.time() * 1000)),
+                    news.get("importance", 1),
+                    news.get("sentiment", "neutral"),
+                    json.dumps(news.get("categories", [])),
+                    json.dumps(news.get("impact_tags", [])),
+                    json.dumps(news.get("keywords", [])),
+                    1 if news.get("is_holding_related") else 0,
+                    news.get("l2_score", 0.0),
+                    json.dumps(news["impact_on_crypto"]) if news.get("impact_on_crypto") else None,
+                    1 if news.get("is_macro_data") else 0,
+                    news.get("macro_type", ""),
+                    news.get("macro_actual"),
+                    news.get("macro_forecast"),
+                    news.get("macro_previous"),
+                    news.get("macro_deviation_pct"),
+                    news.get("macro_impact_strength", ""),
+                    json.dumps(news["ai_analysis"]) if news.get("ai_analysis") else None,
+                    news.get("event_id"),
+                    news.get("content_hash"),
+                    news.get("simhash"),
+                ),
+            )
+            await conn.commit()
+            return cursor.rowcount > 0
+
+    async def get_flash_news(
+        self,
+        market: Optional[str] = None,
+        importance_min: int = 1,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[Dict]:
+        """
+        查询新闻快讯，按发布时间倒序。
+        market: 过滤新闻所属市场。"""
+        async with self.acquire() as conn:
+            sql = "SELECT * FROM flash_news WHERE importance >= ?"
+            params: list = [importance_min]
+            # 市场过滤：用 source 关键字匹配（后续可优化为独立 market 字段）
+            if market:
+                # 简单实现：按 source 名所在的市场归类，留待后续精细化
+                pass
+            sql += " ORDER BY published_at DESC LIMIT ? OFFSET ?"
+            params += [limit, offset]
+            cursor = await conn.execute(sql, params)
+            rows = await cursor.fetchall()
+            results = []
+            for r in rows:
+                d = dict(r)
+                # JSON 字段反序列化
+                for k in ("categories", "impact_tags", "keywords", "impact_on_crypto", "ai_analysis"):
+                    if d.get(k):
+                        try:
+                            d[k] = json.loads(d[k])
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                results.append(d)
+            return results
+
+    async def get_flash_news_by_id(self, news_id: str) -> Optional[Dict]:
+        async with self.acquire() as conn:
+            cursor = await conn.execute("SELECT * FROM flash_news WHERE id = ?", (news_id,))
+            row = await cursor.fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            for k in ("categories", "impact_tags", "keywords", "impact_on_crypto", "ai_analysis"):
+                if d.get(k):
+                    try:
+                        d[k] = json.loads(d[k])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            return d
+
+    async def is_news_duplicate(self, content_hash: str) -> bool:
+        """根据 content_hash 检查新闻是否已存在（去重用）。"""
+        async with self.acquire() as conn:
+            cursor = await conn.execute(
+                "SELECT 1 FROM flash_news WHERE content_hash = ? LIMIT 1",
+                (content_hash,),
+            )
+            row = await cursor.fetchone()
+            return row is not None
+
+    # ──────────────────────── Watch Pool (Phase 3A) ────────────────────────
+
+    async def add_to_pool(
+        self,
+        symbol: str,
+        market: str,
+        source: str = "manual",
+        score: float = 50.0,
+        reason: str = "",
+    ) -> str:
+        """
+        向候选池添加品种。market 必须为 us/hk/cn（DB CHECK 约束保证不接受 crypto）。
+        返回 pool_item_id。重复添加返回已有 id。
+        """
+        if market not in ("us", "hk", "cn"):
+            raise ValueError(f"候选池只支持股票市场（us/hk/cn），不支持: {market}")
+
+        async with self.acquire() as conn:
+            now = int(time.time())
+            item_id = str(uuid.uuid4())
+            cursor = await conn.execute(
+                """
+                INSERT INTO watch_pool (
+                    id, symbol, market, score, status, source, reason,
+                    added_at, last_scored_at, last_news_mention_at
+                ) VALUES (?, ?, ?, ?, 'candidate', ?, ?, ?, ?, ?)
+                ON CONFLICT(symbol, market) DO UPDATE SET
+                    score = excluded.score,
+                    source = excluded.source,
+                    reason = excluded.reason,
+                    last_scored_at = excluded.last_scored_at
+                RETURNING id
+                """,
+                (item_id, symbol, market, score, source, reason, now, now, now if source == "news" else None),
+            )
+            row = await cursor.fetchone()
+            await conn.commit()
+            return row["id"] if row else item_id
+
+    async def get_pool_items(
+        self,
+        status: Optional[str] = None,
+        market: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict]:
+        """查询候选池，按评分降序。"""
+        async with self.acquire() as conn:
+            sql = "SELECT * FROM watch_pool WHERE 1=1"
+            params: list = []
+            if status:
+                sql += " AND status = ?"
+                params.append(status)
+            if market:
+                sql += " AND market = ?"
+                params.append(market)
+            sql += " ORDER BY score DESC, added_at DESC LIMIT ?"
+            params.append(limit)
+            cursor = await conn.execute(sql, params)
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+    async def remove_from_pool(self, item_id: str) -> bool:
+        """硬删除候选池条目。"""
+        async with self.acquire() as conn:
+            cursor = await conn.execute("DELETE FROM watch_pool WHERE id = ?", (item_id,))
+            await conn.commit()
+            return cursor.rowcount > 0
+
+    async def archive_pool_item(self, item_id: str):
+        """归档候选池条目（软删除）。"""
+        async with self.acquire() as conn:
+            await conn.execute(
+                "UPDATE watch_pool SET status = 'archived', archived_at = ? WHERE id = ?",
+                (int(time.time()), item_id),
+            )
+            await conn.commit()
+
+    async def update_pool_item_score(self, item_id: str, score: float):
+        """更新候选池条目评分（重评分用）。"""
+        async with self.acquire() as conn:
+            await conn.execute(
+                "UPDATE watch_pool SET score = ?, last_scored_at = ? WHERE id = ?",
+                (score, int(time.time()), item_id),
+            )
+            await conn.commit()
     #   - positions (Phase 5)
     #   - position_advices (Phase 5)
     #   - llm_cost_log (Phase 3B)

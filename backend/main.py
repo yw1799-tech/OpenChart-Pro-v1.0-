@@ -42,6 +42,7 @@ from backend.data.fetcher import get_fetcher
 from backend.data.models import Interval, Market
 from backend.db.database import DatabaseManager
 from backend.indicators.registry import calculate_indicator, get_indicator_info, list_indicators
+from backend.news.scheduler import NewsScheduler
 from backend.ws.hub import hub
 
 # ═══════════════════════════════════════════════════════════════════
@@ -57,12 +58,14 @@ logging.basicConfig(
 # 全局数据库单例
 db = DatabaseManager(config.DB_PATH, pool_size=5)
 
-# 运行时配置快照（启动时从 DB 加载，PUT /api/settings 时热更新）
-# 与 config.py 默认值合并：DB 值优先
+# 运行时配置快照
 _runtime_config: Dict[str, Any] = {}
 
-# 订阅中的 WebSocket 任务，key = (market, symbol, interval) -> asyncio.Task
+# 订阅中的 WebSocket 任务
 _ws_subscriptions: Dict[tuple, asyncio.Task] = {}
+
+# 新闻采集调度器（Phase 3A，启动时初始化）
+news_scheduler: Optional[NewsScheduler] = None
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -103,6 +106,24 @@ async def _ensure_crypto_watchlist():
         if symbol not in existing_symbols:
             await db.add_to_watchlist(symbol=symbol, market="crypto", name=symbol)
             logger.info(f"Auto-added {symbol} to crypto watchlist")
+
+
+def _get_pool_symbols() -> set:
+    """同步获取候选池中所有股票符号（供 NewsScheduler 加分判定用）。
+    简化实现：从 _runtime_config 取最新缓存（实际查询交给后台异步预热）。
+    """
+    return _runtime_config.get("_pool_symbols_cache", set())
+
+
+async def _refresh_pool_symbols_cache():
+    """每 5 分钟刷新候选池符号缓存。"""
+    while True:
+        try:
+            items = await db.get_pool_items(status="monitoring", limit=200)
+            _runtime_config["_pool_symbols_cache"] = {item["symbol"] for item in items}
+        except Exception as e:
+            logger.warning(f"刷新候选池缓存失败: {e}")
+        await asyncio.sleep(300)
 
 
 def _parse_market(market_str: str) -> Market:
@@ -152,8 +173,17 @@ async def lifespan(app: FastAPI):
     # 4. Phase 4 策略自动绑定（占位，策略模块实装后填充）
     # TODO Phase 4: auto-bind built-in strategies to CRYPTO_SYMBOLS
 
-    # 5. Phase 3A 采集调度器（占位）
-    # TODO Phase 3A: scheduler.start()
+    # 5. Phase 3A 新闻采集调度器
+    global news_scheduler
+    news_scheduler = NewsScheduler(
+        db=db,
+        ws_hub=hub,
+        holding_provider=lambda: set(),  # Phase 5 实装持仓提供者
+        pool_provider=_get_pool_symbols,
+    )
+    news_scheduler.start()
+    asyncio.create_task(_refresh_pool_symbols_cache())
+    logger.info("NewsScheduler started")
 
     # 6. Phase 3B LLM 成本计数器（占位）
     # TODO Phase 3B: reset_daily_llm_cost()
@@ -164,6 +194,9 @@ async def lifespan(app: FastAPI):
 
     # ─── 关闭 ───
     logger.info("OpenChart Pro shutting down...")
+    # 停止新闻采集
+    if news_scheduler:
+        await news_scheduler.stop()
     # 取消所有 WebSocket 订阅
     for task in _ws_subscriptions.values():
         task.cancel()
@@ -486,11 +519,110 @@ async def websocket_endpoint(websocket: WebSocket):
     await hub.handle_client(websocket)
 
 
+# ═══════════════════════════════════════════════════════════════════
+# 路由：新闻快讯  (Phase 3A)
+# ═══════════════════════════════════════════════════════════════════
+
+news_router = APIRouter(prefix="/api/news", tags=["新闻"])
+
+
+@news_router.get("/flash")
+async def list_flash_news(
+    market: Optional[str] = Query(None),
+    importance_min: int = Query(1, ge=1, le=5),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    """新闻快讯列表，按发布时间倒序。"""
+    items = await db.get_flash_news(
+        market=market, importance_min=importance_min, limit=limit, offset=offset
+    )
+    return {"count": len(items), "items": items}
+
+
+@news_router.get("/flash/{news_id}")
+async def get_flash_news_detail(news_id: str):
+    """单条新闻详情（含 AI 分析字段）。"""
+    item = await db.get_flash_news_by_id(news_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="News not found")
+    return item
+
+
+@news_router.get("/sources")
+async def get_news_sources_health():
+    """各采集源的健康度状态（监控用）。"""
+    if not news_scheduler:
+        return []
+    return news_scheduler.get_health()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 路由：候选池  (Phase 3A) — 仅股票市场
+# ═══════════════════════════════════════════════════════════════════
+
+pool_router = APIRouter(prefix="/api/pool", tags=["候选池"])
+
+
+class PoolAddRequest(BaseModel):
+    symbol: str
+    market: str
+    reason: str = ""
+    score: float = 50.0
+
+
+@pool_router.get("")
+async def list_pool_items(
+    status: Optional[str] = Query(None),
+    market: Optional[str] = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+):
+    """查询候选池条目，按评分降序。"""
+    items = await db.get_pool_items(status=status, market=market, limit=limit)
+    return {"count": len(items), "items": items}
+
+
+@pool_router.post("")
+async def add_to_pool(req: PoolAddRequest):
+    """手动添加股票到候选池（加密品种会被 DB CHECK 约束拒绝）。"""
+    if req.market == "crypto":
+        raise HTTPException(
+            status_code=400,
+            detail="加密货币不使用候选池：6 币种已通过 OKX WebSocket 自动监控",
+        )
+    if req.market not in ("us", "hk", "cn"):
+        raise HTTPException(status_code=400, detail=f"Invalid market: {req.market}")
+    try:
+        item_id = await db.add_to_pool(
+            symbol=req.symbol, market=req.market, source="manual",
+            score=req.score, reason=req.reason or "用户手动添加",
+        )
+        await hub.broadcast_pool_update("added", {
+            "id": item_id, "symbol": req.symbol, "market": req.market,
+            "source": "manual", "score": req.score,
+        })
+        return {"id": item_id, "added": True}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@pool_router.delete("/{item_id}")
+async def remove_pool_item(item_id: str):
+    """从候选池移除条目（硬删除）。"""
+    ok = await db.remove_from_pool(item_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Pool item not found")
+    await hub.broadcast_pool_update("removed", {"id": item_id})
+    return {"removed": True}
+
+
 # 注册路由（必须在 StaticFiles 挂载之前）
 app.include_router(market_router)
 app.include_router(indicator_router)
 app.include_router(watchlist_router)
 app.include_router(settings_router)
+app.include_router(news_router)
+app.include_router(pool_router)
 
 
 # ═══════════════════════════════════════════════════════════════════

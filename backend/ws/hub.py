@@ -97,6 +97,33 @@ class WebSocketHub:
         for client_id in list(self.connections.keys()):
             await self._send(client_id, msg)
 
+    async def broadcast_news(self, news_msg):
+        """新闻快讯推送（Phase 3A）。
+        news_msg 形如 {"type": "flash_news", "data": {...}}
+        """
+        for client_id in list(self.connections.keys()):
+            await self._send(client_id, news_msg)
+
+    async def broadcast_pool_update(self, action, data):
+        """候选池变动推送（Phase 3A）。
+        action: 'added' | 'removed' | 'scored'
+        """
+        msg = {"type": "pool_update", "action": action, "data": data}
+        for client_id in list(self.connections.keys()):
+            await self._send(client_id, msg)
+
+    async def broadcast_signal(self, signal_data):
+        """策略信号推送（Phase 4）。"""
+        msg = {"type": "signal", "data": signal_data}
+        for client_id in list(self.connections.keys()):
+            await self._send(client_id, msg)
+
+    async def broadcast_position_advice(self, advice_data):
+        """持仓建议推送（Phase 5）。"""
+        msg = {"type": "position_advice", "data": advice_data}
+        for client_id in list(self.connections.keys()):
+            await self._send(client_id, msg)
+
     async def _send(self, client_id, data):
         ws = self.connections.get(client_id)
         if ws:
