@@ -30,7 +30,7 @@ class DatabaseManager:
             await conn.execute("PRAGMA foreign_keys=ON")
             await self._pool.put(conn)
 
-        async with self._acquire() as conn:
+        async with self.acquire() as conn:
             await self._create_tables(conn)
 
         self._initialized = True
@@ -118,44 +118,145 @@ class DatabaseManager:
                 created_at INTEGER NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS formulas (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                description TEXT DEFAULT '',
-                code TEXT NOT NULL,
-                mode TEXT DEFAULT 'openscript',
-                type TEXT DEFAULT 'indicator',
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER
-            );
-
-            CREATE TABLE IF NOT EXISTS news_cache (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                source TEXT NOT NULL,
-                title TEXT NOT NULL,
-                content TEXT,
-                url TEXT,
-                sentiment REAL,
-                symbols TEXT,
-                published_at INTEGER,
-                analyzed_at INTEGER
-            );
-
-            CREATE TABLE IF NOT EXISTS screener_tasks (
-                task_id TEXT PRIMARY KEY,
-                market TEXT NOT NULL,
-                status TEXT DEFAULT 'collecting_news',
-                progress TEXT,
-                result_json TEXT,
-                error TEXT,
-                created_at INTEGER NOT NULL,
-                completed_at INTEGER
-            );
-
             CREATE TABLE IF NOT EXISTS config (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+
+            -- ═══ 新闻快讯（Phase 3A 规则引擎产出 + Phase 3B LLM 异步回填）═══
+            CREATE TABLE IF NOT EXISTS flash_news (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                content TEXT,
+                source TEXT NOT NULL,
+                url TEXT,
+                published_at INTEGER NOT NULL,      -- 源站发布时间
+                collected_at INTEGER NOT NULL,      -- 采集入库时间
+                importance INTEGER DEFAULT 1,       -- 1~5 星
+                sentiment TEXT DEFAULT 'neutral',   -- bullish | bearish | neutral
+                categories TEXT DEFAULT '[]',       -- JSON: 关联品种代码
+                impact_tags TEXT DEFAULT '[]',      -- JSON: 事件类型标签
+                keywords TEXT DEFAULT '[]',         -- JSON: 命中关键词
+                is_holding_related INTEGER DEFAULT 0,
+                l2_score REAL DEFAULT 0,
+                -- 加密 6 币种影响（规则引擎产出）
+                impact_on_crypto TEXT,              -- JSON: [{symbol, direction, strength}]
+                -- 宏观数据字段（仅 is_macro_data=1 时有值）
+                is_macro_data INTEGER DEFAULT 0,
+                macro_type TEXT DEFAULT '',         -- CPI | FOMC | NFP
+                macro_actual TEXT,
+                macro_forecast TEXT,
+                macro_previous TEXT,
+                macro_deviation_pct REAL,
+                macro_impact_strength TEXT DEFAULT '',  -- neutral | light | strong
+                -- LLM 深度解读（Phase 3B 异步回填）
+                ai_analysis TEXT,
+                -- 去重辅助字段
+                event_id TEXT,
+                content_hash TEXT,
+                simhash TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_flash_time ON flash_news (published_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_flash_importance ON flash_news (importance);
+            CREATE INDEX IF NOT EXISTS idx_flash_event ON flash_news (event_id);
+
+            -- ═══ 候选池（仅股票市场，market CHECK 硬约束）═══
+            CREATE TABLE IF NOT EXISTS watch_pool (
+                id TEXT PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                market TEXT NOT NULL CHECK(market IN ('us', 'hk', 'cn')),
+                score REAL DEFAULT 0,               -- 综合评分 0-100
+                status TEXT DEFAULT 'candidate',    -- candidate | monitoring | archived
+                source TEXT DEFAULT 'manual',       -- news | anomaly | macro_theme | manual
+                reason TEXT DEFAULT '',
+                added_at INTEGER NOT NULL,
+                last_scored_at INTEGER,
+                last_news_mention_at INTEGER,       -- 最近一次新闻提及时间
+                low_score_since INTEGER,            -- 开始连续低分时间
+                archived_at INTEGER,
+                UNIQUE(symbol, market)
+            );
+            CREATE INDEX IF NOT EXISTS idx_pool_status ON watch_pool (status);
+            CREATE INDEX IF NOT EXISTS idx_pool_score ON watch_pool (score DESC);
+
+            -- ═══ 候选池评分历史（用于复盘和趋势分析）═══
+            CREATE TABLE IF NOT EXISTS pool_score_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pool_item_id TEXT NOT NULL,
+                score REAL NOT NULL,
+                factors TEXT,                        -- JSON: 评分分量详情
+                scored_at INTEGER NOT NULL
+            );
+
+            -- ═══ 策略绑定（多对多）═══
+            CREATE TABLE IF NOT EXISTS strategy_bindings (
+                id TEXT PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                market TEXT NOT NULL,
+                strategy_name TEXT NOT NULL,
+                params TEXT DEFAULT '{}',            -- JSON: 策略参数覆盖
+                enabled INTEGER DEFAULT 1,
+                created_at INTEGER NOT NULL,
+                UNIQUE(symbol, market, strategy_name)
+            );
+            CREATE INDEX IF NOT EXISTS idx_binding_symbol ON strategy_bindings (symbol, market);
+
+            -- ═══ 策略信号 ═══
+            CREATE TABLE IF NOT EXISTS signals (
+                id TEXT PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                market TEXT NOT NULL,
+                action TEXT NOT NULL,                -- buy | sell
+                strategy_name TEXT NOT NULL,
+                confidence INTEGER DEFAULT 0,        -- 0-100
+                price REAL,
+                suggested_qty REAL,
+                stop_loss REAL,
+                take_profit REAL,
+                reason TEXT DEFAULT '',
+                triggered_by TEXT DEFAULT '{}',      -- JSON: 触发来源详情
+                status TEXT DEFAULT 'active',        -- active | expired | acted
+                generated_at INTEGER NOT NULL,
+                expires_at INTEGER
+            );
+            CREATE INDEX IF NOT EXISTS idx_signals_time ON signals (generated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_signals_symbol ON signals (symbol, market);
+
+            -- ═══ 持仓 ═══
+            CREATE TABLE IF NOT EXISTS positions (
+                id TEXT PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                market TEXT NOT NULL,
+                quantity REAL NOT NULL,
+                avg_cost REAL NOT NULL,
+                opened_at INTEGER NOT NULL,
+                notes TEXT DEFAULT '',
+                UNIQUE(symbol, market)
+            );
+
+            -- ═══ 持仓建议历史 ═══
+            CREATE TABLE IF NOT EXISTS position_advices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                position_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                advice TEXT NOT NULL,                -- hold | reduce | add | close
+                reason TEXT NOT NULL,
+                triggered_by TEXT DEFAULT '{}',      -- JSON: 触发来源
+                advised_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_advices_time ON position_advices (advised_at DESC);
+
+            -- ═══ LLM 调用成本追踪（日预算控制用）═══
+            CREATE TABLE IF NOT EXISTS llm_cost_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                called_at INTEGER NOT NULL,
+                model TEXT NOT NULL,
+                input_tokens INTEGER,
+                output_tokens INTEGER,
+                cost_usd REAL NOT NULL,
+                news_id TEXT                         -- 关联的新闻 ID（可选）
+            );
+            CREATE INDEX IF NOT EXISTS idx_llm_cost_time ON llm_cost_log (called_at DESC);
         """)
         await conn.commit()
 
@@ -460,73 +561,6 @@ class DatabaseManager:
             await conn.execute("DELETE FROM config WHERE key = ?", (key,))
             await conn.commit()
 
-    # ──────────────────────── Formulas ────────────────────────
-
-    async def save_formula(self, formula: Dict[str, Any]) -> int:
-        """保存公式，返回 id。若已存在则更新。"""
-        async with self.acquire() as conn:
-            if formula.get("id"):
-                await conn.execute(
-                    """
-                    UPDATE formulas SET name=?, description=?, code=?, mode=?, type=?, updated_at=?
-                    WHERE id=?
-                    """,
-                    (
-                        formula["name"],
-                        formula.get("description", ""),
-                        formula["code"],
-                        formula.get("mode", "openscript"),
-                        formula.get("type", "indicator"),
-                        int(time.time()),
-                        formula["id"],
-                    ),
-                )
-                await conn.commit()
-                return formula["id"]
-            else:
-                cursor = await conn.execute(
-                    """
-                    INSERT INTO formulas (name, description, code, mode, type, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        formula["name"],
-                        formula.get("description", ""),
-                        formula["code"],
-                        formula.get("mode", "openscript"),
-                        formula.get("type", "indicator"),
-                        int(time.time()),
-                    ),
-                )
-                await conn.commit()
-                return cursor.lastrowid or 0
-
-    async def get_formulas(self, mode: Optional[str] = None) -> List[Dict]:
-        """获取公式列表，可按 mode 过滤。"""
-        async with self.acquire() as conn:
-            if mode:
-                cursor = await conn.execute(
-                    "SELECT * FROM formulas WHERE mode = ? ORDER BY updated_at DESC, created_at DESC",
-                    (mode,),
-                )
-            else:
-                cursor = await conn.execute("SELECT * FROM formulas ORDER BY updated_at DESC, created_at DESC")
-            rows = await cursor.fetchall()
-            return [dict(r) for r in rows]
-
-    async def get_formula_by_id(self, formula_id: int) -> Optional[Dict]:
-        """按 ID 获取公式。"""
-        async with self.acquire() as conn:
-            cursor = await conn.execute("SELECT * FROM formulas WHERE id = ?", (formula_id,))
-            row = await cursor.fetchone()
-            return dict(row) if row else None
-
-    async def delete_formula(self, formula_id: int):
-        """删除公式。"""
-        async with self.acquire() as conn:
-            await conn.execute("DELETE FROM formulas WHERE id = ?", (formula_id,))
-            await conn.commit()
-
     # ──────────────────────── Backtest Reports ────────────────────────
 
     async def save_backtest_report(self, report: Dict[str, Any]) -> str:
@@ -589,79 +623,13 @@ class DatabaseManager:
             await conn.execute("DELETE FROM backtest_reports WHERE id = ?", (report_id,))
             await conn.commit()
 
-    # ──────────────────────── Screener Tasks ────────────────────────
-
-    async def create_screener_task(self, market: str) -> str:
-        """创建选股任务，返回 task_id。"""
-        task_id = str(uuid.uuid4())
-        async with self.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO screener_tasks (task_id, market, status, created_at)
-                VALUES (?, ?, 'collecting_news', ?)
-                """,
-                (task_id, market, int(time.time())),
-            )
-            await conn.commit()
-        return task_id
-
-    async def update_screener_task(self, task_id: str, updates: Dict[str, Any]):
-        """更新选股任务状态。"""
-        async with self.acquire() as conn:
-            set_clauses = []
-            params = []
-            for key in ("status", "progress", "result_json", "error", "completed_at"):
-                if key in updates:
-                    val = updates[key]
-                    if key == "result_json" and not isinstance(val, str):
-                        val = json.dumps(val)
-                    set_clauses.append(f"{key} = ?")
-                    params.append(val)
-            if not set_clauses:
-                return
-            params.append(task_id)
-            await conn.execute(
-                f"UPDATE screener_tasks SET {', '.join(set_clauses)} WHERE task_id = ?",
-                params,
-            )
-            await conn.commit()
-
-    async def get_screener_task(self, task_id: str) -> Optional[Dict]:
-        """获取选股任务详情。"""
-        async with self.acquire() as conn:
-            cursor = await conn.execute("SELECT * FROM screener_tasks WHERE task_id = ?", (task_id,))
-            row = await cursor.fetchone()
-            if not row:
-                return None
-            d = dict(row)
-            if d.get("result_json"):
-                d["result"] = json.loads(d.pop("result_json"))
-            else:
-                d.pop("result_json", None)
-                d["result"] = None
-            return d
-
-    async def get_screener_tasks(self, market: Optional[str] = None, limit: int = 20) -> List[Dict]:
-        """获取选股任务列表。"""
-        async with self.acquire() as conn:
-            if market:
-                cursor = await conn.execute(
-                    "SELECT * FROM screener_tasks WHERE market = ? ORDER BY created_at DESC LIMIT ?",
-                    (market, limit),
-                )
-            else:
-                cursor = await conn.execute(
-                    "SELECT * FROM screener_tasks ORDER BY created_at DESC LIMIT ?",
-                    (limit,),
-                )
-            rows = await cursor.fetchall()
-            results = []
-            for r in rows:
-                d = dict(r)
-                if d.get("result_json"):
-                    d["result"] = json.loads(d.pop("result_json"))
-                else:
-                    d.pop("result_json", None)
-                    d["result"] = None
-                results.append(d)
-            return results
+    # Phase 3A/3B/4/5 的 CRUD 方法将在对应模块实现时追加
+    # 新表已在 _create_tables 中声明:
+    #   - flash_news (Phase 3A)
+    #   - watch_pool (Phase 3A)
+    #   - pool_score_history (Phase 3B)
+    #   - strategy_bindings (Phase 4)
+    #   - signals (Phase 4)
+    #   - positions (Phase 5)
+    #   - position_advices (Phase 5)
+    #   - llm_cost_log (Phase 3B)
