@@ -900,16 +900,13 @@ function initChart() {
   // 我们同时注册两个，共用 fetchMore() 函数（自带 _loadMoreFetching 锁防并发）
   // ════════════════════════════════════════════════════════════
 
-  window._loadMoreNoMore = false;
   window._loadMoreFetching = false;
+  // 去重缓存：{ "$end_time": $expireAt }，避免短时间反复拉同一 end_time
+  window._loadMoreLastTried = {};
 
   async function fetchMore(reason) {
     if (window._loadMoreFetching) {
       console.log(`[loadMore] skip(fetching) reason=${reason}`);
-      return;
-    }
-    if (window._loadMoreNoMore) {
-      console.log(`[loadMore] skip(noMore) reason=${reason}`);
       return;
     }
     const dataList = chart.getDataList();
@@ -918,14 +915,23 @@ function initChart() {
       return;
     }
 
+    const currentEarliestTs = dataList[0].timestamp;
+
+    // 软锁：同一 end_time 在 60 秒内不重复拉
+    // （防止"上游数据源到底了"时无限触发，但允许 60 秒后再试以适配上游恢复）
+    const lastExp = window._loadMoreLastTried[currentEarliestTs];
+    if (lastExp && lastExp > Date.now()) {
+      console.log(`[loadMore] skip(recently tried, retry in ${Math.round((lastExp - Date.now())/1000)}s) reason=${reason} end_time=${currentEarliestTs}`);
+      return;
+    }
+
     window._loadMoreFetching = true;
     try {
       const s   = window.currentSymbol;
       const iv  = window.currentInterval;
       const mkt = window.currentMarket === 'a' ? 'cn' : (window.currentMarket || 'crypto');
-      const currentEarliestTs = dataList[0].timestamp;
 
-      console.log(`[loadMore] FETCH start reason=${reason} ${s}/${iv}/${mkt} end_time=${currentEarliestTs} (currentEarliest)`);
+      console.log(`[loadMore] FETCH start reason=${reason} ${s}/${iv}/${mkt} end_time=${currentEarliestTs}`);
       const resp = await fetch(
         `/api/klines?symbol=${encodeURIComponent(s)}&interval=${encodeURIComponent(iv)}&limit=500&market=${encodeURIComponent(mkt)}&end_time=${currentEarliestTs}`
       );
@@ -933,13 +939,10 @@ function initChart() {
       const d = await resp.json();
       const raw = d.candles || d.data || d;
 
-      // 关键判断：返回 0 根才认定"无更多历史"
-      // 之前用 length < 500 错了：不同数据源 limit 含义不同，
-      // 例如新浪一次最多返回 1023 根，OKX 100 根，Yahoo 视周期不同
-      // 只要返回非空，可能后端缓存层/上游还有更早数据
       if (!Array.isArray(raw) || raw.length === 0) {
-        window._loadMoreNoMore = true;
-        console.log(`[loadMore] DONE no-more (empty) reason=${reason}`);
+        // 返回空：标记本 end_time 60 秒内不重试
+        window._loadMoreLastTried[currentEarliestTs] = Date.now() + 60_000;
+        console.log(`[loadMore] EMPTY (cooldown 60s) reason=${reason}`);
         return;
       }
 
@@ -953,26 +956,20 @@ function initChart() {
         turnover:  parseFloat(k.turnover || k.amount || 0),
       }));
 
-      // 第二个判断：如果返回数据的最早 ts 没有 更早 于当前最早 ts，
-      // 说明上游没有更早数据了（可能返回的全是已加载范围内的重复）
-      const newEarliestTs = Math.min(...more.map(c => c.timestamp));
-      if (newEarliestTs >= currentEarliestTs) {
-        window._loadMoreNoMore = true;
-        console.log(`[loadMore] DONE no-more (newEarliest=${newEarliestTs} >= currentEarliest=${currentEarliestTs}) reason=${reason}`);
-        return;
-      }
-
-      // 过滤：只保留严格早于当前最早 ts 的（防止重复插入）
+      // 严格早于当前最早 ts 的才算"新数据"
       const filtered = more.filter(c => c.timestamp < currentEarliestTs);
       if (filtered.length === 0) {
-        window._loadMoreNoMore = true;
-        console.log(`[loadMore] DONE no-more (all overlap) reason=${reason}`);
+        // 上游能返数据但都在已加载范围内 → 说明这个 end_time 上游没更早数据
+        // 60 秒后允许重试（也许上游降级源切换后能给更早历史）
+        window._loadMoreLastTried[currentEarliestTs] = Date.now() + 60_000;
+        console.log(`[loadMore] NO_NEW (raw=${raw.length} but all >= currentEarliest, cooldown 60s) reason=${reason}`);
         return;
       }
 
-      // 第三个参数 false 表示"还可能有更多"，让 KLineChart 继续允许触发
+      // applyMoreData 第三参数 false：不锁 KLineChart 内部 _loading
       chart.applyMoreData(filtered, false);
-      console.log(`[loadMore] DONE +${filtered.length} (raw=${raw.length}, total=${chart.getDataList().length}, newEarliest=${newEarliestTs}) reason=${reason}`);
+      const newEarliest = Math.min(...filtered.map(c => c.timestamp));
+      console.log(`[loadMore] DONE +${filtered.length} (raw=${raw.length}, total=${chart.getDataList().length}, newEarliest=${newEarliest}) reason=${reason}`);
 
       if (typeof isChanlunActive === 'function' && isChanlunActive()) {
         setTimeout(() => loadChanlun(), 800);
@@ -1067,7 +1064,7 @@ async function loadKlines(symbol, interval, market) {
 
     // 初始数据加载完毕，重置懒加载状态（新品种/周期可能有更多历史）
     window._loadMoreFetching = false;
-    window._loadMoreNoMore = false;
+    window._loadMoreLastTried = {};
 
     // 更新水印
     const wm = document.getElementById('chart-watermark');
