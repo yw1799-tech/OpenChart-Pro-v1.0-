@@ -325,8 +325,12 @@ class DatabaseManager:
         start_ts: Optional[int] = None,
         end_ts: Optional[int] = None,
         limit: int = 500,
+        order_desc: bool = False,
     ) -> List[Dict[str, Any]]:
-        """查询 K线数据，支持时间范围和条数限制。"""
+        """
+        查询 K 线数据，支持时间范围和条数限制。
+        order_desc=True 时按 timestamp 降序返回（用于"拿 end_ts 之前最近 N 根"）。
+        """
         async with self.acquire() as conn:
             table = await self._ensure_kline_table(conn, market, interval)
             sql = f"SELECT * FROM [{table}] WHERE symbol = ?"
@@ -337,12 +341,35 @@ class DatabaseManager:
             if end_ts is not None:
                 sql += " AND timestamp <= ?"
                 params.append(end_ts)
-            sql += " ORDER BY timestamp ASC LIMIT ?"
+            if order_desc:
+                sql += " ORDER BY timestamp DESC LIMIT ?"
+            else:
+                sql += " ORDER BY timestamp ASC LIMIT ?"
             params.append(limit)
 
             cursor = await conn.execute(sql, params)
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
+
+    async def get_kline_range(
+        self, market: str, interval: str, symbol: str
+    ) -> Optional[Dict[str, int]]:
+        """
+        获取某品种在 DB 中已有 K 线的时间范围和条数。
+        返回 {"min_ts", "max_ts", "count"} 或 None（无数据）。
+        缓存层用于判断是否需要向上游拉增量。
+        """
+        async with self.acquire() as conn:
+            table = await self._ensure_kline_table(conn, market, interval)
+            cursor = await conn.execute(
+                f"SELECT MIN(timestamp) as min_ts, MAX(timestamp) as max_ts, COUNT(*) as cnt "
+                f"FROM [{table}] WHERE symbol = ?",
+                (symbol,),
+            )
+            row = await cursor.fetchone()
+            if not row or row["cnt"] == 0:
+                return None
+            return {"min_ts": row["min_ts"], "max_ts": row["max_ts"], "count": row["cnt"]}
 
     # ──────────────────────── Watchlist ────────────────────────
 

@@ -7,12 +7,13 @@ window.currentMarket = 'crypto';
 window.currentSymbol = 'BTC-USDT';
 window.currentInterval = '1H';
 
+// 市场配置（key 与后端 Market 枚举一致：crypto/us/hk/cn）
+// 参考 PRD §1.5 + §1.7 加密/股票功能边界矩阵
 const MARKETS = {
   crypto: { label: '加密货币', defaultSymbol: 'BTC-USDT', currency: 'USDT', intervals: ['1m','5m','15m','30m','1H','4H','1D','1W','1M'] },
-  us:     { label: '美股',     defaultSymbol: 'AAPL',     currency: 'USD',  intervals: ['1m','5m','15m','30m','1H','4H','1D','1W','1M'] },
-  hk:     { label: '港股',     defaultSymbol: '0700.HK',  currency: 'HKD',  intervals: ['1m','5m','15m','30m','1H','1D','1W','1M'] },
-  a:      { label: 'A股',      defaultSymbol: '600519',   currency: 'CNY',  intervals: ['5m','15m','30m','1H','1D','1W','1M'] },
-  forex:  { label: '外汇',     defaultSymbol: 'EUR-USD',  currency: 'USD',  intervals: ['1m','5m','15m','30m','1H','4H','1D','1W','1M'] },
+  us:     { label: '美股',     defaultSymbol: 'AAPL',     currency: 'USD',  intervals: ['5m','15m','30m','1H','4H','1D','1W','1M'] },  // PRD: 美股隐藏 1m
+  hk:     { label: '港股',     defaultSymbol: '0700.HK',  currency: 'HKD',  intervals: ['5m','15m','30m','1H','1D','1W','1M'] },       // PRD: 港股隐藏 1m
+  cn:     { label: 'A股',      defaultSymbol: '600519',   currency: 'CNY',  intervals: ['5m','15m','30m','1H','1D','1W','1M'] },       // PRD: A股隐藏 1m 和 4H
 };
 
 let symbolsCache = {};   // market → [{ symbol, name, market }]
@@ -66,7 +67,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       loadMarketSymbols('crypto'),
       loadMarketSymbols('us'),
       loadMarketSymbols('hk'),
-      loadMarketSymbols('a'),
+      loadMarketSymbols('cn'),
     ]);
   } catch(e) {
     console.warn('[App] 加载品种列表失败:', e);
@@ -125,9 +126,9 @@ window.appendConsole = appendConsole;
 /* ============================================================
    市场与品种
    ============================================================ */
-// 前端market值到后端market值的映射
+// 前后端 market 值统一为 crypto/us/hk/cn（已与 TDD 对齐，此函数保留作向后兼容）
 function toApiMarket(m) {
-  return m === 'a' ? 'cn' : m;
+  return m === 'a' ? 'cn' : m;  // 兼容旧代码中可能残留的 'a'
 }
 
 async function loadMarketSymbols(market) {

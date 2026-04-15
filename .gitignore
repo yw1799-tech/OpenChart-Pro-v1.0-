@@ -46,3 +46,4 @@ chanlun_comparison.png
 backend/chanlun_engine/chanpy_*.py
 backend/chanlun_engine/full_audit.py
 backend/chanlun_engine/Image/
+.claude/

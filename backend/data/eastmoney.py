@@ -251,10 +251,19 @@ class EastMoneyFetcher(DataFetcher):
 
         return symbols
 
-    async def get_klines(self, symbol: str, interval: Interval, limit: int = 500) -> List[Candle]:
+    async def get_klines(
+        self,
+        symbol: str,
+        interval: Interval,
+        limit: int = 500,
+        end_time_ms: Optional[int] = None,
+    ) -> List[Candle]:
         """
         获取历史 K 线数据。
-        注意：4H 周期不直接支持，使用 60 分钟合并 4 根实现。
+
+        - 4H 周期不直接支持，使用 60 分钟合并 4 根实现。
+        - end_time_ms: 毫秒时间戳，只返回早于此时间的 K 线（向左懒加载）。
+          东方财富用 `end` 参数接受 YYYYMMDD 格式。
         """
         klt = _KLT_MAP.get(interval)
         if klt is None:
@@ -264,13 +273,30 @@ class EastMoneyFetcher(DataFetcher):
         need_4h_merge = interval == Interval.H4
         fetch_limit = limit * 4 if need_4h_merge else limit
 
+        # end_time_ms → YYYYMMDD 字符串（东方财富接口格式）
+        # datetime/timezone 已在文件顶部全局导入
+        #
+        # 东方财富 end=YYYYMMDD 的行为：返回"到该日期为止"的最近 lmt 根 K 线
+        #   即 ts <= end_date 23:59 的数据。
+        # 懒加载场景要的是 ts < end_time_ms 严格更早的，因此：
+        # - 用 end_time_ms 所在北京时间日期（不 +1 天）
+        # - 再在客户端做精确 ts 过滤（因为同一天内可能包含 end_time_ms 当前小时及之后的小时）
+        if end_time_ms:
+            end_dt_bj = datetime.fromtimestamp(end_time_ms / 1000, tz=_BJ_TZ)
+            end_str = end_dt_bj.strftime("%Y%m%d")
+            # 分钟级数据需要多拉缓冲，以防过滤后不够 limit 根
+            if interval != Interval.D1 and interval != Interval.W1 and interval != Interval.MN:
+                fetch_limit = fetch_limit + 100
+        else:
+            end_str = "20500101"
+
         params = {
             "secid": secid,
             "fields1": "f1,f2,f3,f4,f5,f6",
             "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
             "klt": str(klt),
             "fqt": "1",  # 前复权
-            "end": "20500101",
+            "end": end_str,
             "lmt": str(fetch_limit),
         }
 
@@ -325,6 +351,13 @@ class EastMoneyFetcher(DataFetcher):
 
         if need_4h_merge:
             candles = _merge_4h_candles(candles)
+
+        # 客户端按 end_time_ms 精确过滤（东方财富 end 参数仅支持日级粒度，对分钟级 K 线不精确）
+        if end_time_ms:
+            candles = [c for c in candles if c.timestamp < end_time_ms]
+
+        # 取最后 limit 根（最接近 end_time 的那批）
+        if len(candles) > limit:
             candles = candles[-limit:]
 
         return candles

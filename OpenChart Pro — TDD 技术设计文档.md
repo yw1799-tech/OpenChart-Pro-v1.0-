@@ -74,11 +74,43 @@
 │  └─────────────────────────────────────────────────────────────┘  │
 ├────────────────────────────────────────────────────────────────────┤
 │                       外部数据源 / API                              │
-│  OKX WS · Binance · Yahoo Finance · 东方财富                      │
+│  OKX WS · Binance · Yahoo Finance                                │
+│  A 股聚合：东方财富 → 新浪财经 → 腾讯财经（自动降级）              │
 │  10 个新闻源（RSS/REST/爬取）                                      │
 │  DeepSeek / 通义千问 LLM API                                      │
 └────────────────────────────────────────────────────────────────────┘
 ```
+
+### 1.3 K 线缓存策略（Phase 1 增强）
+
+所有市场的 K 线请求走 `data/cache.py` 包装层，行为：
+
+| 场景 | 行为 |
+|------|------|
+| 懒加载历史（end_time_ms 非空） | 先查 SQLite，足够直接返回；不够时拉上游 + 存库 |
+| 实时最新（end_time_ms=None） | 强制拉上游（最新 K 线可能未收盘），拉完后 upsert 入库 |
+| 上游失败 | 降级返回 SQLite 已缓存的数据（即使略陈旧） |
+
+好处：
+- 大部分懒加载请求命中缓存（0 上游调用）
+- 东方财富/Yahoo 限流时用户仍能看到历史 K 线
+- 冷启动首批拉取后，后续同周期请求几乎全命中缓存
+
+### 1.4 A 股多源自动降级（Phase 1 增强）
+
+`data/cn_aggregator.py` 实现三级降级：
+
+| 优先级 | 数据源 | 接口 | 备注 |
+|-------|-------|-----|------|
+| 主 | 东方财富（EastMoneyFetcher） | `push2his.eastmoney.com` | v1 默认主源 |
+| 备 1 | 新浪财经（SinaCNFetcher） | `money.finance.sina.com.cn` | 限流时自动切 |
+| 备 2 | 腾讯财经（TencentCNFetcher） | `ifzq.gtimg.cn` / `web.ifzq.gtimg.cn` | 最后一级降级 |
+
+**健康度机制**：
+- 每个源维护连续失败计数
+- 连续失败 ≥ 3 次进入 60 秒冷却，期间不再尝试
+- 请求按"可用优先"顺序试，命中即返回
+- 冷却结束自动恢复尝试
 
 ### 1.3 后台任务调度
 
@@ -111,10 +143,14 @@ openchart-pro/
 │   ├── data/                    # 数据源模块 (Phase 1-2)
 │   │   ├── __init__.py
 │   │   ├── fetcher.py           # 统一接口（工厂模式）
-│   │   ├── okx.py               # OKX WebSocket + REST
-│   │   ├── binance.py           # Binance（备用降级）
+│   │   ├── cache.py             # K 线缓存层（SQLite，所有市场共用）
+│   │   ├── okx.py               # OKX WebSocket + REST（加密主力）
+│   │   ├── binance.py           # Binance（加密备用降级）
 │   │   ├── yahoo.py             # Yahoo Finance（美股/港股）
-│   │   ├── eastmoney.py         # 东方财富（A 股 + 异动排行）
+│   │   ├── cn_aggregator.py     # A 股聚合层（多源自动降级 + 健康度）
+│   │   ├── eastmoney.py         # 东方财富（A 股主源，含异动排行）
+│   │   ├── sina_cn.py           # 新浪财经（A 股备源 1）
+│   │   ├── tencent_cn.py        # 腾讯财经（A 股备源 2）
 │   │   └── models.py            # 核心数据模型
 │   │
 │   ├── indicators/              # 指标计算 (Phase 2)

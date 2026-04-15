@@ -37,6 +37,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import backend.config as config
+from backend.data.cache import cached_get_klines
 from backend.data.fetcher import get_fetcher
 from backend.data.models import Interval, Market
 from backend.db.database import DatabaseManager
@@ -105,9 +106,15 @@ async def _ensure_crypto_watchlist():
 
 
 def _parse_market(market_str: str) -> Market:
-    """字符串到 Market 枚举。"""
+    """
+    字符串到 Market 枚举。
+    兼容前端历史命名：'a' → 'cn' （A 股的旧别名）
+    """
+    m = market_str.lower()
+    if m == "a":  # 前端历史别名
+        m = "cn"
     try:
-        return Market(market_str.lower())
+        return Market(m)
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Invalid market: {market_str}")
 
@@ -248,12 +255,15 @@ async def get_klines(
     interval: str = Query("1H"),
     limit: int = Query(500, ge=1, le=2000),
     market: Optional[str] = Query(None),
-    before: Optional[int] = Query(None, description="毫秒时间戳，用于往左分页加载历史"),
+    end_time: Optional[int] = Query(None, description="毫秒时间戳，用于往左分页加载历史"),
+    before: Optional[int] = Query(None, description="别名，等同 end_time"),
 ):
     """
     获取 K 线数据。
     - market 可选，不传时按 symbol 推断（BTC-USDT → crypto，600519 → cn 等）
-    - before 参数用于前端"往左拖动自动加载"(PRD F1.9)
+    - end_time 参数用于前端"往左拖动自动加载"(PRD F1.9)
+      - 接受毫秒时间戳，返回该时间之前的最近 limit 根 K 线
+      - before 是兼容别名
     """
     # 市场推断
     if market:
@@ -262,8 +272,11 @@ async def get_klines(
         m = _infer_market(symbol)
 
     i = _parse_interval(interval)
-    fetcher = get_fetcher(m)
-    candles = await fetcher.get_klines(symbol=symbol, interval=i, limit=limit, end_time_ms=before)
+    end_time_ms = end_time or before  # 兼容两种命名
+    # 走缓存层：优先命中 SQLite，未命中再调上游 Fetcher，上游失败时降级返回缓存
+    candles = await cached_get_klines(
+        db=db, market=m, symbol=symbol, interval=i, limit=limit, end_time_ms=end_time_ms
+    )
 
     return {
         "symbol": symbol,

@@ -271,11 +271,10 @@ const Search = (() => {
   function selectSymbol(symbol, market) {
     if (!symbol) return;
     close();
-    // 如果传了market且和当前不同，先切换市场
+    // 如果传了market且和当前不同，先切换市场（前后端统一用 crypto/us/hk/cn）
     if (market && market !== window.currentMarket) {
-      const frontMarket = market === 'cn' ? 'a' : market;
-      if (typeof switchMarket === 'function' && typeof MARKETS !== 'undefined' && MARKETS[frontMarket]) {
-        window.currentMarket = frontMarket;
+      if (typeof MARKETS !== 'undefined' && MARKETS[market]) {
+        window.currentMarket = market;
       }
     }
     // 切换K线

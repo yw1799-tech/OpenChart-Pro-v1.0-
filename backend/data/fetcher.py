@@ -49,7 +49,8 @@ def get_fetcher(market: Market) -> DataFetcher:
     from backend.data.okx import OKXFetcher
     from backend.data.binance import BinanceFetcher
     from backend.data.yahoo import YahooFetcher
-    from backend.data.eastmoney import EastMoneyFetcher
+    # A 股用聚合层（多源自动降级：东财 → 新浪 → 腾讯）
+    from backend.data.cn_aggregator import CNAggregatorFetcher
 
     if market == Market.CRYPTO:
         if config.CRYPTO_EXCHANGE == "okx":
@@ -60,7 +61,7 @@ def get_fetcher(market: Market) -> DataFetcher:
         fetcher = YahooFetcher()
         fetcher._market = market
     elif market == Market.CN:
-        fetcher = EastMoneyFetcher()
+        fetcher = CNAggregatorFetcher()
     else:
         raise ValueError(f"Unsupported market: {market}")
 
