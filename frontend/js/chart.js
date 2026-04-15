@@ -991,6 +991,10 @@ function initChart() {
     }
   }
 
+  // 记录上次的 visibleRange.from，用于判断"用户是否真的在往左拖"
+  // applyMoreData 后图表会保持最左视图，from 又回到 0 附近，但这不是用户操作，不应触发
+  window._loadMoreLastFrom = Infinity;
+
   // 触发方式 1: KLineChart 原生 loadMore 回调
   try {
     chart.loadMore(() => fetchMore('loadMore-callback'));
@@ -999,16 +1003,21 @@ function initChart() {
     console.warn('[Chart] chart.loadMore() 注册失败:', e);
   }
 
-  // 触发方式 2: OnVisibleRangeChange 事件 (v10 可视区变化时触发，更可靠)
+  // 触发方式 2: OnVisibleRangeChange (v10 可视区变化时触发，更可靠)
+  // 关键：from 必须比上次更小，才算"用户继续往左拖"
   try {
     let _vrcDebounce = null;
     chart.subscribeAction(klinecharts.ActionType.OnVisibleRangeChange, (range) => {
       if (!range) return;
-      // 当可视区左边界距数据起点 ≤ 30 根时触发
       const from = range.from;
       if (typeof from !== 'number') return;
-      if (from > 30) return;
-      // 防抖：拖动期间会高频触发，等用户停手 200ms 再 fetch
+      if (from > 30) {
+        window._loadMoreLastFrom = from;  // 更新基准
+        return;
+      }
+      // 仅在 from 比上次小才触发（用户主动往左拖）
+      if (from >= window._loadMoreLastFrom) return;
+      window._loadMoreLastFrom = from;
       clearTimeout(_vrcDebounce);
       _vrcDebounce = setTimeout(() => fetchMore(`vrc(from=${from})`), 200);
     });
@@ -1017,16 +1026,21 @@ function initChart() {
     console.warn('[Chart] OnVisibleRangeChange 订阅失败:', e);
   }
 
-  // 触发方式 3 (兜底): OnScroll - 部分版本 OnVisibleRangeChange 不触发，用滚动事件兜底
+  // 触发方式 3 (兜底): OnScroll
   try {
     let _scrollDebounce = null;
     chart.subscribeAction(klinecharts.ActionType.OnScroll, () => {
       clearTimeout(_scrollDebounce);
       _scrollDebounce = setTimeout(() => {
         const range = chart.getVisibleRange();
-        if (range && typeof range.from === 'number' && range.from <= 30) {
-          fetchMore(`scroll(from=${range.from})`);
+        if (!range || typeof range.from !== 'number') return;
+        if (range.from > 30) {
+          window._loadMoreLastFrom = range.from;
+          return;
         }
+        if (range.from >= window._loadMoreLastFrom) return;
+        window._loadMoreLastFrom = range.from;
+        fetchMore(`scroll(from=${range.from})`);
       }, 250);
     });
     console.log('[Chart] OnScroll 兜底已订阅');
@@ -1075,6 +1089,8 @@ async function loadKlines(symbol, interval, market) {
     // 初始数据加载完毕，重置懒加载状态（新品种/周期可能有更多历史）
     window._loadMoreFetching = false;
     window._loadMoreLastTried = {};
+    window._loadMoreLastFrom = Infinity;
+    window._loadMoreCooldownUntil = 0;
 
     // 更新水印
     const wm = document.getElementById('chart-watermark');
