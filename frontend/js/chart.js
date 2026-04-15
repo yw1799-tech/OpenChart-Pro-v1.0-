@@ -888,27 +888,27 @@ function initChart() {
     console.warn('[Chart] 无法订阅缩放/滚动事件:', e);
   }
 
-  // 懒加载历史K线：监听滚动事件，当可视范围接近左边界时自动加载
-  window._loadMoreReady = false;
+  // 懒加载历史 K 线 — 使用 KLineChart v10 原生 loadMore 回调
+  // 官方机制：拖到最左边时会自动调用传入的回调，参数 timestamp 是当前数据最早 K 线的时间戳
   window._loadMoreNoMore = false;
   window._loadMoreFetching = false;
 
-  async function fetchMoreHistory() {
-    if (!window._loadMoreReady || window._loadMoreFetching || window._loadMoreNoMore) return;
-
-    // 检查是否滚动到了左边界附近
-    const visRange = chart.getVisibleRange();
-    if (!visRange || visRange.from > 20) return;  // 距左边界还有20根以上，不触发
-
+  chart.loadMore(async (timestamp) => {
+    if (window._loadMoreFetching || window._loadMoreNoMore) return;
     window._loadMoreFetching = true;
     try {
       const s   = window.currentSymbol;
       const iv  = window.currentInterval;
       const mkt = window.currentMarket === 'a' ? 'cn' : (window.currentMarket || 'crypto');
-      const dataList = chart.getDataList();
-      if (!dataList || !dataList.length) return;
-      const endTs = dataList[0].timestamp;
+      // timestamp 为空时兜底：用 dataList 最早一根
+      let endTs = timestamp;
+      if (!endTs) {
+        const dataList = chart.getDataList();
+        if (!dataList || !dataList.length) { window._loadMoreFetching = false; return; }
+        endTs = dataList[0].timestamp;
+      }
 
+      console.log(`[Chart] loadMore 请求 ${s}/${iv} end_time=${endTs}`);
       const resp = await fetch(
         `/api/klines?symbol=${encodeURIComponent(s)}&interval=${encodeURIComponent(iv)}&limit=500&market=${encodeURIComponent(mkt)}&end_time=${endTs}`
       );
@@ -933,25 +933,14 @@ function initChart() {
       chart.applyMoreData(more, more.length < 500);
       console.log(`[Chart] 懒加载 ${more.length} 根历史K线，总计: ${chart.getDataList().length}`);
 
-      // 加载更多K线后，重新运行缠论分析（等图表数据稳定后再跑）
       if (typeof isChanlunActive === 'function' && isChanlunActive()) {
-        setTimeout(() => {
-          console.log(`[Chart] loadMore后重新分析缠论，当前K线数: ${chart.getDataList().length}`);
-          loadChanlun();
-        }, 800);
+        setTimeout(() => loadChanlun(), 800);
       }
     } catch (e) {
       console.error('[Chart] 懒加载历史K线失败:', e);
     } finally {
       window._loadMoreFetching = false;
     }
-  }
-
-  // 用滚动事件触发（500ms防抖），替代 loadMore 回调
-  let _loadMoreTimer = null;
-  chart.subscribeAction(klinecharts.ActionType.OnScroll, () => {
-    if (_loadMoreTimer) clearTimeout(_loadMoreTimer);
-    _loadMoreTimer = setTimeout(fetchMoreHistory, 500);
   });
 
   console.log('[Chart] 初始化完成');
@@ -992,11 +981,9 @@ async function loadKlines(symbol, interval, market) {
 
     chart.applyNewData(klines);
 
-    // 初始数据加载完毕，500ms后解锁懒加载（等图表渲染稳定）
-    window._loadMoreReady = false;
+    // 初始数据加载完毕，重置懒加载状态（新品种/周期可能有更多历史）
     window._loadMoreFetching = false;
-    window._loadMoreNoMore = false;   // 重置：新周期可能有更多历史数据
-    setTimeout(() => { window._loadMoreReady = true; }, 500);
+    window._loadMoreNoMore = false;
 
     // 更新水印
     const wm = document.getElementById('chart-watermark');
