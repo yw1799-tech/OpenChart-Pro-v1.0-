@@ -183,13 +183,12 @@
     <div class="bottom-tabs">
       <button class="bottom-tab active" data-tab="news">📰 新闻快讯</button>
       <button class="bottom-tab" data-tab="watchpool">📊 候选池</button>
-      <button class="bottom-tab" data-tab="console">控制台</button>
+      <button class="bottom-tab" data-tab="signals">📡 策略信号</button>
+      <button class="bottom-tab" data-tab="portfolio">💼 持仓管理</button>
       <button class="bottom-tab" data-tab="alert-log">警报日志</button>
       <button class="bottom-tab" data-tab="backtest">回测报告</button>
-      <!-- Phase 4/5 新面板将在对应模块实装时启用：
-           data-tab="signals"    策略信号
-           data-tab="portfolio"  持仓管理 -->
       <button class="bottom-tab" data-tab="dashboard">仪表盘</button>
+      <button class="bottom-tab" data-tab="console">控制台</button>
       <button id="bottom-toggle" class="toggle-btn" title="收起/展开">▼</button>
     </div>
     <div class="bottom-content">
@@ -197,6 +196,10 @@
       <div class="bottom-pane active" data-pane="news"></div>
       <!-- 候选池（仅股票市场显示） -->
       <div class="bottom-pane" data-pane="watchpool"></div>
+      <!-- 策略信号 -->
+      <div class="bottom-pane" data-pane="signals"></div>
+      <!-- 持仓管理 -->
+      <div class="bottom-pane" data-pane="portfolio"></div>
       <!-- 控制台 -->
       <div class="bottom-pane" data-pane="console">
         <div class="console-output"></div>
@@ -622,19 +625,21 @@
 <!-- ============================================================
      JavaScript 文件（按依赖顺序加载）
      ============================================================ -->
-<script src="js/toast.js?v=p3a"></script>
-<script src="js/websocket.js?v=p3a"></script>
-<script src="js/chart.js?v=p3a"></script>
-<script src="js/search.js?v=p3a"></script>
-<script src="js/settings.js?v=p3a"></script>
-<script src="js/indicators.js?v=p3a"></script>
-<script src="js/alerts.js?v=p3a"></script>
-<script src="js/backtest.js?v=p3a"></script>
-<script src="js/dashboard.js?v=p3a"></script>
-<script src="js/watchlist.js?v=p3a"></script>
-<script src="js/news.js?v=p3a"></script>
-<script src="js/watchpool.js?v=p3a"></script>
-<script src="js/app.js?v=p3a"></script>
+<script src="js/toast.js?v=p7"></script>
+<script src="js/websocket.js?v=p7"></script>
+<script src="js/chart.js?v=p7"></script>
+<script src="js/search.js?v=p7"></script>
+<script src="js/settings.js?v=p7"></script>
+<script src="js/indicators.js?v=p7"></script>
+<script src="js/alerts.js?v=p7"></script>
+<script src="js/backtest.js?v=p7"></script>
+<script src="js/dashboard.js?v=p7"></script>
+<script src="js/watchlist.js?v=p7"></script>
+<script src="js/news.js?v=p7"></script>
+<script src="js/watchpool.js?v=p7"></script>
+<script src="js/signals.js?v=p7"></script>
+<script src="js/portfolio.js?v=p7"></script>
+<script src="js/app.js?v=p7"></script>
 <!-- 以下 JS 模块将在 Phase 3A/4/5 开发时添加：
      js/news.js         新闻快讯
      js/watchpool.js    候选池

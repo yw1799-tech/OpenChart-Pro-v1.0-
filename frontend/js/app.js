@@ -52,6 +52,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   safeInit('Watchlist', () => typeof Watchlist !== 'undefined' && Watchlist.init());
   safeInit('News',       () => typeof News       !== 'undefined' && News.init());
   safeInit('Watchpool',  () => typeof Watchpool  !== 'undefined' && Watchpool.init());
+  safeInit('Signals',    () => typeof Signals    !== 'undefined' && Signals.init());
+  safeInit('Portfolio',  () => typeof Portfolio  !== 'undefined' && Portfolio.init());
   safeInit('Formula', () => typeof Formula !== 'undefined' && Formula.init());
   safeInit('ChanlunVerdict', () => typeof ChanlunVerdict !== 'undefined' && ChanlunVerdict.init());
 

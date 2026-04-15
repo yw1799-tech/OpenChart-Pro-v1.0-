@@ -43,6 +43,12 @@ from backend.data.models import Interval, Market
 from backend.db.database import DatabaseManager
 from backend.indicators.registry import calculate_indicator, get_indicator_info, list_indicators
 from backend.news.scheduler import NewsScheduler
+from backend.portfolio.manager import PortfolioManager
+from backend.portfolio.tracker import PortfolioTracker
+from backend.signals.binding import StrategyBindingManager
+from backend.signals.monitor import MonitorEngine
+from backend.signals.strategies import list_strategies
+from backend.trading.simulator import simulator as trading_simulator
 from backend.ws.hub import hub
 
 # ═══════════════════════════════════════════════════════════════════
@@ -66,6 +72,13 @@ _ws_subscriptions: Dict[tuple, asyncio.Task] = {}
 
 # 新闻采集调度器（Phase 3A，启动时初始化）
 news_scheduler: Optional[NewsScheduler] = None
+
+# 策略监控引擎 (Phase 4, 启动时初始化)
+monitor_engine: Optional[MonitorEngine] = None
+
+# 持仓追踪器 (Phase 5, 启动时初始化)
+portfolio_tracker: Optional[PortfolioTracker] = None
+portfolio_manager: Optional[PortfolioManager] = None
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -170,8 +183,30 @@ async def lifespan(app: FastAPI):
     # 3. 加密 6 币种首次使用引导
     await _ensure_crypto_watchlist()
 
-    # 4. Phase 4 策略自动绑定（占位，策略模块实装后填充）
-    # TODO Phase 4: auto-bind built-in strategies to CRYPTO_SYMBOLS
+    # 4. Phase 4 策略监控引擎 + Phase 5 持仓追踪器
+    global monitor_engine, portfolio_tracker, portfolio_manager
+    portfolio_manager = PortfolioManager(db)
+
+    async def _news_for_symbol(symbol: str):
+        """提供给 monitor / tracker 的新闻查询函数。"""
+        try:
+            items = await db.get_flash_news(importance_min=2, limit=20)
+            return [n for n in items if symbol in (n.get("categories") or [])]
+        except Exception:
+            return []
+
+    # MonitorEngine 的 news_provider 必须是同步函数（无 event loop），简化处理
+    monitor_engine = MonitorEngine(db=db, ws_hub=hub, news_provider=lambda s: [])
+    await monitor_engine.ensure_crypto_bindings()
+    monitor_engine.start(check_interval_sec=60)
+    logger.info("MonitorEngine started + crypto bindings ensured")
+
+    portfolio_tracker = PortfolioTracker(db=db, ws_hub=hub, news_provider=lambda s: [])
+    portfolio_tracker.start(check_interval_sec=300)
+    logger.info("PortfolioTracker started")
+
+    # 7. Phase 7 交易模拟器（默认开启 dry-run 模式）
+    await trading_simulator.connect()
 
     # 5. Phase 3A 新闻采集调度器
     global news_scheduler
@@ -194,9 +229,13 @@ async def lifespan(app: FastAPI):
 
     # ─── 关闭 ───
     logger.info("OpenChart Pro shutting down...")
-    # 停止新闻采集
+    if portfolio_tracker:
+        await portfolio_tracker.stop()
+    if monitor_engine:
+        await monitor_engine.stop()
     if news_scheduler:
         await news_scheduler.stop()
+    await trading_simulator.close()
     # 取消所有 WebSocket 订阅
     for task in _ws_subscriptions.values():
         task.cancel()
@@ -616,6 +655,283 @@ async def remove_pool_item(item_id: str):
     return {"removed": True}
 
 
+# ═══════════════════════════════════════════════════════════════════
+# 路由：策略信号  (Phase 4)
+# ═══════════════════════════════════════════════════════════════════
+
+signal_router = APIRouter(prefix="/api/signals", tags=["策略信号"])
+
+
+@signal_router.get("")
+async def list_signals(
+    symbol: Optional[str] = Query(None),
+    market: Optional[str] = Query(None),
+    status: Optional[str] = Query("active"),
+    limit: int = Query(100, ge=1, le=500),
+):
+    """信号列表，按生成时间倒序。"""
+    async with db.acquire() as conn:
+        sql = "SELECT * FROM signals WHERE 1=1"
+        params: list = []
+        if symbol:
+            sql += " AND symbol = ?"; params.append(symbol)
+        if market:
+            sql += " AND market = ?"; params.append(market)
+        if status:
+            sql += " AND status = ?"; params.append(status)
+        sql += " ORDER BY generated_at DESC LIMIT ?"; params.append(limit)
+        cursor = await conn.execute(sql, params)
+        rows = await cursor.fetchall()
+        items = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["triggered_by"] = json.loads(d.get("triggered_by") or "{}")
+            except json.JSONDecodeError:
+                d["triggered_by"] = {}
+            items.append(d)
+        return {"count": len(items), "items": items}
+
+
+@signal_router.get("/{signal_id}")
+async def get_signal_detail(signal_id: str):
+    async with db.acquire() as conn:
+        cursor = await conn.execute("SELECT * FROM signals WHERE id = ?", (signal_id,))
+        row = await cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Signal not found")
+        d = dict(row)
+        try:
+            d["triggered_by"] = json.loads(d.get("triggered_by") or "{}")
+        except json.JSONDecodeError:
+            d["triggered_by"] = {}
+        return d
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 路由：策略 + 绑定  (Phase 4)
+# ═══════════════════════════════════════════════════════════════════
+
+strategy_router = APIRouter(prefix="/api/strategies", tags=["策略"])
+
+
+class StrategyBindRequest(BaseModel):
+    symbol: str
+    market: str
+    strategy_name: str
+    params: Optional[Dict[str, Any]] = None
+
+
+class BatchBindRequest(BaseModel):
+    strategy_name: str
+    targets: List[Dict[str, str]]  # [{"symbol":..., "market":...}]
+    params: Optional[Dict[str, Any]] = None
+
+
+@strategy_router.get("")
+async def get_strategy_list():
+    """所有内置策略元信息。"""
+    return list_strategies()
+
+
+@strategy_router.get("/bindings")
+async def list_strategy_bindings(
+    symbol: Optional[str] = Query(None),
+    market: Optional[str] = Query(None),
+    strategy_name: Optional[str] = Query(None),
+):
+    """查询策略绑定。"""
+    if not monitor_engine:
+        return []
+    return await monitor_engine.bindings.get_bindings(
+        symbol=symbol, market=market, strategy_name=strategy_name, enabled_only=False
+    )
+
+
+@strategy_router.post("/bind")
+async def bind_strategy(req: StrategyBindRequest):
+    """单个绑定：一只品种 + 一个策略。"""
+    if not monitor_engine:
+        raise HTTPException(status_code=503, detail="MonitorEngine 未启动")
+    binding_id = await monitor_engine.bindings.bind(
+        symbol=req.symbol, market=req.market,
+        strategy_name=req.strategy_name, params=req.params,
+    )
+    return {"id": binding_id, "bound": True}
+
+
+@strategy_router.post("/batch-bind")
+async def batch_bind_strategy(req: BatchBindRequest):
+    """批量绑定：一个策略绑多只品种。"""
+    if not monitor_engine:
+        raise HTTPException(status_code=503, detail="MonitorEngine 未启动")
+    return await monitor_engine.bindings.batch_bind(
+        strategy_name=req.strategy_name, targets=req.targets, params=req.params,
+    )
+
+
+@strategy_router.delete("/bind")
+async def unbind_strategy(
+    symbol: str = Query(...), market: str = Query(...), strategy_name: str = Query(...)
+):
+    """解绑。"""
+    if not monitor_engine:
+        raise HTTPException(status_code=503, detail="MonitorEngine 未启动")
+    ok = await monitor_engine.bindings.unbind(symbol, market, strategy_name)
+    return {"unbound": ok}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 路由：持仓管理  (Phase 5)
+# ═══════════════════════════════════════════════════════════════════
+
+position_router = APIRouter(prefix="/api/positions", tags=["持仓"])
+
+
+class PositionAddRequest(BaseModel):
+    symbol: str
+    market: str
+    quantity: float
+    avg_cost: float
+    notes: str = ""
+
+
+class PositionUpdateRequest(BaseModel):
+    quantity: Optional[float] = None
+    avg_cost: Optional[float] = None
+    notes: Optional[str] = None
+
+
+@position_router.get("")
+async def list_positions():
+    if not portfolio_manager:
+        return []
+    return await portfolio_manager.get_all()
+
+
+@position_router.post("")
+async def add_position(req: PositionAddRequest):
+    if not portfolio_manager:
+        raise HTTPException(status_code=503, detail="PortfolioManager 未启动")
+    _parse_market(req.market)  # 校验
+    pid = await portfolio_manager.add_position(
+        symbol=req.symbol, market=req.market,
+        quantity=req.quantity, avg_cost=req.avg_cost, notes=req.notes,
+    )
+    return {"id": pid, "added": True}
+
+
+@position_router.put("/{position_id}")
+async def update_position(position_id: str, req: PositionUpdateRequest):
+    if not portfolio_manager:
+        raise HTTPException(status_code=503, detail="PortfolioManager 未启动")
+    await portfolio_manager.update_position(
+        position_id, quantity=req.quantity, avg_cost=req.avg_cost, notes=req.notes,
+    )
+    return {"updated": True}
+
+
+@position_router.delete("/{position_id}")
+async def remove_position(position_id: str):
+    if not portfolio_manager:
+        raise HTTPException(status_code=503, detail="PortfolioManager 未启动")
+    ok = await portfolio_manager.remove_position(position_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Position not found")
+    return {"removed": True}
+
+
+@position_router.get("/{position_id}/advices")
+async def get_position_advices(position_id: str, limit: int = Query(50, ge=1, le=200)):
+    if not portfolio_manager:
+        return []
+    return await portfolio_manager.get_advice_history(position_id, limit=limit)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 路由：加密仪表盘  (Phase 6, 复用 crypto_dashboard 模块)
+# ═══════════════════════════════════════════════════════════════════
+
+dashboard_router = APIRouter(prefix="/api/dashboard", tags=["加密仪表盘"])
+
+
+@dashboard_router.get("/fear-greed")
+async def get_fear_greed():
+    """恐惧贪婪指数（数据源 Alternative.me，免费）。"""
+    try:
+        from backend.crypto_dashboard.sentiment import SentimentData
+        sd = SentimentData()
+        return await sd.get_fear_greed_index()
+    except Exception as e:
+        return {"error": str(e), "value": None, "label": "unknown"}
+
+
+@dashboard_router.get("/funding-rate")
+async def get_funding_rate(symbol: str = Query("BTC-USDT-SWAP")):
+    try:
+        from backend.crypto_dashboard.sentiment import SentimentData
+        sd = SentimentData()
+        return await sd.get_funding_rate(symbol)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@dashboard_router.get("/open-interest")
+async def get_open_interest(symbol: str = Query("BTC-USDT-SWAP")):
+    try:
+        from backend.crypto_dashboard.sentiment import SentimentData
+        sd = SentimentData()
+        return await sd.get_open_interest(symbol)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@dashboard_router.get("/long-short-ratio")
+async def get_long_short_ratio(coin: str = Query("BTC")):
+    try:
+        from backend.crypto_dashboard.sentiment import SentimentData
+        sd = SentimentData()
+        return await sd.get_long_short_ratio(coin)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 路由：交易模拟器  (Phase 7, 仅模拟下单)
+# ═══════════════════════════════════════════════════════════════════
+
+trading_router = APIRouter(prefix="/api/trading", tags=["交易"])
+
+
+class SimOrderRequest(BaseModel):
+    symbol: str
+    side: str  # buy / sell
+    quantity: float
+    price: float = 0.0
+    order_type: str = "market"
+
+
+@trading_router.post("/simulate-order")
+async def simulate_order(req: SimOrderRequest):
+    """模拟下单（dry-run，不真实下单）。"""
+    order = await trading_simulator.place_order(
+        symbol=req.symbol, side=req.side,
+        quantity=req.quantity, price=req.price,
+        order_type=req.order_type,
+    )
+    return order
+
+
+@trading_router.get("/sim-orders")
+async def get_sim_orders(limit: int = Query(50, ge=1, le=500)):
+    return await trading_simulator.list_orders(limit=limit)
+
+
+@trading_router.get("/sim-positions")
+async def get_sim_positions():
+    return await trading_simulator.get_positions()
+
+
 # 注册路由（必须在 StaticFiles 挂载之前）
 app.include_router(market_router)
 app.include_router(indicator_router)
@@ -623,6 +939,11 @@ app.include_router(watchlist_router)
 app.include_router(settings_router)
 app.include_router(news_router)
 app.include_router(pool_router)
+app.include_router(signal_router)
+app.include_router(strategy_router)
+app.include_router(position_router)
+app.include_router(dashboard_router)
+app.include_router(trading_router)
 
 
 # ═══════════════════════════════════════════════════════════════════
