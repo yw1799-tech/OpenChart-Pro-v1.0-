@@ -903,10 +903,18 @@ function initChart() {
   window._loadMoreFetching = false;
   // 去重缓存：{ "$end_time": $expireAt }，避免短时间反复拉同一 end_time
   window._loadMoreLastTried = {};
+  // 全局节流：每次成功 fetch 后冷却时间戳（防止 applyMoreData 引发的事件雪崩）
+  window._loadMoreCooldownUntil = 0;
 
   async function fetchMore(reason) {
     if (window._loadMoreFetching) {
       console.log(`[loadMore] skip(fetching) reason=${reason}`);
+      return;
+    }
+    // 全局节流：成功 fetch 后 1.5 秒内拒绝任何触发
+    // 防止 applyMoreData 后 OnScroll/OnVisibleRangeChange/loadMore-callback 三路同时触发
+    if (Date.now() < window._loadMoreCooldownUntil) {
+      console.log(`[loadMore] skip(global cooldown ${Math.round((window._loadMoreCooldownUntil - Date.now()))}ms) reason=${reason}`);
       return;
     }
     const dataList = chart.getDataList();
@@ -918,7 +926,6 @@ function initChart() {
     const currentEarliestTs = dataList[0].timestamp;
 
     // 软锁：同一 end_time 在 60 秒内不重复拉
-    // （防止"上游数据源到底了"时无限触发，但允许 60 秒后再试以适配上游恢复）
     const lastExp = window._loadMoreLastTried[currentEarliestTs];
     if (lastExp && lastExp > Date.now()) {
       console.log(`[loadMore] skip(recently tried, retry in ${Math.round((lastExp - Date.now())/1000)}s) reason=${reason} end_time=${currentEarliestTs}`);
@@ -970,6 +977,9 @@ function initChart() {
       chart.applyMoreData(filtered, false);
       const newEarliest = Math.min(...filtered.map(c => c.timestamp));
       console.log(`[loadMore] DONE +${filtered.length} (raw=${raw.length}, total=${chart.getDataList().length}, newEarliest=${newEarliest}) reason=${reason}`);
+
+      // 成功加载后全局冷却 1.5 秒，防止 applyMoreData 触发的视图变化引发事件雪崩
+      window._loadMoreCooldownUntil = Date.now() + 1500;
 
       if (typeof isChanlunActive === 'function' && isChanlunActive()) {
         setTimeout(() => loadChanlun(), 800);
