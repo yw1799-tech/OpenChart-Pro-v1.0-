@@ -158,6 +158,8 @@ const News = (function () {
         }
       });
     });
+    // 绑定 AI 解读按钮
+    _bindAIButtons(listEl);
   }
 
   function _renderItem(item) {
@@ -171,17 +173,81 @@ const News = (function () {
     const linkBtn = item.url
       ? `<a href="${item.url}" target="_blank" style="font-size:10px;color:var(--text-tertiary);margin-left:8px;">原文 ↗</a>`
       : '';
+    // AI 解读按钮：★★★+ 才显示，已有 ai_analysis 显示"查看 AI 解读"
+    const aiBtn = item.importance >= 3
+      ? `<button class="news-ai-btn btn-sm" data-news-id="${item.id}" style="font-size:10px;padding:2px 8px;margin-left:8px;background:var(--color-purple);color:white;border:none;border-radius:3px;cursor:pointer;">${item.ai_analysis ? '🤖 已分析' : '🤖 AI 解读'}</button>`
+      : '';
     return `
-      <div class="news-item" style="padding:8px 12px;border-bottom:1px solid var(--border-secondary);">
+      <div class="news-item" data-news-id="${item.id}" style="padding:8px 12px;border-bottom:1px solid var(--border-secondary);">
         <div style="display:flex;align-items:center;gap:6px;font-size:12px;">
           <span style="color:var(--color-warning);">${stars}</span>
           <span style="color:${sentColor};">${sentIcon}</span>
           <span style="color:var(--text-tertiary);font-size:10px;">${time}</span>
           <span style="color:var(--text-secondary);font-size:10px;">${item.source}</span>
-          ${linkBtn}
+          ${linkBtn}${aiBtn}
         </div>
         <div style="margin:4px 0;color:var(--text-primary);font-size:13px;line-height:1.4;">${item.title}</div>
         ${cats ? `<div style="margin-top:2px;">${cats}</div>` : ''}
+        <div class="news-ai-result" data-news-id="${item.id}" style="display:none;margin-top:8px;padding:8px;background:var(--bg-tertiary);border-left:3px solid var(--color-purple);font-size:11px;"></div>
+      </div>
+    `;
+  }
+
+  function _bindAIButtons(listEl) {
+    listEl.querySelectorAll('.news-ai-btn').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const newsId = btn.dataset.newsId;
+        const resultEl = listEl.querySelector(`.news-ai-result[data-news-id="${newsId}"]`);
+        if (!resultEl) return;
+        const wasOpen = resultEl.style.display !== 'none';
+        // 折叠
+        if (wasOpen) {
+          resultEl.style.display = 'none';
+          return;
+        }
+        resultEl.style.display = 'block';
+        resultEl.innerHTML = '<span style="color:var(--text-tertiary);">🤖 AI 分析中...</span>';
+        btn.disabled = true;
+        try {
+          const resp = await fetch(`/api/news/flash/${newsId}/analyze`, { method: 'POST' });
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            resultEl.innerHTML = `<span style="color:var(--color-down);">❌ ${err.detail || 'LLM 调用失败'}</span>`;
+            return;
+          }
+          const d = await resp.json();
+          const ai = typeof d.ai_analysis === 'string' ? JSON.parse(d.ai_analysis) : d.ai_analysis;
+          resultEl.innerHTML = _renderAIAnalysis(ai, d.cached);
+          btn.textContent = '🤖 已分析';
+        } catch (e) {
+          resultEl.innerHTML = `<span style="color:var(--color-down);">❌ 网络错误</span>`;
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+
+  function _renderAIAnalysis(ai, cached) {
+    if (!ai) return '<span style="color:var(--text-tertiary);">无解读结果</span>';
+    const viewColor = SENTIMENT_COLOR[ai.overall_view] || SENTIMENT_COLOR.neutral;
+    const cachedTag = cached ? '<span style="color:var(--text-tertiary);font-size:10px;">(已缓存)</span>' : '';
+    const impacts = (ai.impacts || []).map((i) => {
+      const dirColor = SENTIMENT_COLOR[i.direction] || '';
+      return `<div style="margin-left:8px;color:${dirColor};">▸ ${i.symbol} (${i.direction}, ${i.horizon || ''}, 强度 ${(i.strength || 0).toFixed(2)}): ${i.reason || ''}</div>`;
+    }).join('');
+    const reasons = (ai.reasons || []).map((r) => `<li>${r}</li>`).join('');
+    const risks = (ai.risks || []).map((r) => `<li>${r}</li>`).join('');
+    const lvl = ai.key_levels || {};
+    return `
+      <div style="line-height:1.6;">
+        <div><strong style="color:${viewColor};">${ai.overall_view?.toUpperCase() || ''} </strong>${cachedTag}</div>
+        <div style="margin:4px 0;color:var(--text-primary);">${ai.summary || ''}</div>
+        ${impacts ? `<div style="margin-top:4px;"><strong>影响品种：</strong>${impacts}</div>` : ''}
+        ${reasons ? `<div style="margin-top:4px;"><strong>支持理由：</strong><ul style="margin:2px 0 0 16px;">${reasons}</ul></div>` : ''}
+        ${risks ? `<div style="margin-top:4px;"><strong>潜在风险：</strong><ul style="margin:2px 0 0 16px;">${risks}</ul></div>` : ''}
+        ${(lvl.support || lvl.resistance) ? `<div style="margin-top:4px;"><strong>关键价位：</strong>支撑 ${lvl.support || '-'} / 阻力 ${lvl.resistance || '-'}</div>` : ''}
       </div>
     `;
   }

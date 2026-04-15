@@ -22,23 +22,15 @@ from __future__ import annotations
 
 NEWS_SOURCES = [
     # ═══════════════════════════════════════════════════════════════
-    # 加密货币 (9 个源)
+    # 加密货币
     # ═══════════════════════════════════════════════════════════════
-    {
-        "name": "OKX公告",
-        "type": "rest",
-        "market": "crypto",
-        "url": "https://www.okx.com/api/v5/support/announcements?annType=announcements-new-listings",
-        "interval": 60,
-        "enabled": True,
-        "trust": 1.0,
-        "bonus": 3,
-    },
+    # 注：OKX/Binance 官方公告 API endpoint 经过测试均返回 404/异常，
+    # 改用 CoinDesk/Cointelegraph 等专业媒体覆盖（已包含交易所重要公告）。
     {
         "name": "Binance公告",
         "type": "rest",
         "market": "crypto",
-        "url": "https://www.binance.com/bapi/composite/v1/public/cms/article/list/query?type=1&pageNo=1&pageSize=20",
+        "url": "https://www.binance.com/bapi/composite/v1/public/cms/article/catalog/list/query?catalogId=48&pageNo=1&pageSize=20",
         "interval": 60,
         "enabled": True,
         "trust": 1.0,
@@ -90,27 +82,18 @@ NEWS_SOURCES = [
         "market": "crypto",
         "url": "https://bitcoinmagazine.com/.rss/full/",
         "interval": 180,
-        "enabled": True,
+        "enabled": False,  # Cloudflare 反爬严格 (403)，CoinDesk/Cointelegraph 已覆盖
         "trust": 0.8,
         "bonus": 1,
     },
-    {
-        "name": "金色财经",
-        "type": "rest",
-        "market": "crypto",
-        "url": "https://api.jinse.cn/v6/information/list?catelogue_key=news&limit=20&_source=web",
-        "interval": 60,
-        "enabled": True,
-        "trust": 0.8,
-        "bonus": 1,
-    },
+    # 金色财经 jinse.com/jinse.cn 域名在部分网络环境无法解析，已从启用列表移除
     {
         "name": "CryptoPanic",
         "type": "rest",
         "market": "crypto",
         "url": "https://cryptopanic.com/api/v1/posts/?public=true",
         "interval": 120,
-        "enabled": False,  # 需 API Key 才有完整功能
+        "enabled": False,
         "trust": 0.7,
         "bonus": 0,
     },
@@ -138,16 +121,8 @@ NEWS_SOURCES = [
         "trust": 0.85,
         "bonus": 1,
     },
-    {
-        "name": "Reuters Business",
-        "type": "rss",
-        "market": "us",
-        "url": "https://www.reutersagency.com/feed/?best-topics=business-finance&post_type=best",
-        "interval": 120,
-        "enabled": True,
-        "trust": 0.95,
-        "bonus": 2,
-    },
+    # Reuters reuters.com 反爬严格 (401)，feeds.reuters.com 已停服。
+    # CNBC + MarketWatch + PR Newswire + Yahoo + SEC EDGAR 已能覆盖美股权威新闻。
     {
         "name": "CNBC",
         "type": "rss",
@@ -203,18 +178,18 @@ NEWS_SOURCES = [
         "bonus": 2,
     },
     {
-        "name": "东方财富7x24",
+        "name": "金十数据",
         "type": "rest",
-        "market": "cn",
-        "url": "https://np-listapi.eastmoney.com/comm/wap/getListInfo?cb=&client=wap&type=1&pageindex=1&pagesize=50&columnid=1346",
-        "interval": 60,
+        "market": "cn",  # 中文宏观 + A 股快讯
+        "url": "https://flash-api.jin10.com/get_flash_list?channel=-8200&vip=1&t=1",
+        "interval": 30,  # 金十快讯，秒级时效
         "enabled": True,
-        "trust": 0.85,
-        "bonus": 1,
+        "trust": 0.9,
+        "bonus": 2,
     },
     {
         "name": "新浪财经",
-        "type": "rss",
+        "type": "rest",
         "market": "cn",
         "url": "https://feed.mix.sina.com.cn/api/roll/get?pageid=153&lid=2509&num=50&versionNumber=1.2.4&page=1&encode=utf-8",
         "interval": 120,
@@ -222,26 +197,8 @@ NEWS_SOURCES = [
         "trust": 0.8,
         "bonus": 1,
     },
-    {
-        "name": "第一财经",
-        "type": "rss",
-        "market": "cn",
-        "url": "https://www.yicai.com/api/ajax/getlistdatabycid?page=1&cid=15&pagesize=20",
-        "interval": 120,
-        "enabled": True,
-        "trust": 0.85,
-        "bonus": 1,
-    },
-    {
-        "name": "同花顺财经",
-        "type": "rss",
-        "market": "cn",
-        "url": "https://news.10jqka.com.cn/today_list/index.shtml",
-        "interval": 180,
-        "enabled": False,  # 需爬虫，Phase 3B 启用
-        "trust": 0.8,
-        "bonus": 1,
-    },
+    # 东方财富 7x24 / 第一财经 / 同花顺：API 接口反爬严格 / 需要登录 cookie。
+    # 财联社电报 + 金十数据 已是 A股最高时效双源，单独覆盖足够。
     {
         "name": "巨潮资讯",
         "type": "rest",
@@ -254,16 +211,46 @@ NEWS_SOURCES = [
     },
 
     # ═══════════════════════════════════════════════════════════════
-    # 港股 (2 个源)
+    # 港股 (4 个源)
     # ═══════════════════════════════════════════════════════════════
     {
-        "name": "AAStocks",
+        "name": "Yahoo Finance HK",
         "type": "rss",
         "market": "hk",
-        "url": "http://www.aastocks.com/tc/rss/news/CompanyNews.xml",
+        "url": "https://hk.finance.yahoo.com/rss/",
+        "interval": 120,
+        "enabled": True,
+        "trust": 0.85,
+        "bonus": 1,
+    },
+    {
+        "name": "SCMP Business",
+        "type": "rss",
+        "market": "hk",
+        "url": "https://www.scmp.com/rss/92/feed",
+        "interval": 180,
+        "enabled": True,
+        "trust": 0.9,
+        "bonus": 2,
+    },
+    {
+        "name": "SCMP 中国财经",
+        "type": "rss",
+        "market": "hk",
+        "url": "https://www.scmp.com/rss/2/feed",
         "interval": 180,
         "enabled": True,
         "trust": 0.85,
+        "bonus": 1,
+    },
+    {
+        "name": "21财经港股",
+        "type": "rest",
+        "market": "hk",
+        "url": "https://feed.mix.sina.com.cn/api/roll/get?pageid=153&lid=2510&num=30",
+        "interval": 120,
+        "enabled": True,
+        "trust": 0.8,
         "bonus": 1,
     },
     {
@@ -272,7 +259,7 @@ NEWS_SOURCES = [
         "market": "hk",
         "url": "https://www1.hkexnews.hk/listedco/listconews/mainindex/SEHK_LISTEDCO_DOCUMENTS_TODAY.HTM",
         "interval": 600,
-        "enabled": False,  # 需 HTML 爬取，Phase 3B 启用
+        "enabled": False,  # HKEX HTML 爬取复杂，Phase 3B 启用
         "trust": 1.0,
         "bonus": 3,
     },
@@ -294,7 +281,7 @@ NEWS_SOURCES = [
         "name": "BLS就业数据",
         "type": "rss",
         "market": "macro",
-        "url": "https://www.bls.gov/feed/news_release/empsit.rss",
+        "url": "https://www.bls.gov/feed/empsit.rss",  # 不带 news_release 前缀
         "interval": 600,
         "enabled": True,
         "trust": 1.0,
@@ -304,7 +291,7 @@ NEWS_SOURCES = [
         "name": "BLS物价指数",
         "type": "rss",
         "market": "macro",
-        "url": "https://www.bls.gov/feed/news_release/cpi.rss",
+        "url": "https://www.bls.gov/feed/cpi.rss",
         "interval": 600,
         "enabled": True,
         "trust": 1.0,

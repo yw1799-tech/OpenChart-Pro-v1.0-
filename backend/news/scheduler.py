@@ -19,6 +19,15 @@ from backend.news.sources import get_enabled_sources
 
 logger = logging.getLogger(__name__)
 
+# 全局 AI Analyzer 引用（在 main.py 启动时通过 attach_ai_analyzer 注入）
+_ai_analyzer = None
+
+
+def attach_ai_analyzer(analyzer):
+    """从外部注入 NewsAIAnalyzer 实例（避免循环 import）。"""
+    global _ai_analyzer
+    _ai_analyzer = analyzer
+
 
 def _infer_stock_market(symbol: str) -> str:
     """
@@ -178,6 +187,10 @@ class NewsScheduler:
                     if score_result["importance"] >= 3:
                         added = await self._auto_add_to_pool(news_record, score_result)
                         pool_added_count += added
+
+                    # PRD F5.7: ★★★★+ 新闻自动 LLM 深度解读（异步，不阻塞主流程）
+                    if score_result["importance"] >= 4 and _ai_analyzer is not None:
+                        asyncio.create_task(_ai_analyzer.deep_analyze_news(news_record))
             except Exception as e:
                 logger.exception(f"[{collector.name}] 处理单条新闻异常: {e}")
 

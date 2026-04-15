@@ -14,6 +14,7 @@ import re
 from typing import Any, Dict, List, Optional, Set
 
 from backend.news.sources import get_source_trust
+from backend.news.symbol_registry import registry as _symbol_registry
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -174,21 +175,23 @@ def score_news(
     trust = trust_info["trust"]
     bonus = trust_info["bonus"]
 
-    # 3. 品种关联识别
-    categories: List[str] = []
+    # 3. 品种关联识别（使用 SymbolRegistry，含 200+ 静态 + 动态 watchlist/pool/positions）
+    categories: List[str] = _symbol_registry.find_matches(full_text_orig)
 
-    def _match_patterns(patterns_dict, text):
-        out = []
-        for sym, patterns in patterns_dict.items():
-            for p in patterns:
-                if re.search(p, text, re.IGNORECASE):
-                    out.append(sym)
-                    break
-        return out
+    # 兜底：保留旧硬编码以防 SymbolRegistry 未初始化
+    if not categories:
+        def _match_patterns(patterns_dict, text):
+            out = []
+            for sym, patterns in patterns_dict.items():
+                for p in patterns:
+                    if re.search(p, text, re.IGNORECASE):
+                        out.append(sym)
+                        break
+            return out
 
-    categories.extend(_match_patterns(CRYPTO_SYMBOL_PATTERNS, full_text_orig))
-    categories.extend(_match_patterns(US_STOCK_PATTERNS, full_text_orig))
-    categories.extend(_match_patterns(CN_STOCK_PATTERNS, full_text_orig))
+        categories.extend(_match_patterns(CRYPTO_SYMBOL_PATTERNS, full_text_orig))
+        categories.extend(_match_patterns(US_STOCK_PATTERNS, full_text_orig))
+        categories.extend(_match_patterns(CN_STOCK_PATTERNS, full_text_orig))
 
     # 4. 持仓加分（PRD F5.10 持仓快速通道）
     is_holding_related = any(c in holding_symbols for c in categories)

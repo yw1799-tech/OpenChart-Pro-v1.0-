@@ -51,15 +51,23 @@ class NewsCollector(ABC):
             "last_error": None,
         }
 
+    # 子类可覆盖：定制请求 headers（应对反爬）
+    EXTRA_HEADERS: Dict[str, str] = {}
+
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
+            base_headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+                ),
+                "Accept": "application/rss+xml, application/atom+xml, application/xml, "
+                          "application/json, text/html, */*",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            }
+            base_headers.update(self.EXTRA_HEADERS)
             self._session = aiohttp.ClientSession(
-                headers={
-                    "User-Agent": (
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
-                    ),
-                },
+                headers=base_headers,
                 timeout=aiohttp.ClientTimeout(total=15),
             )
         return self._session
@@ -402,6 +410,85 @@ class SinaFinanceCollector(RESTCollector):
         return items[:30]
 
 
+class SECEdgarCollector(RSSCollector):
+    """SEC EDGAR 必须用合规 User-Agent (含联系方式)，否则 403。"""
+
+    EXTRA_HEADERS = {
+        "User-Agent": "OpenChart Pro contact@openchartpro.local",
+        "Accept-Encoding": "gzip, deflate",
+    }
+
+
+class BLSRSSCollector(RSSCollector):
+    """美国劳工统计局 (BLS) 用 Feedly UA 才能通过反爬。"""
+
+    EXTRA_HEADERS = {
+        "User-Agent": "Feedly/1.0 (+http://feedly.com)",
+        "Accept": "application/rss+xml, application/atom+xml, application/xml",
+    }
+
+
+class BitcoinMagazineCollector(RSSCollector):
+    """Bitcoin Magazine 需要明确的 Accept header 才不返回 403。"""
+
+    EXTRA_HEADERS = {
+        "Accept": "application/rss+xml, application/xml; q=0.9, */*; q=0.8",
+    }
+
+
+class Jin10FlashCollector(RESTCollector):
+    """金十数据快讯（中文宏观/A 股最高时效源之一）。"""
+
+    EXTRA_HEADERS = {
+        "x-app-id": "bVBF4FyRTn5NJF5n",
+        "x-version": "1.0.0",
+        "Origin": "https://www.jin10.com",
+        "Referer": "https://www.jin10.com/",
+    }
+
+    def _parse_response(self, text: str) -> List[Dict[str, Any]]:
+        import json
+        try:
+            data = json.loads(text)
+        except Exception:
+            return []
+        items: List[Dict[str, Any]] = []
+        try:
+            rows = data.get("data") or []
+            from datetime import datetime, timezone, timedelta
+            tz = timezone(timedelta(hours=8))
+            for it in rows[:50]:
+                # 金十快讯字段：time(yyyy-MM-dd HH:mm:ss) / type / data.title|content / data.pic
+                time_str = it.get("time", "")
+                d = it.get("data", {}) or {}
+                title = d.get("title") or ""
+                content = d.get("content") or ""
+                # 没有 title 则从 content 提取首句（去掉 HTML 标签）
+                if not title and content:
+                    import re as _re
+                    plain = _re.sub(r"<[^>]+>", "", content).strip()
+                    title = plain[:80] if plain else ""
+                if not title:
+                    continue
+                # 时间解析
+                pub_ms = int(time.time() * 1000)
+                if time_str:
+                    try:
+                        dt = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
+                        pub_ms = int(dt.timestamp() * 1000)
+                    except ValueError:
+                        pass
+                # 链接（金十没有具体 URL，用 ID 拼站内链接）
+                jid = it.get("id", "")
+                url = f"https://www.jin10.com/details/{jid}" if jid else "https://www.jin10.com/"
+                n = self._normalize(title, content[:500], url, pub_ms)
+                if n:
+                    items.append(n)
+        except Exception as e:
+            logger.warning(f"[金十] 解析失败: {e}")
+        return items
+
+
 class YicaiCollector(RESTCollector):
     """第一财经新闻采集器。"""
 
@@ -473,8 +560,14 @@ def create_collector(source_config: Dict[str, Any]) -> NewsCollector:
         "Binance公告": BinanceAnnouncementCollector,
         "金色财经": JinseFinanceCollector,
         "财联社电报": CailianpressCollector,
+        "金十数据": Jin10FlashCollector,
         "新浪财经": SinaFinanceCollector,
+        "21财经港股": SinaFinanceCollector,  # 复用新浪 roll API
         "第一财经": YicaiCollector,
+        "SEC EDGAR": SECEdgarCollector,
+        "BLS就业数据": BLSRSSCollector,
+        "BLS物价指数": BLSRSSCollector,
+        "Bitcoin Magazine": BitcoinMagazineCollector,
     }
     if name in SPECIAL:
         return SPECIAL[name](source_config)

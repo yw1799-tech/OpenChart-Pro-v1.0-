@@ -42,7 +42,9 @@ from backend.data.fetcher import get_fetcher
 from backend.data.models import Interval, Market
 from backend.db.database import DatabaseManager
 from backend.indicators.registry import calculate_indicator, get_indicator_info, list_indicators
-from backend.news.scheduler import NewsScheduler
+from backend.news.ai_analyzer import NewsAIAnalyzer
+from backend.news.scheduler import NewsScheduler, attach_ai_analyzer
+from backend.news.symbol_registry import registry as symbol_registry
 from backend.portfolio.manager import PortfolioManager
 from backend.portfolio.tracker import PortfolioTracker
 from backend.signals.binding import StrategyBindingManager
@@ -83,6 +85,9 @@ portfolio_manager: Optional[PortfolioManager] = None
 
 # 异动扫描器 (Phase 3A 通道②)
 anomaly_scanner: Optional[AnomalyScanner] = None
+
+# LLM 新闻深度解读 (Phase 3B)
+ai_analyzer: Optional[NewsAIAnalyzer] = None
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -141,6 +146,25 @@ async def _refresh_pool_symbols_cache():
         except Exception as e:
             logger.warning(f"刷新候选池缓存失败: {e}")
         await asyncio.sleep(300)
+
+
+async def _refresh_symbol_registry_loop():
+    """
+    每 3 分钟刷新 SymbolRegistry 动态词典。
+    用户 watchlist / 候选池 / 持仓中的品种会被自动加入识别表，
+    新闻提到这些品种就能立即识别 → categories → 自动入候选池。
+    """
+    # 启动时立即跑一次
+    try:
+        await symbol_registry.refresh_from_db(db)
+    except Exception as e:
+        logger.warning(f"SymbolRegistry 首次刷新失败: {e}")
+    while True:
+        await asyncio.sleep(180)
+        try:
+            await symbol_registry.refresh_from_db(db)
+        except Exception as e:
+            logger.warning(f"SymbolRegistry 周期刷新失败: {e}")
 
 
 def _parse_market(market_str: str) -> Market:
@@ -218,17 +242,23 @@ async def lifespan(app: FastAPI):
     # 7. Phase 7 交易模拟器（默认开启 dry-run 模式）
     await trading_simulator.connect()
 
-    # 5. Phase 3A 新闻采集调度器
+    # 5. Phase 3B LLM 深度解读引擎（先初始化以便注入到 NewsScheduler）
+    global ai_analyzer
+    ai_analyzer = NewsAIAnalyzer(db=db)
+    attach_ai_analyzer(ai_analyzer)
+
+    # 6. Phase 3A 新闻采集调度器
     global news_scheduler
     news_scheduler = NewsScheduler(
         db=db,
         ws_hub=hub,
-        holding_provider=lambda: set(),  # Phase 5 实装持仓提供者
+        holding_provider=lambda: set(),
         pool_provider=_get_pool_symbols,
     )
     news_scheduler.start()
     asyncio.create_task(_refresh_pool_symbols_cache())
-    logger.info("NewsScheduler started")
+    asyncio.create_task(_refresh_symbol_registry_loop())
+    logger.info(f"NewsScheduler + SymbolRegistry + AI Analyzer started (registry size={symbol_registry.size()})")
 
     # 6. Phase 3B LLM 成本计数器（占位）
     # TODO Phase 3B: reset_daily_llm_cost()
@@ -606,6 +636,36 @@ async def get_news_sources_health():
     if not news_scheduler:
         return []
     return news_scheduler.get_health()
+
+
+@news_router.post("/flash/{news_id}/analyze")
+async def trigger_news_ai_analysis(news_id: str):
+    """
+    用户主动触发 LLM 深度解读（Phase 3B）。
+    幂等：已有 ai_analysis 直接返回，否则同步调 LLM。
+    """
+    if not ai_analyzer:
+        raise HTTPException(status_code=503, detail="AI 分析引擎未启动")
+    item = await db.get_flash_news_by_id(news_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="News not found")
+    if item.get("ai_analysis"):
+        return {"cached": True, "ai_analysis": item["ai_analysis"]}
+    result = await ai_analyzer.deep_analyze_news(item)
+    if result is None:
+        raise HTTPException(
+            status_code=503,
+            detail="LLM 调用失败（API Key 未配置 / 网络异常 / 解析失败），请在设置中检查 LLM 配置",
+        )
+    return {"cached": False, "ai_analysis": result}
+
+
+@news_router.get("/cost")
+async def get_llm_cost_status():
+    """今日 LLM 累计成本 + 预算状态（Phase 3B F5.11）。"""
+    if not ai_analyzer:
+        return {"status": "disabled", "today_cost_usd": 0, "daily_budget": config.LLM_DAILY_BUDGET}
+    return await ai_analyzer.get_cost_status()
 
 
 # ═══════════════════════════════════════════════════════════════════
