@@ -94,16 +94,17 @@ class TencentCNFetcher:
         type_str, scale = type_info
         is_minute = scale is not None  # 分钟级走 mkline 接口
 
+        # 腾讯和新浪一样按"最近 N 根"返回，懒加载时拉最大数量再本地过滤
         if is_minute:
             # 分钟级: https://ifzq.gtimg.cn/appstock/app/kline/mkline?param=sh600519,m60,,N
             url = "https://ifzq.gtimg.cn/appstock/app/kline/mkline"
-            fetch_count = min(limit + 100 if end_time_ms else limit, 320)
+            fetch_count = 320 if end_time_ms else min(limit, 320)
             params = {"param": f"{tencent_sym},{type_str},,{fetch_count}"}
             data_key_candidates = [type_str]  # 分钟级返回 key = m60/m5 等
         else:
             # 日/周/月: https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh600519,day,,,N,qfq
             url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
-            fetch_count = min(limit + 100 if end_time_ms else limit, 640)
+            fetch_count = 640 if end_time_ms else min(limit, 640)
             params = {"param": f"{tencent_sym},{type_str},,,{fetch_count},qfq"}
             data_key_candidates = [f"qfq{type_str}", type_str]
 

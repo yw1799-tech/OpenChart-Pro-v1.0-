@@ -105,12 +105,15 @@ class SinaCNFetcher:
             return []
 
         # 新浪 K 线 API（纯 JSON 返回）
+        # 新浪的 K 线只能按"最近 N 根"返回，没有 end 参数。
+        # 懒加载场景下（end_time_ms 非空）必须拉最大数量 1023 再本地过滤。
         url = "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData"
+        fetch_len = 1023 if end_time_ms else min(limit, 1023)
         params = {
             "symbol": sina_sym,
             "scale": str(scale),
             "ma": "no",
-            "datalen": str(min(limit + 100 if end_time_ms else limit, 1023)),  # 新浪最多 1023
+            "datalen": str(fetch_len),
         }
 
         try:
