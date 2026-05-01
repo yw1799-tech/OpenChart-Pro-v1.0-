@@ -1305,12 +1305,41 @@ async def _pending_orders_retry_loop():
                     logger.warning(f"[reval-retry] {sig['symbol']} 重验异常: {e}")
                     continue
 
-                # ai_error → 不持久化 revalidated_at，等下轮 60s 再试
+                # ai_error → 不持久化 revalidated_at，但 +1 计数
+                # v12.19.1 (P1-B): revalidation_count >= 3 → 永久 reject，防 LLM 持续故障无限循环
+                MAX_AI_REVAL_RETRY = 3
                 if tier == "ai_error":
                     ai_errors += 1
-                    logger.info(
-                        f"[reval-retry] {sig['symbol']}({sig['market']}) AI 重验失败 (将下轮重试): {reason}"
-                    )
+                    cur_count = int(sig.get("revalidation_count") or 0) + 1
+                    try:
+                        async with db.acquire() as conn:
+                            await conn.execute(
+                                "UPDATE signals SET revalidation_count=? WHERE id=?",
+                                (cur_count, sig["id"]),
+                            )
+                            await conn.commit()
+                    except Exception:
+                        pass
+                    if cur_count >= MAX_AI_REVAL_RETRY:
+                        # 达上限 → 当作永久失效 reject (后续 loop 不再选中此信号)
+                        logger.warning(
+                            f"[reval-retry] {sig['symbol']}({sig['market']}) AI 重验连续 {cur_count} 次失败，永久 reject"
+                        )
+                        try:
+                            async with db.acquire() as conn:
+                                await conn.execute(
+                                    """UPDATE signals SET revalidated_at=?, revalidation_tier='ai_error',
+                                       revalidation_reason=? WHERE id=?""",
+                                    (now_ms, f"AI 持续失败 {cur_count} 次 (LLM 故障/配额)：{reason[:300]}", sig["id"]),
+                                )
+                                await conn.commit()
+                        except Exception:
+                            pass
+                        rejected += 1
+                    else:
+                        logger.info(
+                            f"[reval-retry] {sig['symbol']}({sig['market']}) AI 重验失败 ({cur_count}/{MAX_AI_REVAL_RETRY} 次, 将下轮重试): {reason}"
+                        )
                     continue
 
                 # 其他结果都标记为已重验

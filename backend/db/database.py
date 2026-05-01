@@ -272,7 +272,7 @@ class DatabaseManager:
         # 查当前 schema 版本
         cur = await conn.execute("PRAGMA user_version")
         current_version = (await cur.fetchone())[0]
-        TARGET_VERSION = 16  # v16 (v12.18.0): signals 加 revalidation 字段（4 层重验机制）
+        TARGET_VERSION = 17  # v17 (v12.19.1): signals 加 revalidation_count 字段（防 AI 重验无限循环）
         if current_version < TARGET_VERSION:
             # v12.11: 用 BEGIN/COMMIT 包整个迁移；任何步骤抛错则 ROLLBACK + 不前进 user_version
             migration_ok = True
@@ -335,6 +335,8 @@ class DatabaseManager:
                 "ALTER TABLE signals ADD COLUMN revalidation_reason TEXT DEFAULT ''",
                 "ALTER TABLE signals ADD COLUMN original_ai_verdict TEXT DEFAULT ''",   # 重验前备份
                 "ALTER TABLE signals ADD COLUMN original_ai_confidence INTEGER DEFAULT 0",
+                # v17 (v12.19.1) AI 重验失败次数 — 防 LLM 持续故障导致的无限循环
+                "ALTER TABLE signals ADD COLUMN revalidation_count INTEGER DEFAULT 0",
             ]:
                 try:
                     await conn.execute(alter)
@@ -1465,22 +1467,58 @@ class DatabaseManager:
         归档候选池条目（软删除）。
         reason 用于记录淘汰原因（low_score / quality_fail / no_news / manual 等），
         便于用户查询"为什么这只股没了"。
+
+        v12.19.1 (P1-A): 同步禁用对应 strategy_bindings (避免 monitor 继续空跑死 binding)
+        持仓中的股票不归档 (是被外层 is_exempt 保护)，所以禁用 binding 不会影响活跃持仓。
         """
         async with self.acquire() as conn:
+            # 1. 拿 symbol/market 用于禁 binding
+            cur = await conn.execute(
+                "SELECT symbol, market FROM watch_pool WHERE id=?", (item_id,)
+            )
+            row = await cur.fetchone()
+            # 2. 标记 archived
             await conn.execute(
                 "UPDATE watch_pool SET status = 'archived', archived_at = ?, archived_reason = ? WHERE id = ?",
                 (int(time.time()), reason or "", item_id),
             )
+            # 3. 同步禁用对应 strategy_bindings (avoid monitor 空跑)
+            if row and row["symbol"] and row["market"]:
+                try:
+                    await conn.execute(
+                        "UPDATE strategy_bindings SET enabled=0 WHERE symbol=? AND market=?",
+                        (row["symbol"], row["market"]),
+                    )
+                except Exception:
+                    pass  # strategy_bindings 表不存在也不阻塞 archive
             await conn.commit()
 
     async def restore_pool_item(self, item_id: str) -> bool:
-        """从 archived 恢复为 candidate。返回是否成功。"""
+        """从 archived 恢复为 candidate。返回是否成功。
+
+        v12.19.1 (P1-A): 同步重新启用对应 strategy_bindings
+        """
         async with self.acquire() as conn:
+            # 1. 拿 symbol/market
+            cur = await conn.execute(
+                "SELECT symbol, market FROM watch_pool WHERE id=? AND status='archived'", (item_id,)
+            )
+            row = await cur.fetchone()
+            # 2. 改 candidate
             cursor = await conn.execute(
                 "UPDATE watch_pool SET status='candidate', archived_at=NULL, archived_reason='', "
                 "low_score_since=NULL WHERE id=? AND status='archived'",
                 (item_id,),
             )
+            # 3. 重新启用 binding
+            if cursor.rowcount > 0 and row and row["symbol"] and row["market"]:
+                try:
+                    await conn.execute(
+                        "UPDATE strategy_bindings SET enabled=1 WHERE symbol=? AND market=?",
+                        (row["symbol"], row["market"]),
+                    )
+                except Exception:
+                    pass
             await conn.commit()
             return cursor.rowcount > 0
 
@@ -1498,17 +1536,27 @@ class DatabaseManager:
         同股复发新闻时刷新 last_news_mention_at。
         importance ≥ 3 时还会"唤醒"已归档股票（archived → candidate），
         因为重要新闻意味着它重新值得关注。
+
+        v12.19.1 (P3-A): importance >= 3 同时立即给该股加 event_score（+5/+10/+15 for ★3/★4/★5），
+        总 score 重算 = event_score + technical + fundamentals。
+        避免新闻入库到 1h 后才 rescore 期间被忽略。
+        1h 后正常 rescore 会重算 event_score 覆盖此临时值。
+
         返回 True 表示有归档股被唤醒。
         """
         woke_up = False
+        # event_score boost 表
+        EVENT_BOOST = {3: 5.0, 4: 10.0, 5: 15.0}
+        boost = EVENT_BOOST.get(importance, 0)
         async with self.acquire() as conn:
             # 先正常刷新非归档股的 mention 时间
             await conn.execute(
                 "UPDATE watch_pool SET last_news_mention_at=? WHERE symbol=? AND market=? AND status != 'archived'",
                 (ts, symbol, market),
             )
-            # 高分新闻（importance ≥ 3）触发归档股唤醒
+            # 高分新闻（importance ≥ 3）触发归档股唤醒 + event_score boost
             if importance >= 3:
+                # 唤醒
                 cur = await conn.execute(
                     "UPDATE watch_pool SET status='candidate', archived_at=NULL, archived_reason='', "
                     "low_score_since=NULL, last_news_mention_at=? "
@@ -1516,6 +1564,22 @@ class DatabaseManager:
                     (ts, symbol, market),
                 )
                 woke_up = (cur.rowcount or 0) > 0
+                # v12.19.1 P3-A: event_score 立即提升 + 重算总 score
+                # 取 max(当前 event_score, boost) — 不累加避免同一波新闻反复加
+                if boost > 0:
+                    try:
+                        await conn.execute(
+                            """UPDATE watch_pool
+                               SET event_score = MAX(COALESCE(event_score, 0), ?),
+                                   score = COALESCE(technical_score, 0)
+                                         + COALESCE(fundamentals_score, 0)
+                                         + MAX(COALESCE(event_score, 0), ?),
+                                   last_scored_at = ?
+                               WHERE symbol=? AND market=? AND status != 'archived'""",
+                            (boost, boost, int(time.time()), symbol, market),
+                        )
+                    except Exception:
+                        pass
             await conn.commit()
         return woke_up
 

@@ -192,7 +192,17 @@ class TradeReviewer:
                 return None
             self._inflight_pids.add(position_id)
         try:
-            return await self._do_review_position(position_id, force)
+            # v12.19.1 (P3-B): 全局 try/except 兜底，避免任何 unhandled 异常
+            # 让该次 review 永久失败（4h batch loop 下次还会重试）
+            try:
+                return await self._do_review_position(position_id, force)
+            except Exception as e:
+                logger.warning(
+                    f"[review] {position_id[:8]} _do_review_position 异常 (4h batch 会重试): "
+                    f"{type(e).__name__}: {e}",
+                    exc_info=True,
+                )
+                return None
         finally:
             async with self._inflight_lock:
                 self._inflight_pids.discard(position_id)

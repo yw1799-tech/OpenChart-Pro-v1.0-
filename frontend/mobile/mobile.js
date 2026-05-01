@@ -380,11 +380,13 @@
       const todayTrades = (log.items || []).filter(t =>
         t.status === 'executed' && (t.traded_at * 1000) >= todayStart
       ).length;
-      // 待重验：confirm + 24h 内 + 暂无 review (无完美 API，估算用 confirm-未触发数)
+      // 待重验：confirm + 24h 内 + status='active' (排除已 acted/expired) + 未重验过
+      // v12.19.1 (P2-A): 加 status='active' 过滤，避免数字偏大
       const sigItems = signals.items || [];
       const pendingReval = sigItems.filter(s =>
         s.ai_verdict === 'confirm'
-        && s.revalidated_at == 0
+        && (s.revalidated_at == 0 || !s.revalidated_at)
+        && (s.status === 'active' || !s.status)
         && (now - (s.generated_at || 0)) < 24 * 3600 * 1000
       ).length;
       const todayCost = (llmCost && llmCost.today_total_usd) || 0;
@@ -1049,20 +1051,8 @@
     return html;
   }
 
-  async function renderHistory() {
-    try {
-      const data = await loadHistory();
-      const items = data.items || [];
-      if (!items.length) {
-        $('#review-list').innerHTML = '<div class="empty"><div class="empty-icon">📜</div><div>暂无成交</div></div>';
-        return;
-      }
-      $('#review-list').innerHTML = items.map(renderTradeRow).join('');
-    } catch (e) {
-      console.error(e);
-      $('#review-list').innerHTML = '<div class="empty">加载失败</div>';
-    }
-  }
+  // v12.19.1 (P2-B): renderHistory 死代码已删除（5-tab 重构后没人调用）
+  // 最近成交在主页 "最近成交" section 显示，使用同样的 renderTradeRow 渲染
 
   function renderTradeRow(t) {
     const icon = ACTION_ICON[t.action] || '•';
