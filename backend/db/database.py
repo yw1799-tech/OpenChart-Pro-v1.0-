@@ -20,13 +20,27 @@ _SOURCE_MARKET_HINTS = {
     "上海证券报": ("cn",), "新浪财经": ("cn",),
     "同花顺": ("cn",), "东方财富": ("cn",),
     "Yahoo Finance HK": ("hk",), "SCMP": ("hk",), "21财经港股": ("hk",),
+    "经济通": ("hk",), "etnet": ("hk",), "HKEX": ("hk",),
     "Yahoo Finance": ("us",), "MarketWatch": ("us",), "CNBC": ("us",),
     "PR Newswire": ("us",), "SEC EDGAR": ("us",), "Finnhub": ("us",),
     "Bloomberg": ("us", "macro"), "Reuters": ("us", "macro"),
+    # v12.19.2: 补全加密源 hint (之前漏了 Binance/OKX/TheDefiant 导致 market=crypto 过滤失效)
     "CoinDesk": ("crypto",), "Cointelegraph": ("crypto",),
     "TheBlock": ("crypto",), "Decrypt": ("crypto",),
+    "TheDefiant": ("crypto",), "Bitcoin Magazine": ("crypto",),
+    "Binance公告": ("crypto",), "Binance Announcement": ("crypto",),
+    "OKX公告": ("crypto",), "OKX Announcement": ("crypto",),
     "ChainCatcher": ("crypto",), "Odaily": ("crypto",), "PANews": ("crypto",),
+    "BeInCrypto": ("crypto",), "CryptoSlate": ("crypto",), "AMBCrypto": ("crypto",),
+    # 宏观补全
+    "Federal Reserve": ("macro",), "BLS": ("macro",), "ECB": ("macro",),
 }
+
+# v12.19.2: 反向索引 — 给定 market 返回所有归属 source 列表（用于 SQL 过滤）
+_MARKET_TO_SOURCES = {}
+for _src, _mkts in _SOURCE_MARKET_HINTS.items():
+    for _m in _mkts:
+        _MARKET_TO_SOURCES.setdefault(_m, []).append(_src)
 
 
 def _infer_news_markets(d: Dict) -> List[str]:
@@ -1263,6 +1277,22 @@ class DatabaseManager:
             if symbol:
                 sql += " AND categories LIKE ?"
                 params.append(f'%"{symbol}"%')
+            # v12.19.2: market filter 推前到 SQL — 之前后置过滤 + LIMIT 200 导致大市场 (SEC EDGAR)
+            # 占满前 200 条, 小市场 (crypto) 几乎过滤不到
+            # 现在按 market 反查所有归属 source → SQL `source IN (...)` 直接过滤
+            if market:
+                src_list = _MARKET_TO_SOURCES.get(market, [])
+                if src_list:
+                    placeholders = ",".join("?" for _ in src_list)
+                    sql += f" AND source IN ({placeholders})"
+                    params.extend(src_list)
+                # macro 同时也来自 is_macro_data 标记
+                if market == "macro":
+                    # 用 OR 重新拼: (source IN macro_srcs) OR (is_macro_data=1)
+                    sql = sql.replace(
+                        f"AND source IN ({placeholders})",
+                        f"AND (source IN ({placeholders}) OR is_macro_data=1)"
+                    )
             sql += " ORDER BY published_at DESC LIMIT ? OFFSET ?"
             params += [limit, offset]
             cursor = await conn.execute(sql, params)
@@ -1278,8 +1308,10 @@ class DatabaseManager:
                             pass
                 d["markets"] = _infer_news_markets(d)
                 results.append(d)
-            # 后置市场过滤（实时推断的字段，无法走 SQL）
-            if market:
+            # v12.19.2: 后置过滤改为 fallback 校验 (SQL 已主过滤)
+            # 处理 categories 推断出非 source 默认 market 的情况 (e.g. CNBC 文章 cats=["BTC-USDT"] 也算 crypto)
+            # 但只有当 SQL 没过滤过 source 才做后置 (避免重复)
+            if market and not _MARKET_TO_SOURCES.get(market):
                 results = [d for d in results if market in (d.get("markets") or [])]
             return results
 
