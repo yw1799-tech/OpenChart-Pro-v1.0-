@@ -148,12 +148,22 @@ CRYPTOQUANT_API_KEY = os.getenv("CRYPTOQUANT_API_KEY", "") # 链上数据（Phas
 WATCHPOOL_MAX_SIZE = 300                  # 总上限（Tier 1+2+3 合计）
 
 WATCHPOOL_TIER1_MIN_SCORE = 70
-WATCHPOOL_TIER1_MAX = 220
+WATCHPOOL_TIER1_MAX = 220             # v12.18.5: 旧全局上限保留作 fallback (无 BY_MARKET 配置时启用)
 WATCHPOOL_TIER2_MIN_SCORE = 50
 WATCHPOOL_TIER2_MAX = 200             # v12.15.5: 60 → 200（用户要求放宽，让优胜劣汰自然发生）
 WATCHPOOL_TIER3_MIN_SCORE = 40
 WATCHPOOL_TIER3_MAX = 200             # v12.15.5: 20 → 200（用户要求放宽）
 WATCHPOOL_TIER4_ARCHIVE_BELOW = 0         # v12.15.5: 0 = 禁用 Tier 4 自动归档（用户要求保留低分股观察）
+
+# v12.18.5: 按市场差异化候选池上限（替代全局共享）
+# 不同市场标的规模差异大: us 4500+ / cn 5300+ / hk 600(过滤后), 需要分别配额
+# 监控负载估计: us 350+cn 300+hk 200 ≈ 850 标的 × ~15 bindings = ~13K bindings (生产可承受)
+WATCHPOOL_TIER_CAPS_BY_MARKET = {
+    "us":  {"tier1": 350, "tier2": 200, "tier3": 100},   # 美股 标的最多 → 总 650
+    "cn":  {"tier1": 300, "tier2": 200, "tier3": 100},   # A 股 板块/龙虎榜要广覆盖 → 总 600
+    "hk":  {"tier1": 100, "tier2": 60,  "tier3": 40},    # 港股 流通盘小蓝筹有限 → 总 200
+    # crypto 不入候选池 (固定 watchlist 6 主流币)
+}
                                           # 历史值=40 — 但导致 506 只优质股被错杀（Visa/JNJ/腾讯等）
                                           # 改 0 后 Tier 4 永不触发；超额淘汰 (Tier 1/2/3) + 30d 无新闻仍生效
 

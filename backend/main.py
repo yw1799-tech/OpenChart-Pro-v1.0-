@@ -1439,36 +1439,49 @@ async def _pool_auto_archive_loop():
                         logger.debug(f"[auto-archive] tier4 archive 失败 {it.get('symbol')}: {e}")
 
             # ─ Step 2: Tier 1/2/3 超额按 score 升序淘最低 ─
+            # v12.18.5: 按市场分别淘汰 (避免大池市场被小池挤压)
+            #   配置 WATCHPOOL_TIER_CAPS_BY_MARKET 存在时按市场独立处理；
+            #   该 market 不在配置里则回退用全局 t1_max/t2_max/t3_max
             try:
                 items = await db.get_pool_items(limit=2000)  # 重新拉
             except Exception:
                 items = []
-            tiers = [
-                (t1_min, 1e9, t1_max, "Tier 1"),
-                (t2_min, t1_min, t2_max, "Tier 2"),
-                (t3_min, t2_min, t3_max, "Tier 3"),
-            ]
-            for tier_min, tier_max_excl, cap, label in tiers:
-                bucket = [
-                    it for it in items
-                    if not is_exempt(it)
-                    and tier_min <= float(it.get("score") or 0) < tier_max_excl
+            caps_by_market = getattr(config, "WATCHPOOL_TIER_CAPS_BY_MARKET", {}) or {}
+            # 每市场独立处理（含全局 fallback）
+            all_markets_in_pool = {it.get("market") for it in items if it.get("market")}
+            for mkt in sorted(all_markets_in_pool):
+                mkt_caps = caps_by_market.get(mkt, {})
+                # market 没配置 → 用全局 fallback (向后兼容)
+                cap_t1 = mkt_caps.get("tier1", t1_max)
+                cap_t2 = mkt_caps.get("tier2", t2_max)
+                cap_t3 = mkt_caps.get("tier3", t3_max)
+                tiers = [
+                    (t1_min, 1e9, cap_t1, f"Tier 1 [{mkt}]"),
+                    (t2_min, t1_min, cap_t2, f"Tier 2 [{mkt}]"),
+                    (t3_min, t2_min, cap_t3, f"Tier 3 [{mkt}]"),
                 ]
-                if len(bucket) <= cap:
-                    continue
-                bucket.sort(key=lambda x: float(x.get("score") or 0))  # score 升序，淘最低
-                to_kill = bucket[:len(bucket) - cap]
-                for it in to_kill:
-                    try:
-                        await db.archive_pool_item(
-                            it["id"],
-                            reason=f"{label} 超额 (cap={cap}, 当前 score={float(it.get('score') or 0):.0f})"
-                        )
-                        archived["overflow"] += 1
-                        try: await hub.broadcast_pool_update("removed", {"id": it["id"]})
-                        except Exception: pass
-                    except Exception as e:
-                        logger.debug(f"[auto-archive] overflow archive 失败 {it.get('symbol')}: {e}")
+                for tier_min, tier_max_excl, cap, label in tiers:
+                    bucket = [
+                        it for it in items
+                        if not is_exempt(it)
+                        and it.get("market") == mkt
+                        and tier_min <= float(it.get("score") or 0) < tier_max_excl
+                    ]
+                    if len(bucket) <= cap:
+                        continue
+                    bucket.sort(key=lambda x: float(x.get("score") or 0))  # score 升序，淘最低
+                    to_kill = bucket[:len(bucket) - cap]
+                    for it in to_kill:
+                        try:
+                            await db.archive_pool_item(
+                                it["id"],
+                                reason=f"{label} 超额 (cap={cap}, 当前 score={float(it.get('score') or 0):.0f})"
+                            )
+                            archived["overflow"] += 1
+                            try: await hub.broadcast_pool_update("removed", {"id": it["id"]})
+                            except Exception: pass
+                        except Exception as e:
+                            logger.debug(f"[auto-archive] overflow archive 失败 {it.get('symbol')}: {e}")
 
             # ─ Step 3: 30 天无新闻 archive（豁免来源也适用，作为兜底清理）─
             try:
