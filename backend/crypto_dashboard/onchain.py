@@ -4,6 +4,7 @@
 """
 
 import os
+import time
 import aiohttp
 import logging
 from datetime import datetime
@@ -58,11 +59,12 @@ class OnChainData:
         """生成模拟交易所流入流出数据"""
         import random
 
-        now = datetime.utcnow()
+        # v12.18.2: 用 time.time() 拿真 UTC（避免 utcnow().timestamp() 在非 UTC 服务器漂 N 小时）
+        now_ts = time.time()
         days = 30
         netflow, inflow, outflow = [], [], []
         for i in range(days):
-            ts = now.timestamp() - (days - i) * 86400
+            ts = now_ts - (days - i) * 86400
             dt_str = datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d")
             inf = round(random.uniform(500, 5000), 2)
             outf = round(random.uniform(500, 5000), 2)
@@ -178,7 +180,9 @@ class OnChainData:
         params = {
             "a": "BTC",
             "api_key": self.glassnode_api_key,
-            "s": str(int((datetime.utcnow().timestamp()) - 30 * 86400)),
+            # v12.18.2: 修复 utcnow().timestamp() 在非 UTC 服务器（如东京 +9）会偏 N 小时
+            # 改用 time.time() 直接拿 UTC epoch
+            "s": str(int(time.time() - 30 * 86400)),
             "i": "24h",
         }
 
@@ -232,11 +236,12 @@ class OnChainData:
         """生成模拟NUPL数据"""
         import random
 
-        now = datetime.utcnow()
+        # v12.18.2: 同上
+        now_ts = time.time()
         values = []
         base = 0.4
         for i in range(30):
-            ts = now.timestamp() - (30 - i) * 86400
+            ts = now_ts - (30 - i) * 86400
             dt_str = datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d")
             nupl = round(base + random.uniform(-0.05, 0.05), 4)
             base = nupl

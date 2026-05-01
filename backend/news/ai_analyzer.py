@@ -542,14 +542,20 @@ class NewsAIAnalyzer:
 
     async def _refresh_today_cost(self):
         """从 DB 加载当日累计成本（每次调用前快速查）。"""
-        today = time.strftime("%Y-%m-%d")
+        # v12.18.2: 修复时区 bug — 服务器东京但用户在北京，"今日成本"按北京日历算
+        # 之前 time.strftime + time.mktime 拿东京 today 00:00，比北京 today 00:00 早 1h
+        from datetime import datetime as _dt2
+        from zoneinfo import ZoneInfo as _ZI2
+        _now_bj = _dt2.now(_ZI2("Asia/Shanghai"))
+        today = _now_bj.strftime("%Y-%m-%d")
         if self._today_date != today:
             # 新一天，重置
             self._today_date = today
             self._today_cost = 0.0
 
         try:
-            day_start_ms = int(time.mktime(time.strptime(today, "%Y-%m-%d")) * 1000)
+            _day_start_bj = _now_bj.replace(hour=0, minute=0, second=0, microsecond=0)
+            day_start_ms = int(_day_start_bj.timestamp() * 1000)
             async with self.db.acquire() as conn:
                 cursor = await conn.execute(
                     "SELECT COALESCE(SUM(cost_usd), 0) as total FROM llm_cost_log WHERE called_at >= ?",

@@ -366,8 +366,11 @@ async def _fetch_lhb_impl(top_n: int):
     """东财龙虎榜接口 RPT_DAILYBILLBOARD_DETAILS (今日数据)。
     机构席位 buyer_type=机构 / 游资 / 营业部
     """
-    import datetime
-    today = datetime.date.today().strftime("%Y-%m-%d")
+    # v12.18.2 修复时区：服务器在东京 (UTC+9), date.today() 会在北京 23:00-23:59 误返回次日日期
+    # eastmoney API 用北京日期 → 必须显式 ZoneInfo("Asia/Shanghai")
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo
+    today = _dt.now(ZoneInfo("Asia/Shanghai")).date().strftime("%Y-%m-%d")
     url = "https://datacenter-web.eastmoney.com/api/data/v1/get"
     params = {
         "reportName": "RPT_DAILYBILLBOARD_DETAILSNEW",

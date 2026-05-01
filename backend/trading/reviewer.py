@@ -21,7 +21,13 @@ import asyncio
 import json
 import logging
 import time
+from datetime import datetime as _dt
 from typing import Dict, List, Optional, Any, Tuple
+from zoneinfo import ZoneInfo
+
+# v12.18.2 修复时区：服务器东京 (UTC+9)，但用户在北京 (UTC+8)
+# 复盘报告里所有时间显示都按北京时间，否则用户看到的时间会比实际晚 1 小时
+_BJ_TZ = ZoneInfo("Asia/Shanghai")
 
 import backend.config as config
 
@@ -484,7 +490,8 @@ class TradeReviewer:
     @staticmethod
     def _fmt_ts(ts: int) -> str:
         if not ts: return "?"
-        return time.strftime("%m-%d %H:%M", time.localtime(ts))
+        # v12.18.2: 显式按北京时区格式化（之前 time.localtime 会拿东京时区）
+        return _dt.fromtimestamp(ts, _BJ_TZ).strftime("%m-%d %H:%M")
 
     async def _fetch_klines_in_range(self, symbol: str, market: str, open_ts: int, close_ts: int) -> List[Dict]:
         if market not in ("us","hk","cn","crypto"): return []
@@ -517,7 +524,7 @@ class TradeReviewer:
             step = len(klines) / n
             picks = [klines[int(i * step)] for i in range(n)]
         return "\n".join(
-            f"  {time.strftime('%m-%d', time.localtime(k['timestamp']/1000))}: "
+            f"  {_dt.fromtimestamp(k['timestamp']/1000, _BJ_TZ).strftime('%m-%d')}: "
             f"O {k['open']:.4f} H {k['high']:.4f} L {k['low']:.4f} C {k['close']:.4f} V {k['volume']}"
             for k in picks
         )
@@ -569,7 +576,7 @@ class TradeReviewer:
             high_imp = [r for r in rows if (r["importance"] or 0) >= 3]
             picks = high_imp[:6] if high_imp else rows[:3]
             text = "\n".join(
-                f"  ★{r['importance']} [{r['sentiment']}] {time.strftime('%m-%d', time.localtime(r['published_at']/1000))}: {r['title'][:80]}"
+                f"  ★{r['importance']} [{r['sentiment']}] {_dt.fromtimestamp(r['published_at']/1000, _BJ_TZ).strftime('%m-%d')}: {r['title'][:80]}"
                 for r in picks
             )
             return (len(rows), text)

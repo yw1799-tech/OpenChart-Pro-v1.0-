@@ -837,11 +837,15 @@ async def _trade_review_weekly_loop():
     while True:
         try:
             if trade_reviewer is not None:
-                # 计算上周一 00:00 的时间戳
-                now = time.time()
-                t = time.localtime(now)
-                # 本周一 00:00
-                this_mon = int(now - (t.tm_wday * 86400 + t.tm_hour * 3600 + t.tm_min * 60 + t.tm_sec))
+                # v12.18.2: 显式按北京时区算"本周一 00:00"
+                # 之前 time.localtime 会拿东京时区 → 周边界偏 1 小时
+                from datetime import datetime as _dt2, timedelta as _td2
+                from zoneinfo import ZoneInfo as _ZI2
+                now_bj = _dt2.now(_ZI2("Asia/Shanghai"))
+                this_mon_bj = (now_bj - _td2(days=now_bj.weekday())).replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )
+                this_mon = int(this_mon_bj.timestamp())
                 last_mon = this_mon - 7 * 86400
                 # 检查是否已生成
                 async with db.acquire() as conn:
@@ -4117,9 +4121,14 @@ async def trigger_weekly():
     """手动触发本周周报生成。"""
     if trade_reviewer is None:
         raise HTTPException(status_code=503, detail="TradeReviewer 未启动")
-    now = time.time()
-    t = time.localtime(now)
-    this_mon = int(now - (t.tm_wday * 86400 + t.tm_hour * 3600 + t.tm_min * 60 + t.tm_sec))
+    # v12.18.2: 按北京时区算周一 00:00（之前 localtime 拿东京会偏 1h）
+    from datetime import datetime as _dt2, timedelta as _td2
+    from zoneinfo import ZoneInfo as _ZI2
+    now_bj = _dt2.now(_ZI2("Asia/Shanghai"))
+    this_mon_bj = (now_bj - _td2(days=now_bj.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    this_mon = int(this_mon_bj.timestamp())
     last_mon = this_mon - 7 * 86400
     r = await trade_reviewer.generate_weekly_report(last_mon)
     if not r:

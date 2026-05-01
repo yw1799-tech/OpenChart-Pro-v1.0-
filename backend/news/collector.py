@@ -207,7 +207,11 @@ class RSSCollector(NewsCollector):
                 # 时间 published > updated > 当前时间
                 pub = entry.get("published_parsed") or entry.get("updated_parsed")
                 if pub:
-                    pub_ms = int(time.mktime(pub) * 1000)
+                    # v12.18.2: 修复 P0 bug — RSS published_parsed 是 UTC struct_time
+                    # 之前用 time.mktime() 会当作 LOCAL（东京）解析 → 偏 9 小时
+                    # 正确：calendar.timegm() 把 struct_time 当 UTC 转 epoch
+                    import calendar as _cal
+                    pub_ms = int(_cal.timegm(pub) * 1000)
                 else:
                     pub_ms = int(time.time() * 1000)
                 normalized = self._normalize(title, summary, link, pub_ms)

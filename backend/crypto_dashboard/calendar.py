@@ -5,7 +5,7 @@
 
 import aiohttp
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -207,7 +207,7 @@ class EconomicCalendar:
         内置重要宏观经济事件日历
         基于常规公布时间表生成未来30天的预期事件
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)  # v12.18.2: utcnow 已弃用
         events = []
 
         # 定义周期性事件模板
@@ -484,7 +484,7 @@ class EconomicCalendar:
         内置加密货币重大事件日历
         定期更新已知的确定性事件
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)  # v12.18.2: utcnow 已弃用
         now_str = now.strftime("%Y-%m-%dT00:00:00Z")
 
         # 内置已知的重大事件

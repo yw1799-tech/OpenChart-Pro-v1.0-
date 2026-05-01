@@ -517,9 +517,12 @@ def _safe_float(v) -> float:
 
 
 def _days_since(ymd: str) -> int:
-    from datetime import datetime, date
+    # v12.18.2: 服务器东京但用户在北京 — 用北京时区算"今天"，避免 IPO 临界股票被错算
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
     try:
         dt = datetime.strptime(ymd, "%Y%m%d").date()
-        return (date.today() - dt).days
+        today_bj = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+        return (today_bj - dt).days
     except ValueError:
         return 9999
