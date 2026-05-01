@@ -1107,7 +1107,7 @@
     { name: '💰 加密专属', strategies: ['funding_extreme','oi_breakout','long_short_ratio','fear_greed_reversal'] },
     { name: '🇨🇳 A 股专属', strategies: ['limit_up_followup','northbound_flow_top','sector_momentum'] },
     { name: '🇭🇰 港股专属', strategies: ['southbound_inflow','ah_spread_revert'] },
-    { name: '🇺🇸 美股专属', strategies: ['gap_up_continuation','vwap_pullback','earnings_window_filter'] },
+    { name: '🇺🇸 美股专属', strategies: ['gap_up_continuation','vwap_pullback'] },
   ];
   const STRATEGY_NAME_CN = {
     ma_cross: '均线金叉死叉', donchian_breakout: '通道突破', bollinger_reversion: '布林带均值回归',
@@ -1119,7 +1119,7 @@
     fear_greed_reversal: 'F&G 极值反转',
     limit_up_followup: '涨停后回踩', northbound_flow_top: '北向资金排名', sector_momentum: '板块联动',
     southbound_inflow: '港股通南向', ah_spread_revert: 'AH 价差回归',
-    gap_up_continuation: '高开延续', vwap_pullback: 'VWAP 回踩', earnings_window_filter: '财报窗口过滤',
+    gap_up_continuation: '高开延续', vwap_pullback: 'VWAP 回踩',
   };
 
   async function renderStrategyLibrary() {

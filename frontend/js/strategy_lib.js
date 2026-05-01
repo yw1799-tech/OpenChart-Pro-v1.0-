@@ -20,7 +20,6 @@
     sector_momentum: '板块联动',
     southbound_inflow: '港股通南向', ah_spread_revert: 'AH 价差回归',
     gap_up_continuation: '高开延续', vwap_pullback: 'VWAP 回踩',
-    earnings_window_filter: '财报窗口过滤',
   };
 
   const GROUPS = [
@@ -32,8 +31,8 @@
       strategies: ['limit_up_followup','northbound_flow_top','sector_momentum'] },
     { name: '🇭🇰 港股专属（港股通 + AH 价差）',
       strategies: ['southbound_inflow','ah_spread_revert'] },
-    { name: '🇺🇸 美股专属（盘前/财报/VWAP）',
-      strategies: ['gap_up_continuation','vwap_pullback','earnings_window_filter'] },
+    { name: '🇺🇸 美股专属（盘前 + VWAP）',
+      strategies: ['gap_up_continuation','vwap_pullback'] },
   ];
 
   const RESONANCE_GOLDEN_COMBOS = [
@@ -46,6 +45,10 @@
     { name: 'A 股政策资金', strategies: ['northbound_flow_top','sector_momentum','limit_up_followup'] },
     { name: 'RSI 趋势回踩共振', strategies: ['ma_cross','rsi_pullback','volume_breakout'] },
     { name: 'RSI 真背离反转', strategies: ['rsi_real_divergence','volume_breakout'] },
+    { name: '美股财报后高开', strategies: ['gap_up_continuation','ma_cross','volume_breakout'] },
+    { name: '美股高开 + MACD 动量', strategies: ['gap_up_continuation','macd_cross'] },
+    { name: '港股南向资金共振', strategies: ['southbound_inflow','ma_cross','volume_breakout'] },
+    { name: '新闻驱动 + 量能确认', strategies: ['flash_event','volume_breakout','ma_cross'] },
   ];
 
   const pane = document.querySelector('[data-pane="strategy-lib"]');

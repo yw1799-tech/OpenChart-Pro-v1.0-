@@ -724,6 +724,14 @@ class MonitorEngine:
         {"ma_cross", "rsi_pullback", "volume_breakout"},
         # v12.16.5: RSI 真背离 + 量能确认（反转高胜率，避免单一背离误信号）
         {"rsi_real_divergence", "volume_breakout"},
+        # v12.16.6: 美股财报后高开 + 趋势 + 量能（财报季高胜率突破延续）
+        {"gap_up_continuation", "ma_cross", "volume_breakout"},
+        # v12.16.6: 美股高开 + MACD 动量（盘后预期外利好的延续）
+        {"gap_up_continuation", "macd_cross"},
+        # v12.16.6: 港股南向资金 + 趋势 + 量能（机构 + 散户共振）
+        {"southbound_inflow", "ma_cross", "volume_breakout"},
+        # v12.16.6: 新闻驱动 + 量能 + 趋势（防情绪噪音 + 假突破）
+        {"flash_event", "volume_breakout", "ma_cross"},
     ]
 
     def _is_golden_combo(self, strat_set: set) -> bool:

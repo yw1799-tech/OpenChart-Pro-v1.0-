@@ -1241,7 +1241,7 @@ const Portfolio = (function () {
       fear_greed_reversal:'F&G 极值反转', limit_up_followup:'涨停后回踩',
       northbound_flow_top:'北向资金排名', sector_momentum:'板块联动',
       southbound_inflow:'港股通南向', ah_spread_revert:'AH 价差回归',
-      gap_up_continuation:'高开延续', vwap_pullback:'VWAP 回踩', earnings_window_filter:'财报窗口过滤',
+      gap_up_continuation:'高开延续', vwap_pullback:'VWAP 回踩',
     };
     let strategyChip = '';
     if (p.entry_strategy) {

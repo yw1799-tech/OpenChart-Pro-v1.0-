@@ -1605,7 +1605,9 @@ class GapUpContinuationStrategy(Strategy):
         self.gap_threshold_pct = gap_threshold_pct
 
     def evaluate(self, symbol, market, candles, recent_news=None):
-        if (market.value if hasattr(market, "value") else str(market)) != "us":
+        # v12.16.6: 允许 us + hk（港股盘前高开延续也常见）
+        mkt = market.value if hasattr(market, "value") else str(market)
+        if mkt not in ("us", "hk"):
             return None
         if len(candles) < 3:
             return None
@@ -1630,26 +1632,81 @@ class GapUpContinuationStrategy(Strategy):
 
 
 class VWAPPullbackStrategy(Strategy):
-    """日内 VWAP 回踩 — 需要 1m K 线，当前未对接，占位"""
+    """1H 滚动 VWAP 回踩（v12.16.6 实战化）：
+    取最近 N 根 1H K 线（≈ 美股 1 个交易日的 7 根）作为 session VWAP 基准，
+    多头趋势中价格回踩到 VWAP 附近 (±band_pct) + 量能萎缩 + 当根收阳 → buy。
+    粗糙但可用 — 1m K 线对接前的折中实现。
+    """
     name = "vwap_pullback"
     base_confidence = 65
-    description = "美/港/A 股多头中价格回踩 VWAP + 量缩 → buy（1m 数据待对接）"
+    description = "1H 滚动 VWAP 回踩（多头中价站 VWAP + 量缩 + 收阳 = 买入）"
+
+    def __init__(self, vwap_window: int = 7, band_pct: float = 0.5,
+                 vol_shrink_ratio: float = 0.8, fast_ma: int = 5, slow_ma: int = 20):
+        # vwap_window: 滚动窗口 K 线数；band_pct: 价格距 VWAP 的容忍带 (%)
+        # vol_shrink_ratio: 当根量必须 < N × vol_ma_20（量缩 = 回踩特征）
+        self.vwap_window = vwap_window
+        self.band_pct = band_pct
+        self.vol_shrink_ratio = vol_shrink_ratio
+        self.fast_ma = fast_ma
+        self.slow_ma = slow_ma
 
     def evaluate(self, symbol, market, candles, recent_news=None):
-        # TODO: 用 1m / 5m K 线计算 VWAP；当前 monitor 仅订阅 1H/1D
-        return None
+        if len(candles) < max(self.slow_ma, self.vwap_window + 5):
+            return None
+        closes = np.array([c.close for c in candles], dtype=np.float64)
+        highs = np.array([c.high for c in candles], dtype=np.float64)
+        lows = np.array([c.low for c in candles], dtype=np.float64)
+        volumes = np.array([c.volume for c in candles], dtype=np.float64)
+
+        # 滚动 VWAP：最近 vwap_window 根的 typical_price 加权均
+        win = self.vwap_window
+        tp = (highs[-win:] + lows[-win:] + closes[-win:]) / 3
+        vol_win = volumes[-win:]
+        if float(vol_win.sum()) <= 0:
+            return None
+        vwap = float((tp * vol_win).sum() / vol_win.sum())
+
+        last_close = float(closes[-1])
+        last = candles[-1]
+        # 多头确认
+        ma_fast = calc_ma(closes, self.fast_ma)[-1]
+        ma_slow = calc_ma(closes, self.slow_ma)[-1]
+        if np.isnan(ma_fast) or np.isnan(ma_slow):
+            return None
+        if not (ma_fast > ma_slow):
+            return None  # 仅多头中触发
+
+        # 价格在 VWAP 容忍带内（双边 band_pct）
+        diff_pct = abs(last_close - vwap) / vwap * 100 if vwap > 0 else 999
+        if diff_pct > self.band_pct:
+            return None
+
+        # 量缩：当根量 < N × 20 期均量
+        vma = calc_volume_ma(volumes, 20)
+        if np.isnan(vma[-1]) or vma[-1] <= 0:
+            return None
+        if volumes[-1] >= vma[-1] * self.vol_shrink_ratio:
+            return None
+
+        # 当根收阳（反弹确认，避免接刀子）
+        if last.close <= last.open:
+            return None
+
+        confidence = self.base_confidence + self._common_modifier(candles, recent_news)
+        return self._make_signal(
+            symbol, market, "buy", last_close, confidence,
+            f"VWAP 回踩 (close={last_close:.4f} vs VWAP={vwap:.4f}, 距={diff_pct:.2f}%, "
+            f"量比 {volumes[-1]/vma[-1]:.2f}× < {self.vol_shrink_ratio}×, 多头 MA{self.fast_ma}>MA{self.slow_ma})",
+            triggered_by={"vwap": vwap, "diff_pct": round(diff_pct, 3),
+                          "vol_ratio": round(float(volumes[-1]/vma[-1]), 2)},
+            candles=candles,
+        )
 
 
-class EarningsWindowFilter(Strategy):
-    """v12.16 财报窗口过滤器 — 实施版：美股临近财报（前 3 日 / 后 1 日）evaluate 不发信号
-    注意：本策略本身只产生 None；真正的"屏蔽其他策略"由 monitor.is_in_earnings_window() 在入口检查
-    """
-    name = "earnings_window_filter"
-    base_confidence = 0
-    description = "美股财报前 3 日 / 后 1 日规避新仓（yfinance 财报日历）"
-
-    def evaluate(self, symbol, market, candles, recent_news=None):
-        return None  # 仅作为标记类策略；过滤逻辑在 monitor 入口
+# v12.16.6: EarningsWindowFilter 已下线 — 实际是过滤器不是策略，
+# 真正的"屏蔽其他策略"由 monitor.is_in_earnings_window() 在 _evaluate_symbol 入口检查
+# 移除 ALL_STRATEGIES 注册避免在策略库展示混淆用户；仅保留下方两个 helper 函数供 monitor 使用
 
 
 # 模块级缓存 — yfinance 财报日历 24h TTL（财报日期不会频繁变）
@@ -1747,7 +1804,7 @@ ALL_STRATEGIES: Dict[str, type] = {
     # v12.16 (Step 8) 美股专属
     "gap_up_continuation": GapUpContinuationStrategy,
     "vwap_pullback": VWAPPullbackStrategy,
-    "earnings_window_filter": EarningsWindowFilter,
+    # v12.16.6: earnings_window_filter 已下线（不是策略而是 monitor 入口过滤器）
 }
 
 
@@ -1768,7 +1825,8 @@ STRATEGY_MARKET_MATRIX: Dict[str, Dict[str, list]] = {
         "crypto": [{"interval": "1H", "params": {"recent_bars": 2, "min_bsp_level": "S"}}],
         "us":     [{"interval": "1D", "params": {"recent_bars": 3, "min_bsp_level": "S"}}],
         "hk":     [{"interval": "1D", "params": {"recent_bars": 3, "min_bsp_level": "any"}}],
-        "cn":     [{"interval": "1D", "params": {"recent_bars": 3, "min_bsp_level": "any"}}],
+        # v12.16.6: A 股散户主导 → 笔级噪音过大，提高到 S 级（仅段级买卖点）
+        "cn":     [{"interval": "1D", "params": {"recent_bars": 3, "min_bsp_level": "S"}}],
     },
     "volume_breakout": {
         "crypto": [{"interval": "1H", "params": {"ma_period": 20, "multiplier": 2.5}}],
@@ -1776,7 +1834,9 @@ STRATEGY_MARKET_MATRIX: Dict[str, Dict[str, list]] = {
                                                   "max_dist_to_high_pct": 3.0}}],
         "hk":     [{"interval": "1H", "params": {"ma_period": 20, "multiplier": 2.0,
                                                   "max_dist_to_high_pct": 3.0}}],
-        "cn":     [{"interval": "1D", "params": {"ma_period": 20, "multiplier": 2.0}}],
+        # v12.16.6: A 股加追高过滤（高位放量经常是出货，主板涨停板效应）
+        "cn":     [{"interval": "1D", "params": {"ma_period": 20, "multiplier": 2.0,
+                                                  "max_dist_to_high_pct": 3.0}}],
     },
     "donchian_breakout": {
         "crypto": [{"interval": "1H", "params": {"period": 24, "require_volume": True, "require_adx": True}}],
@@ -1835,7 +1895,8 @@ STRATEGY_MARKET_MATRIX: Dict[str, Dict[str, list]] = {
         "crypto": [{"interval": "1H", "params": {"lookback": 15, "min_price_diff_pct": 1.0}}],
         "us":     [{"interval": "1H", "params": {"lookback": 20, "min_price_diff_pct": 0.5}}],
         "hk":     [{"interval": "1H", "params": {"lookback": 20, "min_price_diff_pct": 0.5}}],
-        "cn":     [{"interval": "1D", "params": {"lookback": 20, "min_price_diff_pct": 1.0}}],  # 日线背离更显著
+        # v12.16.6: cn 1D 一个月波动经常 10%+，1% 价差太低 → 提到 2.0%
+        "cn":     [{"interval": "1D", "params": {"lookback": 20, "min_price_diff_pct": 2.0}}],
     },
     "rsi_breakout_50": {
         # 加密量能要求更高（vol_ratio 1.5），股票 1.2 即可
@@ -1845,14 +1906,15 @@ STRATEGY_MARKET_MATRIX: Dict[str, Dict[str, list]] = {
         "cn":     [{"interval": "1D", "params": {"vol_ratio": 1.2, "ma_period": 20}}],
     },
     # ─── Step 5: 加密专属（4 个）──────────────────────────
+    # v12.16.6 阈值放宽：原阈值实测频率过低（funding -0.0002 / lsr 3.5 几乎不触发）
     "funding_extreme": {
-        "crypto": [{"interval": "1H", "params": {"long_threshold": -0.0002, "short_threshold": 0.0005}}],
+        "crypto": [{"interval": "1H", "params": {"long_threshold": -0.0001, "short_threshold": 0.0005}}],
     },
     "oi_breakout": {
-        "crypto": [{"interval": "1H", "params": {"oi_increase_threshold_pct": 5.0, "breakout_lookback": 5}}],
+        "crypto": [{"interval": "1H", "params": {"oi_increase_threshold_pct": 3.0, "breakout_lookback": 5}}],
     },
     "long_short_ratio": {
-        "crypto": [{"interval": "1H", "params": {"short_when_ratio_above": 3.5, "long_when_ratio_below": 0.5}}],
+        "crypto": [{"interval": "1H", "params": {"short_when_ratio_above": 2.5, "long_when_ratio_below": 0.7}}],
     },
     "fear_greed_reversal": {
         "crypto": [{"interval": "1H", "params": {"oversold_threshold": 20, "overbought_threshold": 80}}],
@@ -1872,18 +1934,20 @@ STRATEGY_MARKET_MATRIX: Dict[str, Dict[str, list]] = {
         "hk": [{"interval": "1D", "params": {}}],
     },
     "ah_spread_revert": {
-        "hk": [{"interval": "1D", "params": {}}],
-        "cn": [{"interval": "1D", "params": {}}],  # AH 双向都监控
+        # v12.16.6: HSCAH 历史均值就是 30-50% 溢价，30% 不算极端 → 改 50%
+        "hk": [{"interval": "1D", "params": {"premium_threshold_pct": 50.0}}],
+        "cn": [{"interval": "1D", "params": {"premium_threshold_pct": 50.0}}],
     },
     # ─── Step 8: 美股专属（3 个）───────────────────────
     "gap_up_continuation": {
         "us": [{"interval": "1D", "params": {"gap_threshold_pct": 3.0}}],
+        # v12.16.6: 港股盘前高开也常见（A 股早盘联动）→ 加 hk 绑定
+        "hk": [{"interval": "1D", "params": {"gap_threshold_pct": 3.0}}],
     },
     "vwap_pullback": {
-        # 暂不绑定（需要 1m / 5m K 线，数据基础设施未到位）
-    },
-    "earnings_window_filter": {
-        # 不发信号 — 实际过滤逻辑在 monitor._evaluate_symbol 入口（is_in_earnings_window）
+        # v12.16.6: 实战化 — 1H 滚动 VWAP（粗糙但可用），仅绑定 us
+        "us": [{"interval": "1H", "params": {"vwap_window": 7, "band_pct": 0.5,
+                                              "vol_shrink_ratio": 0.8}}],
     },
 }
 

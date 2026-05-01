@@ -53,7 +53,6 @@ const Signals = (function () {
     // 美股专属
     gap_up_continuation: '高开延续',
     vwap_pullback: 'VWAP 回踩',
-    earnings_window_filter: '财报窗口过滤',
   };
   const MARKET_LABEL = { crypto: '加密', us: '美股', hk: '港股', cn: 'A股' };
   const AI_VERDICT_LABEL = {
