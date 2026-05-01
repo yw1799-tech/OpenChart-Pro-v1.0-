@@ -349,6 +349,118 @@ async def _fetch_ah_spread_impl(a_symbol: str, h_symbol: str):
     }
 
 
+# ═══════════════════════════════════════════════════════════════════
+# 5. v12.17 龙虎榜 (今日机构席位净买入)
+# ═══════════════════════════════════════════════════════════════════
+
+async def fetch_lhb_today_buys(top_n: int = 100) -> Optional[List[Dict]]:
+    """v12.17 今日龙虎榜机构净买入个股。
+    返回 [{symbol, name, change_pct, net_buy, jg_net_buy, ratio_lhb_to_total}]
+      net_buy: 龙虎榜净买入额（含游资 + 机构 + 散户大户）
+      jg_net_buy: 仅机构席位净买入（核心信号）
+    """
+    return await _cached_fetch(f"lhb:{top_n}", _fetch_lhb_impl(top_n))
+
+
+async def _fetch_lhb_impl(top_n: int):
+    """东财龙虎榜接口 RPT_DAILYBILLBOARD_DETAILS (今日数据)。
+    机构席位 buyer_type=机构 / 游资 / 营业部
+    """
+    import datetime
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    url = "https://datacenter-web.eastmoney.com/api/data/v1/get"
+    params = {
+        "reportName": "RPT_DAILYBILLBOARD_DETAILSNEW",
+        "columns": "ALL",
+        "filter": f"(TRADE_DATE='{today}')",
+        "pageNumber": "1",
+        "pageSize": str(top_n),
+        "sortColumns": "NET_BUY_AMT",
+        "sortTypes": "-1",
+    }
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://data.eastmoney.com/stock/tradedetail.html"}
+    s = await _get_session()
+    try:
+        async with s.get(url, params=params, headers=headers) as r:
+            if r.status != 200:
+                return None
+            body = await r.json(content_type=None)
+    except Exception as e:
+        logger.debug(f"[em-extra] lhb fetch err: {e}")
+        return None
+    items = (body or {}).get("result", {}).get("data") or []
+    out = []
+    seen = set()
+    for it in items:
+        try:
+            sym = str(it.get("SECURITY_CODE") or "")
+            if not sym or sym in seen:
+                continue
+            seen.add(sym)
+            net = float(it.get("NET_BUY_AMT") or 0)  # 总净买入
+            # 机构席位净买（如果不存在，回退用 net）
+            jg = float(it.get("ORG_NET_BUY_AMT") or it.get("INSTITUTE_NET_BUY") or 0)
+            out.append({
+                "symbol": sym,
+                "name": str(it.get("SECURITY_NAME_ABBR") or it.get("SECURITY_NAME") or ""),
+                "change_pct": float(it.get("CHANGE_RATE") or 0),
+                "net_buy": net,
+                "jg_net_buy": jg,
+                "buyer_type": str(it.get("EXPLANATION") or ""),
+            })
+        except (ValueError, TypeError):
+            continue
+    return out
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 6. v12.17 个股融资融券余额（融资买入信号）
+# ═══════════════════════════════════════════════════════════════════
+
+async def fetch_margin_history(symbol: str, days: int = 30) -> Optional[List[Dict]]:
+    """v12.17 个股融资余额近 N 日历史。
+    返回 [{date, fin_balance, fin_buy_amt, fin_repay_amt}]
+    """
+    return await _cached_fetch(f"margin:{symbol}:{days}", _fetch_margin_impl(symbol, days))
+
+
+async def _fetch_margin_impl(symbol: str, days: int):
+    """东财融资融券个股历史 RPTA_WEB_RZRQ_GGMX。"""
+    url = "https://datacenter-web.eastmoney.com/api/data/v1/get"
+    params = {
+        "reportName": "RPTA_WEB_RZRQ_GGMX",
+        "columns": "ALL",
+        "filter": f"(SCODE=\"{symbol}\")",
+        "pageNumber": "1",
+        "pageSize": str(days),
+        "sortColumns": "DATE",
+        "sortTypes": "-1",
+    }
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://data.eastmoney.com/rzrq/"}
+    s = await _get_session()
+    try:
+        async with s.get(url, params=params, headers=headers) as r:
+            if r.status != 200:
+                return None
+            body = await r.json(content_type=None)
+    except Exception as e:
+        logger.debug(f"[em-extra] margin fetch err {symbol}: {e}")
+        return None
+    items = (body or {}).get("result", {}).get("data") or []
+    out = []
+    for it in items:
+        try:
+            out.append({
+                "date": str(it.get("DATE") or ""),
+                "fin_balance": float(it.get("RZYE") or 0),       # 融资余额
+                "fin_buy_amt": float(it.get("RZMRE") or 0),       # 融资买入
+                "fin_repay_amt": float(it.get("RZCHE") or 0),     # 融资偿还
+            })
+        except (ValueError, TypeError):
+            continue
+    return out
+
+
 async def _fetch_em_realtime_price(symbol: str, market: str) -> Optional[float]:
     """通用实时价拉取（A 股 + 港股）— 用东财 push2 的 stock/get 接口。"""
     if market == "cn":

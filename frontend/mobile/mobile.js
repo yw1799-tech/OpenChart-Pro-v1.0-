@@ -1101,13 +1101,13 @@
     return _state.cache.strategies;
   }
 
-  // v12.16.2 (#2): 策略库分组定义；v12.16.5 加 RSI 3 个到通用型
+  // v12.16.2 (#2): 策略库分组定义；v12.17.0 加 9 个新策略分类
   const STRATEGY_GROUPS = [
-    { name: '🌐 通用型 (全市场)', strategies: ['ma_cross','donchian_breakout','bollinger_reversion','volume_breakout','flash_event','chanlun','macd_cross','ema_triple','squeeze_breakout','adx_trend_follow','rsi_pullback','rsi_real_divergence','rsi_breakout_50'] },
-    { name: '💰 加密专属', strategies: ['funding_extreme','oi_breakout','long_short_ratio','fear_greed_reversal'] },
-    { name: '🇨🇳 A 股专属', strategies: ['limit_up_followup','northbound_flow_top','sector_momentum'] },
+    { name: '🌐 通用型 (全市场)', strategies: ['ma_cross','donchian_breakout','bollinger_reversion','volume_breakout','flash_event','chanlun','macd_cross','ema_triple','squeeze_breakout','adx_trend_follow','rsi_pullback','rsi_real_divergence','rsi_breakout_50','volume_price_divergence','triple_screen'] },
+    { name: '💰 加密专属', strategies: ['funding_extreme','oi_breakout','long_short_ratio','fear_greed_reversal','whale_activity','stablecoin_flow'] },
+    { name: '🇨🇳 A 股专属', strategies: ['limit_up_followup','northbound_flow_top','sector_momentum','lhb_follow','margin_breakout'] },
     { name: '🇭🇰 港股专属', strategies: ['southbound_inflow','ah_spread_revert'] },
-    { name: '🇺🇸 美股专属', strategies: ['gap_up_continuation','vwap_pullback'] },
+    { name: '🇺🇸 美股专属', strategies: ['gap_up_continuation','vwap_pullback','premarket_breakout','vix_extreme','relative_strength_top'] },
   ];
   const STRATEGY_NAME_CN = {
     ma_cross: '均线金叉死叉', donchian_breakout: '通道突破', bollinger_reversion: '布林带均值回归',
@@ -1115,11 +1115,16 @@
     macd_cross: 'MACD 金叉死叉', ema_triple: 'EMA 三线排列', squeeze_breakout: '布林挤压突破',
     adx_trend_follow: 'ADX 趋势跟随',
     rsi_pullback: 'RSI 趋势回踩', rsi_real_divergence: 'RSI 真背离', rsi_breakout_50: 'RSI 50 上穿',
+    volume_price_divergence: '量价背离', triple_screen: '三重过滤',
     funding_extreme: '资金费率极值', oi_breakout: 'OI 持仓突破', long_short_ratio: '多空比反转',
     fear_greed_reversal: 'F&G 极值反转',
+    whale_activity: '链上巨鲸大单', stablecoin_flow: '稳定币流入',
     limit_up_followup: '涨停后回踩', northbound_flow_top: '北向资金排名', sector_momentum: '板块联动',
+    lhb_follow: '龙虎榜跟盘', margin_breakout: '融资余额突破',
     southbound_inflow: '港股通南向', ah_spread_revert: 'AH 价差回归',
     gap_up_continuation: '高开延续', vwap_pullback: 'VWAP 回踩',
+    premarket_breakout: '盘前/开盘突破', vix_extreme: 'VIX 极值反转',
+    relative_strength_top: '相对大盘强势',
   };
 
   async function renderStrategyLibrary() {

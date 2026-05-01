@@ -305,6 +305,32 @@ class OKXFetcher(DataFetcher):
             "ts": int(r.get("ts", 0)),
         }
 
+    async def get_recent_trades(self, symbol: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """v12.17 获取最近成交记录（用于巨鲸大单识别）。
+        返回 [{ts, side, sz, px, sizeUsd}]
+        symbol: 现货 BTC-USDT 或 永续 BTC-USDT-SWAP
+        """
+        data = await self._get(
+            "/api/v5/market/trades", {"instId": symbol, "limit": str(limit)}
+        )
+        if not data:
+            return []
+        results = []
+        for row in data:
+            try:
+                px = float(row.get("px", 0))
+                sz = float(row.get("sz", 0))
+                results.append({
+                    "ts": int(row.get("ts", 0)),
+                    "side": row.get("side", ""),  # 'buy' / 'sell'
+                    "sz": sz,
+                    "px": px,
+                    "sizeUsd": px * sz,
+                })
+            except (TypeError, ValueError):
+                continue
+        return results
+
     async def get_long_short_ratio(self, currency: str = "BTC", period: str = "1H") -> List[Dict[str, Any]]:
         """
         获取多空比（账户持仓人数比）。

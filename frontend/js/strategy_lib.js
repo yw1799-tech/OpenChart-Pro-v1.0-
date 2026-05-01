@@ -14,25 +14,34 @@
     squeeze_breakout: '布林挤压突破', adx_trend_follow: 'ADX 趋势跟随',
     rsi_pullback: 'RSI 趋势回踩', rsi_real_divergence: 'RSI 真背离',
     rsi_breakout_50: 'RSI 50 上穿',
+    // v12.17.0 通用型新增
+    volume_price_divergence: '量价背离', triple_screen: '三重过滤',
     funding_extreme: '资金费率极值', oi_breakout: 'OI 持仓突破',
     long_short_ratio: '多空比反转', fear_greed_reversal: 'F&G 极值反转',
+    // v12.17.0 加密新增
+    whale_activity: '链上巨鲸大单', stablecoin_flow: '稳定币流入',
     limit_up_followup: '涨停后回踩', northbound_flow_top: '北向资金排名',
     sector_momentum: '板块联动',
+    // v12.17.0 A 股新增
+    lhb_follow: '龙虎榜跟盘', margin_breakout: '融资余额突破',
     southbound_inflow: '港股通南向', ah_spread_revert: 'AH 价差回归',
     gap_up_continuation: '高开延续', vwap_pullback: 'VWAP 回踩',
+    // v12.17.0 美股新增
+    premarket_breakout: '盘前/开盘突破', vix_extreme: 'VIX 极值反转',
+    relative_strength_top: '相对大盘强势',
   };
 
   const GROUPS = [
     { name: '🌐 通用型策略（全市场）',
-      strategies: ['ma_cross','donchian_breakout','bollinger_reversion','volume_breakout','flash_event','chanlun','macd_cross','ema_triple','squeeze_breakout','adx_trend_follow','rsi_pullback','rsi_real_divergence','rsi_breakout_50'] },
-    { name: '💰 加密专属（OKX 衍生品 + F&G）',
-      strategies: ['funding_extreme','oi_breakout','long_short_ratio','fear_greed_reversal'] },
-    { name: '🇨🇳 A 股专属（东财数据）',
-      strategies: ['limit_up_followup','northbound_flow_top','sector_momentum'] },
+      strategies: ['ma_cross','donchian_breakout','bollinger_reversion','volume_breakout','flash_event','chanlun','macd_cross','ema_triple','squeeze_breakout','adx_trend_follow','rsi_pullback','rsi_real_divergence','rsi_breakout_50','volume_price_divergence','triple_screen'] },
+    { name: '💰 加密专属（OKX 衍生品 + F&G + 巨鲸 + 稳定币）',
+      strategies: ['funding_extreme','oi_breakout','long_short_ratio','fear_greed_reversal','whale_activity','stablecoin_flow'] },
+    { name: '🇨🇳 A 股专属（东财数据 + 龙虎榜 + 融资）',
+      strategies: ['limit_up_followup','northbound_flow_top','sector_momentum','lhb_follow','margin_breakout'] },
     { name: '🇭🇰 港股专属（港股通 + AH 价差）',
       strategies: ['southbound_inflow','ah_spread_revert'] },
-    { name: '🇺🇸 美股专属（盘前 + VWAP）',
-      strategies: ['gap_up_continuation','vwap_pullback'] },
+    { name: '🇺🇸 美股专属（盘前 + VWAP + VIX + 相对强势）',
+      strategies: ['gap_up_continuation','vwap_pullback','premarket_breakout','vix_extreme','relative_strength_top'] },
   ];
 
   const RESONANCE_GOLDEN_COMBOS = [
@@ -49,6 +58,15 @@
     { name: '美股高开 + MACD 动量', strategies: ['gap_up_continuation','macd_cross'] },
     { name: '港股南向资金共振', strategies: ['southbound_inflow','ma_cross','volume_breakout'] },
     { name: '新闻驱动 + 量能确认', strategies: ['flash_event','volume_breakout','ma_cross'] },
+    // v12.17.0 共振组合
+    { name: '美股盘前突破 + 趋势', strategies: ['premarket_breakout','ma_cross','volume_breakout'] },
+    { name: '美股相对强势 + 三重过滤', strategies: ['relative_strength_top','triple_screen'] },
+    { name: 'A 股龙虎榜 + 板块', strategies: ['lhb_follow','sector_momentum'] },
+    { name: 'A 股融资 + 北向 + 板块', strategies: ['margin_breakout','northbound_flow_top','sector_momentum'] },
+    { name: '加密巨鲸 + 量能 + 趋势', strategies: ['whale_activity','volume_breakout','ma_cross'] },
+    { name: '加密稳定币 + F&G 共振', strategies: ['stablecoin_flow','fear_greed_reversal'] },
+    { name: '量价 + RSI 双背离', strategies: ['volume_price_divergence','rsi_real_divergence'] },
+    { name: '三重过滤 + RSI 回踩', strategies: ['triple_screen','rsi_pullback'] },
   ];
 
   const pane = document.querySelector('[data-pane="strategy-lib"]');

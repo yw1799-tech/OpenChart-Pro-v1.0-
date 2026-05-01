@@ -732,6 +732,22 @@ class MonitorEngine:
         {"southbound_inflow", "ma_cross", "volume_breakout"},
         # v12.16.6: 新闻驱动 + 量能 + 趋势（防情绪噪音 + 假突破）
         {"flash_event", "volume_breakout", "ma_cross"},
+        # v12.17.0: 美股盘前/开盘突破 + 趋势 + 量能（开盘强势确认）
+        {"premarket_breakout", "ma_cross", "volume_breakout"},
+        # v12.17.0: 美股相对强势 + 三重过滤（强势股回调买入）
+        {"relative_strength_top", "triple_screen"},
+        # v12.17.0: A 股龙虎榜 + 板块联动（机构 + 题材双重确认）
+        {"lhb_follow", "sector_momentum"},
+        # v12.17.0: A 股融资 + 北向 + 板块（杠杆资金 + 外资 + 题材三共振）
+        {"margin_breakout", "northbound_flow_top", "sector_momentum"},
+        # v12.17.0: 加密巨鲸大单 + 量能 + 趋势（聪明钱 + 趋势确认）
+        {"whale_activity", "volume_breakout", "ma_cross"},
+        # v12.17.0: 加密稳定币流入 + F&G 极值（流动性 + 情绪共振）
+        {"stablecoin_flow", "fear_greed_reversal"},
+        # v12.17.0: 量价背离 + RSI 真背离（双背离反转高胜率）
+        {"volume_price_divergence", "rsi_real_divergence"},
+        # v12.17.0: 三重过滤 + RSI 趋势回踩（多周期 + 单周期共振）
+        {"triple_screen", "rsi_pullback"},
     ]
 
     def _is_golden_combo(self, strat_set: set) -> bool:

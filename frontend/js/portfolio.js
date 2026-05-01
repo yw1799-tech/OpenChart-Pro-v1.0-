@@ -1236,12 +1236,18 @@ const Portfolio = (function () {
       macd_cross:'MACD 金叉死叉', ema_triple:'EMA 三线排列', squeeze_breakout:'布林挤压突破',
       adx_trend_follow:'ADX 趋势跟随',
       rsi_pullback:'RSI 趋势回踩', rsi_real_divergence:'RSI 真背离', rsi_breakout_50:'RSI 50 上穿',
+      volume_price_divergence:'量价背离', triple_screen:'三重过滤',
       resonance:'🌟 多策略共振',
       funding_extreme:'资金费率极值', oi_breakout:'OI 持仓突破', long_short_ratio:'多空比反转',
-      fear_greed_reversal:'F&G 极值反转', limit_up_followup:'涨停后回踩',
+      fear_greed_reversal:'F&G 极值反转',
+      whale_activity:'链上巨鲸大单', stablecoin_flow:'稳定币流入',
+      limit_up_followup:'涨停后回踩',
       northbound_flow_top:'北向资金排名', sector_momentum:'板块联动',
+      lhb_follow:'龙虎榜跟盘', margin_breakout:'融资余额突破',
       southbound_inflow:'港股通南向', ah_spread_revert:'AH 价差回归',
       gap_up_continuation:'高开延续', vwap_pullback:'VWAP 回踩',
+      premarket_breakout:'盘前/开盘突破', vix_extreme:'VIX 极值反转',
+      relative_strength_top:'相对大盘强势',
     };
     let strategyChip = '';
     if (p.entry_strategy) {

@@ -1771,6 +1771,572 @@ async def is_in_earnings_window(symbol: str, market: str,
     return -days_after <= diff_days <= days_before
 
 
+# ═══════════════════════════════════════════════════════════════════
+# v12.17.0: 9 个新策略（盘前突破 / VIX 极值 / 相对强度 / 龙虎榜 / 融资余额
+#                       / 量价背离 / 链上巨鲸 / 稳定币流入 / 三重过滤）
+# ═══════════════════════════════════════════════════════════════════
+
+# --- 全局缓存 ----
+_VIX_CACHE: Dict[str, Tuple[float, Optional[float]]] = {}
+_VIX_TTL = 600    # 10min
+_SPY_RET_CACHE: Dict[str, Tuple[float, Optional[float]]] = {}
+_SPY_RET_TTL = 600
+
+
+async def _fetch_vix_value() -> Optional[float]:
+    """异步拉 ^VIX 当前值（yfinance 同步库走线程池）。"""
+    cache = _VIX_CACHE.get("vix")
+    now = time.time()
+    if cache and now - cache[0] < _VIX_TTL:
+        return cache[1]
+    try:
+        import asyncio
+        def _fetch():
+            try:
+                import yfinance as yf
+                t = yf.Ticker("^VIX")
+                hist = t.history(period="2d", interval="1d")
+                if hist is None or hist.empty:
+                    return None
+                return float(hist["Close"].iloc[-1])
+            except Exception:
+                return None
+        v = await asyncio.get_event_loop().run_in_executor(None, _fetch)
+        _VIX_CACHE["vix"] = (now, v)
+        return v
+    except Exception:
+        return None
+
+
+async def _fetch_spy_60d_return() -> Optional[float]:
+    """SPY 60 日累计收益（用于 RS 比较）。"""
+    cache = _SPY_RET_CACHE.get("spy60")
+    now = time.time()
+    if cache and now - cache[0] < _SPY_RET_TTL:
+        return cache[1]
+    try:
+        import asyncio
+        def _fetch():
+            try:
+                import yfinance as yf
+                t = yf.Ticker("SPY")
+                hist = t.history(period="90d", interval="1d")
+                if hist is None or hist.empty or len(hist) < 60:
+                    return None
+                first = float(hist["Close"].iloc[-60])
+                last = float(hist["Close"].iloc[-1])
+                return (last - first) / first if first > 0 else None
+            except Exception:
+                return None
+        v = await asyncio.get_event_loop().run_in_executor(None, _fetch)
+        _SPY_RET_CACHE["spy60"] = (now, v)
+        return v
+    except Exception:
+        return None
+
+
+# ─── 1. 盘前突破 (premarket_breakout) ────────────────────────────────
+
+class PremarketBreakoutStrategy(Strategy):
+    """美股开盘 1H 内：当根 high 突破前 N 日高 + 量能放大 + 收阳 = 强势开盘。
+    粗糙模拟 — 用第一根 1H 候选条件代替真盘前数据。
+    """
+    name = "premarket_breakout"
+    base_confidence = 70
+    description = "美股开盘 1H 突破前 N 日高 + 量能放大（盘前/开盘强势确认）"
+
+    def __init__(self, lookback_high_bars: int = 60, vol_ratio: float = 1.8,
+                 min_open_gap_pct: float = 1.0):
+        self.lookback_high_bars = lookback_high_bars
+        self.vol_ratio = vol_ratio
+        self.min_open_gap_pct = min_open_gap_pct
+
+    def evaluate(self, symbol, market, candles, recent_news=None):
+        mkt = market.value if hasattr(market, "value") else str(market)
+        if mkt != "us":
+            return None
+        if len(candles) < self.lookback_high_bars + 2:
+            return None
+        highs = np.array([c.high for c in candles], dtype=np.float64)
+        volumes = np.array([c.volume for c in candles], dtype=np.float64)
+        last = candles[-1]
+        prev_high = float(np.max(highs[-self.lookback_high_bars - 1:-1]))
+        if last.high <= prev_high:
+            return None
+        # 开盘高于前一根收盘价 ≥ N%
+        prev_close = float(candles[-2].close)
+        if prev_close <= 0:
+            return None
+        gap_pct = (last.open - prev_close) / prev_close * 100
+        if gap_pct < self.min_open_gap_pct:
+            return None
+        # 量比
+        vma = calc_volume_ma(volumes, 20)
+        if np.isnan(vma[-1]) or vma[-1] <= 0:
+            return None
+        vol_ratio = float(volumes[-1] / vma[-1])
+        if vol_ratio < self.vol_ratio:
+            return None
+        # 收阳
+        if last.close <= last.open:
+            return None
+        confidence = self.base_confidence + self._common_modifier(candles, recent_news)
+        return self._make_signal(
+            symbol, market, "buy", float(last.close), confidence,
+            f"盘前/开盘突破 高 > 前{self.lookback_high_bars}H 高 ({prev_high:.4f}) + "
+            f"开盘 +{gap_pct:.2f}% + 量比 {vol_ratio:.2f}× + 收阳",
+            triggered_by={"prev_high": prev_high, "gap_pct": round(gap_pct, 2),
+                          "vol_ratio": round(vol_ratio, 2)},
+            candles=candles,
+        )
+
+
+# ─── 2. VIX 极值反转 (vix_extreme) ────────────────────────────────
+
+class VIXExtremeStrategy(Strategy):
+    """VIX > 30 极度恐慌 → buy SPY/QQQ；VIX < 12 极度贪婪 → sell。
+    仅对大盘 ETF 触发（白名单）。
+    """
+    name = "vix_extreme"
+    base_confidence = 70
+    description = "VIX 极值反转（>30 抄底大盘 ETF / <12 逃顶；仅 SPY/QQQ/DIA/IWM）"
+
+    INDEX_WHITELIST = {"SPY", "QQQ", "DIA", "IWM", "VOO", "IVV"}
+
+    def __init__(self, panic_threshold: float = 30.0, complacent_threshold: float = 12.0):
+        self.panic_threshold = panic_threshold
+        self.complacent_threshold = complacent_threshold
+
+    async def evaluate(self, symbol, market, candles, recent_news=None):
+        mkt = market.value if hasattr(market, "value") else str(market)
+        if mkt != "us":
+            return None
+        if symbol.upper() not in self.INDEX_WHITELIST:
+            return None
+        vix = await _fetch_vix_value()
+        if vix is None:
+            return None
+        action = None
+        if vix >= self.panic_threshold:
+            action = "buy"
+        elif vix <= self.complacent_threshold:
+            action = "sell"
+        if action is None:
+            return None
+        confidence = self.base_confidence + self._common_modifier(candles, recent_news)
+        last_close = float(candles[-1].close)
+        return self._make_signal(
+            symbol, market, action, last_close, confidence,
+            f"VIX={vix:.1f} {'极度恐慌' if action == 'buy' else '极度贪婪'} → 反向 {action} 大盘 ETF",
+            triggered_by={"vix": vix, "side": "long" if action == "buy" else "short"},
+            candles=candles,
+        )
+
+
+# ─── 3. 相对大盘强度 (relative_strength_top) ───────────────────────
+
+class RelativeStrengthStrategy(Strategy):
+    """美股个股 60 日累计收益显著跑赢 SPY → 强势股，回踩 MA20 入场。"""
+    name = "relative_strength_top"
+    base_confidence = 65
+    description = "美股 60 日跑赢 SPY ≥ N% + 价格回踩 MA20 → 强势股入场"
+
+    def __init__(self, outperform_threshold_pct: float = 15.0,
+                 ma_period: int = 20, max_dist_to_ma_pct: float = 2.0):
+        self.outperform_threshold_pct = outperform_threshold_pct
+        self.ma_period = ma_period
+        self.max_dist_to_ma_pct = max_dist_to_ma_pct
+
+    async def evaluate(self, symbol, market, candles, recent_news=None):
+        mkt = market.value if hasattr(market, "value") else str(market)
+        if mkt != "us":
+            return None
+        if len(candles) < 60 + self.ma_period:
+            return None
+        # 跳过大盘 ETF 自身
+        if symbol.upper() in {"SPY", "QQQ", "DIA", "IWM", "VOO", "IVV"}:
+            return None
+        spy_ret = await _fetch_spy_60d_return()
+        if spy_ret is None:
+            return None
+        closes = np.array([c.close for c in candles], dtype=np.float64)
+        first = float(closes[-60])
+        last = float(closes[-1])
+        if first <= 0:
+            return None
+        sym_ret = (last - first) / first
+        outperf = (sym_ret - spy_ret) * 100
+        if outperf < self.outperform_threshold_pct:
+            return None
+        # 当前价回踩 MA20 附近（强势股回调买点）
+        ma = calc_ma(closes, self.ma_period)
+        if np.isnan(ma[-1]):
+            return None
+        dist_pct = (last - ma[-1]) / ma[-1] * 100
+        if abs(dist_pct) > self.max_dist_to_ma_pct:
+            return None
+        # 多头确认
+        if not (last > ma[-1] * 0.99):
+            return None
+        confidence = self.base_confidence + self._common_modifier(candles, recent_news)
+        return self._make_signal(
+            symbol, market, "buy", last, confidence,
+            f"相对强势 60日跑赢 SPY +{outperf:.1f}% (个股 {sym_ret*100:+.1f}% / SPY {spy_ret*100:+.1f}%) "
+            f"+ 回踩 MA{self.ma_period} (距 {dist_pct:+.2f}%)",
+            triggered_by={"outperform_pct": round(outperf, 2), "spy_ret": round(spy_ret*100, 2),
+                          "sym_ret": round(sym_ret*100, 2)},
+            candles=candles,
+        )
+
+
+# ─── 4. 龙虎榜跟盘 (lhb_follow) ────────────────────────────────────
+
+class LHBFollowStrategy(Strategy):
+    """A 股龙虎榜机构席位净买入 ≥ N → 次日跟盘 buy。"""
+    name = "lhb_follow"
+    base_confidence = 70
+    description = "A 股龙虎榜机构净买入 ≥ 5000 万 → 次日跟盘 buy"
+
+    def __init__(self, min_jg_net_buy_yuan: float = 5e7, fallback_total_buy: float = 1e8):
+        # 优先用机构净买额；如机构数据缺则用总净买入额（>1亿）
+        self.min_jg_net_buy_yuan = min_jg_net_buy_yuan
+        self.fallback_total_buy = fallback_total_buy
+
+    async def evaluate(self, symbol, market, candles, recent_news=None):
+        mkt = market.value if hasattr(market, "value") else str(market)
+        if mkt != "cn":
+            return None
+        try:
+            from backend.data.eastmoney_extra import fetch_lhb_today_buys
+            lhb = await fetch_lhb_today_buys(top_n=200)
+        except Exception as e:
+            logger.debug(f"[lhb] {symbol} fetch err: {e}")
+            return None
+        if not lhb:
+            return None
+        match = next((it for it in lhb if it.get("symbol") == symbol), None)
+        if not match:
+            return None
+        jg = float(match.get("jg_net_buy") or 0)
+        net = float(match.get("net_buy") or 0)
+        # 机构净买达标 OR 机构数据缺则总净买达更高门槛
+        if jg >= self.min_jg_net_buy_yuan:
+            metric_label = f"机构净买 {jg/1e7:.1f}千万"
+        elif jg == 0 and net >= self.fallback_total_buy:
+            metric_label = f"龙虎榜总净买 {net/1e8:.2f}亿（机构数据缺）"
+        else:
+            return None
+        confidence = self.base_confidence + self._common_modifier(candles, recent_news)
+        last_close = float(candles[-1].close)
+        return self._make_signal(
+            symbol, market, "buy", last_close, confidence,
+            f"龙虎榜跟盘: {metric_label} (今日涨跌 {match.get('change_pct',0):+.2f}%)",
+            triggered_by={"jg_net_buy": jg, "total_net_buy": net,
+                          "today_change_pct": match.get("change_pct", 0)},
+            candles=candles,
+        )
+
+
+# ─── 5. 融资余额突破 (margin_breakout) ────────────────────────────
+
+class MarginBreakoutStrategy(Strategy):
+    """A 股融资余额突破 N 日均 × M 倍 → 杠杆资金入场，次日 buy。"""
+    name = "margin_breakout"
+    base_confidence = 65
+    description = "A 股融资余额突破 20 日均 × 1.3 → 杠杆资金入场跟盘"
+
+    def __init__(self, lookback_days: int = 20, breakout_ratio: float = 1.3):
+        self.lookback_days = lookback_days
+        self.breakout_ratio = breakout_ratio
+
+    async def evaluate(self, symbol, market, candles, recent_news=None):
+        mkt = market.value if hasattr(market, "value") else str(market)
+        if mkt != "cn":
+            return None
+        try:
+            from backend.data.eastmoney_extra import fetch_margin_history
+            history = await fetch_margin_history(symbol, days=self.lookback_days + 5)
+        except Exception as e:
+            logger.debug(f"[margin] {symbol} fetch err: {e}")
+            return None
+        if not history or len(history) < self.lookback_days:
+            return None
+        balances = [float(it.get("fin_balance") or 0) for it in history]
+        latest = balances[0] if balances else 0
+        if latest <= 0:
+            return None
+        avg = sum(balances[1:self.lookback_days + 1]) / self.lookback_days
+        if avg <= 0:
+            return None
+        ratio = latest / avg
+        if ratio < self.breakout_ratio:
+            return None
+        confidence = self.base_confidence + self._common_modifier(candles, recent_news)
+        last_close = float(candles[-1].close)
+        return self._make_signal(
+            symbol, market, "buy", last_close, confidence,
+            f"融资余额突破: {latest/1e8:.2f}亿 / 20日均 {avg/1e8:.2f}亿 = {ratio:.2f}×",
+            triggered_by={"fin_balance": latest, "avg_balance": avg, "ratio": round(ratio, 2)},
+            candles=candles,
+        )
+
+
+# ─── 6. 量价背离 (volume_price_divergence) ────────────────────────
+
+class VolumePriceDivergenceStrategy(Strategy):
+    """量价背离 — 价格创新高 + 量缩 = 顶部预警 sell；
+                  价格创新低 + 量缩 = 底部信号 buy（恐慌耗尽）。
+    """
+    name = "volume_price_divergence"
+    base_confidence = 65
+    description = "量价背离（价新高量缩=顶部 / 价新低量缩=底部）"
+
+    def __init__(self, lookback: int = 30, vol_shrink_ratio: float = 0.7,
+                 min_price_diff_pct: float = 1.0):
+        self.lookback = lookback
+        self.vol_shrink_ratio = vol_shrink_ratio
+        self.min_price_diff_pct = min_price_diff_pct
+
+    def evaluate(self, symbol, market, candles, recent_news=None):
+        if len(candles) < self.lookback + 5:
+            return None
+        closes = np.array([c.close for c in candles], dtype=np.float64)
+        highs = np.array([c.high for c in candles], dtype=np.float64)
+        lows = np.array([c.low for c in candles], dtype=np.float64)
+        volumes = np.array([c.volume for c in candles], dtype=np.float64)
+        win_high = highs[-self.lookback:]
+        win_low = lows[-self.lookback:]
+        win_vol = volumes[-self.lookback:]
+
+        last = candles[-1]
+        last_high = float(last.high)
+        last_low = float(last.low)
+        last_vol = float(last.volume)
+        # 当根量必须明显萎缩
+        avg_vol = float(np.mean(win_vol[:-1]))
+        if avg_vol <= 0:
+            return None
+        if last_vol >= avg_vol * self.vol_shrink_ratio:
+            return None
+
+        # 找窗口内（不含当根）的前期高/低
+        prior_high = float(np.max(win_high[:-1]))
+        prior_low = float(np.min(win_low[:-1]))
+
+        action = None
+        reason = None
+        # 顶背离：价格创新高 + 量缩
+        diff_high_pct = (last_high - prior_high) / prior_high * 100 if prior_high > 0 else 0
+        if diff_high_pct >= self.min_price_diff_pct:
+            action = "sell"
+            reason = (f"顶背离 价格新高 +{diff_high_pct:.2f}% (高 {last_high:.4f} > 前高 {prior_high:.4f}) "
+                      f"但量缩 {last_vol/avg_vol:.2f}× < {self.vol_shrink_ratio}×")
+        else:
+            # 底背离：价格创新低 + 量缩
+            diff_low_pct = (prior_low - last_low) / prior_low * 100 if prior_low > 0 else 0
+            if diff_low_pct >= self.min_price_diff_pct:
+                action = "buy"
+                reason = (f"底背离 价格新低 -{diff_low_pct:.2f}% (低 {last_low:.4f} < 前低 {prior_low:.4f}) "
+                          f"但量缩 {last_vol/avg_vol:.2f}× < {self.vol_shrink_ratio}× = 恐慌耗尽")
+
+        if action is None:
+            return None
+
+        # 趋势过滤：多头中不发 sell；空头中不发 buy
+        ma5 = calc_ma(closes, 5)[-1]; ma20 = calc_ma(closes, 20)[-1]
+        if not (np.isnan(ma5) or np.isnan(ma20)):
+            if action == "sell" and ma5 > ma20 * 1.03:
+                pass  # 强多头中即便顶背离也是高位震荡，不强行翻空 — 保留信号但置信度降
+            if action == "buy" and ma5 < ma20 * 0.97:
+                pass
+
+        confidence = self.base_confidence + self._common_modifier(candles, recent_news)
+        last_close = float(closes[-1])
+        return self._make_signal(
+            symbol, market, action, last_close, confidence, reason, candles=candles,
+        )
+
+
+# ─── 7. 链上巨鲸 (whale_activity) ────────────────────────────────
+
+class WhaleActivityStrategy(Strategy):
+    """OKX 大额成交识别（替代付费链上 API）：
+    最近 N 笔成交里 ≥ $500K 的大单买卖比例 ≥ 2:1 → 巨鲸方向信号。
+    """
+    name = "whale_activity"
+    base_confidence = 65
+    description = "OKX 大单（≥$500K）买卖比 ≥ 2:1 → 巨鲸方向信号"
+
+    def __init__(self, large_trade_usd: float = 5e5, min_imbalance_ratio: float = 2.0,
+                 lookback_trades: int = 100):
+        self.large_trade_usd = large_trade_usd
+        self.min_imbalance_ratio = min_imbalance_ratio
+        self.lookback_trades = lookback_trades
+
+    async def evaluate(self, symbol, market, candles, recent_news=None):
+        mkt = market.value if hasattr(market, "value") else str(market)
+        if mkt != "crypto":
+            return None
+        try:
+            from backend.data.fetcher import get_fetcher
+            okx = get_fetcher(market)
+            trades = await okx.get_recent_trades(symbol, limit=self.lookback_trades)
+        except Exception as e:
+            logger.debug(f"[whale] {symbol} fetch err: {e}")
+            return None
+        if not trades:
+            return None
+        large = [t for t in trades if t.get("sizeUsd", 0) >= self.large_trade_usd]
+        if len(large) < 5:
+            return None
+        buys = sum(t["sizeUsd"] for t in large if t.get("side") == "buy")
+        sells = sum(t["sizeUsd"] for t in large if t.get("side") == "sell")
+        if buys == 0 and sells == 0:
+            return None
+        action = None
+        ratio = 0
+        if buys > 0 and sells > 0:
+            ratio = buys / sells
+            if ratio >= self.min_imbalance_ratio:
+                action = "buy"
+            elif ratio <= 1 / self.min_imbalance_ratio:
+                action = "sell"
+        elif buys > 0:
+            action = "buy"; ratio = float("inf")
+        elif sells > 0:
+            action = "sell"; ratio = 0.0
+        if action is None:
+            return None
+        confidence = self.base_confidence + self._common_modifier(candles, recent_news)
+        last_close = float(candles[-1].close)
+        ratio_str = "∞" if ratio == float("inf") else f"{ratio:.2f}"
+        return self._make_signal(
+            symbol, market, action, last_close, confidence,
+            f"巨鲸大单: {len(large)} 笔 ≥${self.large_trade_usd/1000:.0f}K, "
+            f"买/卖={buys/1e6:.2f}M/{sells/1e6:.2f}M (ratio={ratio_str})",
+            triggered_by={"large_trades": len(large), "buy_usd": buys, "sell_usd": sells,
+                          "imbalance_ratio": None if ratio == float("inf") else round(ratio, 2)},
+            candles=candles,
+        )
+
+
+# ─── 8. 稳定币流入 (stablecoin_flow) ─────────────────────────────
+
+class StablecoinFlowStrategy(Strategy):
+    """USDT/USDC 24h 全市场净流入 > $500M → 加密整体 buy；
+                              净流出 > $500M → sell。
+    全市场广播信号 — 一次拉数据应用到所有 crypto symbol。
+    """
+    name = "stablecoin_flow"
+    base_confidence = 60
+    description = "稳定币 USDT+USDC 24h 净流入 ≥ $500M = 加密整体方向参考"
+
+    def __init__(self, inflow_threshold_usd: float = 5e8):
+        self.inflow_threshold_usd = inflow_threshold_usd
+
+    async def evaluate(self, symbol, market, candles, recent_news=None):
+        mkt = market.value if hasattr(market, "value") else str(market)
+        if mkt != "crypto":
+            return None
+        # 仅对主流币广播（避免对所有山寨刷信号）
+        coin = symbol.split("-")[0] if "-" in symbol else symbol
+        if coin.upper() not in {"BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "TRX", "DOT"}:
+            return None
+        try:
+            from backend.data.stablecoin_flow import fetch_stablecoin_flow_24h
+            flow = await fetch_stablecoin_flow_24h()
+        except Exception as e:
+            logger.debug(f"[stablecoin] fetch err: {e}")
+            return None
+        if not flow or flow.get("signal") == "neutral":
+            return None
+        delta = float(flow.get("total_delta_24h") or 0)
+        action = "buy" if delta > 0 else "sell"
+        confidence = self.base_confidence + self._common_modifier(candles, recent_news)
+        last_close = float(candles[-1].close)
+        return self._make_signal(
+            symbol, market, action, last_close, confidence,
+            f"稳定币 24h 净{'流入' if action == 'buy' else '流出'} ${delta/1e9:.2f}B "
+            f"(总市值 ${(flow.get('total_mcap') or 0)/1e9:.1f}B)",
+            triggered_by={"total_delta_24h": delta, "total_mcap": flow.get("total_mcap")},
+            candles=candles,
+        )
+
+
+# ─── 9. 三重过滤 (triple_screen) ─────────────────────────────────
+
+class TripleScreenStrategy(Strategy):
+    """Elder 三重过滤的单 interval 实现版（合成多周期）：
+    Screen 1 (周线趋势)  ─ 长 EMA(168) 上升 → 多头大势
+    Screen 2 (日线动量)  ─ 24 期 RSI 在 40-60 = 中性回调（不超买不超卖）
+    Screen 3 (1H 入场)   ─ 当根 close > 前根 close + 量比 > 1.2 → 入场触发
+    任何一层失败即不发信号。仅 1H 周期适用（确保 168 = 1 周近似）。
+    """
+    name = "triple_screen"
+    base_confidence = 75
+    description = "三重过滤（周趋势 + 日动量中性 + 1H 入场触发）"
+
+    def __init__(self, weekly_ema_period: int = 168, daily_rsi_period: int = 24,
+                 vol_ratio: float = 1.2):
+        self.weekly_ema_period = weekly_ema_period
+        self.daily_rsi_period = daily_rsi_period
+        self.vol_ratio = vol_ratio
+
+    def evaluate(self, symbol, market, candles, recent_news=None):
+        if len(candles) < self.weekly_ema_period + 5:
+            return None
+        closes = np.array([c.close for c in candles], dtype=np.float64)
+        volumes = np.array([c.volume for c in candles], dtype=np.float64)
+
+        # Screen 1: 周线趋势（EMA168 上升 = 多头）
+        ema_w = calc_ema(closes, self.weekly_ema_period)
+        if np.isnan(ema_w[-1]) or np.isnan(ema_w[-5]):
+            return None
+        weekly_up = ema_w[-1] > ema_w[-5]
+        weekly_down = ema_w[-1] < ema_w[-5]
+
+        # Screen 2: 日线动量（24 期 RSI 在 40-60 = 适合入场不超买）
+        daily_rsi_arr = calc_rsi(closes, self.daily_rsi_period)
+        if np.isnan(daily_rsi_arr[-1]):
+            return None
+        daily_rsi = float(daily_rsi_arr[-1])
+        # 多头中：RSI 30-55 (回调没超买) ; 空头中：RSI 45-70 (反弹没超卖)
+        action = None
+        if weekly_up and 30 <= daily_rsi <= 55:
+            action = "buy"
+        elif weekly_down and 45 <= daily_rsi <= 70:
+            action = "sell"
+        if action is None:
+            return None
+
+        # Screen 3: 1H 入场触发（顺方向价格 + 量能放大）
+        last = candles[-1]
+        prev = candles[-2]
+        vma = calc_volume_ma(volumes, 20)
+        if np.isnan(vma[-1]) or vma[-1] <= 0:
+            return None
+        vol_ratio_now = float(volumes[-1] / vma[-1])
+        if vol_ratio_now < self.vol_ratio:
+            return None
+        if action == "buy" and last.close <= prev.close:
+            return None
+        if action == "sell" and last.close >= prev.close:
+            return None
+
+        confidence = self.base_confidence + self._common_modifier(candles, recent_news)
+        last_close = float(last.close)
+        return self._make_signal(
+            symbol, market, action, last_close, confidence,
+            f"三重过滤共振: 周{'多' if action=='buy' else '空'}EMA{self.weekly_ema_period} "
+            f"+ 日 RSI={daily_rsi:.1f}({'回调' if action=='buy' else '反弹'}) "
+            f"+ 1H 量比 {vol_ratio_now:.2f}×",
+            triggered_by={"weekly_trend": "up" if weekly_up else "down",
+                          "daily_rsi": round(daily_rsi, 2),
+                          "hourly_vol_ratio": round(vol_ratio_now, 2)},
+            candles=candles,
+        )
+
+
 ALL_STRATEGIES: Dict[str, type] = {
     # v12.16 (Step 2): rsi_divergence 已删除（实战 0 confirm 100% skipped）
     # v12.16.5: 用 3 个 RSI 组合策略替代（rsi_pullback / rsi_real_divergence / rsi_breakout_50）
@@ -1805,6 +2371,16 @@ ALL_STRATEGIES: Dict[str, type] = {
     "gap_up_continuation": GapUpContinuationStrategy,
     "vwap_pullback": VWAPPullbackStrategy,
     # v12.16.6: earnings_window_filter 已下线（不是策略而是 monitor 入口过滤器）
+    # ─── v12.17.0: 9 个新策略 ─────────────────────────────────────
+    "premarket_breakout": PremarketBreakoutStrategy,           # 美股
+    "vix_extreme": VIXExtremeStrategy,                          # 美股大盘 ETF
+    "relative_strength_top": RelativeStrengthStrategy,          # 美股
+    "lhb_follow": LHBFollowStrategy,                            # A 股
+    "margin_breakout": MarginBreakoutStrategy,                  # A 股
+    "volume_price_divergence": VolumePriceDivergenceStrategy,   # 全市场
+    "whale_activity": WhaleActivityStrategy,                    # 加密
+    "stablecoin_flow": StablecoinFlowStrategy,                  # 加密（仅主流币）
+    "triple_screen": TripleScreenStrategy,                      # 全市场（仅 1H）
 }
 
 
@@ -1948,6 +2524,58 @@ STRATEGY_MARKET_MATRIX: Dict[str, Dict[str, list]] = {
         # v12.16.6: 实战化 — 1H 滚动 VWAP（粗糙但可用），仅绑定 us
         "us": [{"interval": "1H", "params": {"vwap_window": 7, "band_pct": 0.5,
                                               "vol_shrink_ratio": 0.8}}],
+    },
+    # ─── v12.17.0: 9 个新策略矩阵注册 ──────────────────────────────
+    "premarket_breakout": {
+        "us": [{"interval": "1H", "params": {"lookback_high_bars": 60, "vol_ratio": 1.8,
+                                              "min_open_gap_pct": 1.0}}],
+    },
+    "vix_extreme": {
+        # 仅大盘 ETF 触发（白名单内）；候选池里 SPY/QQQ 才会绑定到此策略
+        "us": [{"interval": "1D", "params": {"panic_threshold": 30.0,
+                                              "complacent_threshold": 12.0}}],
+    },
+    "relative_strength_top": {
+        "us": [{"interval": "1D", "params": {"outperform_threshold_pct": 15.0,
+                                              "ma_period": 20, "max_dist_to_ma_pct": 2.0}}],
+    },
+    "lhb_follow": {
+        "cn": [{"interval": "1D", "params": {"min_jg_net_buy_yuan": 5e7,
+                                              "fallback_total_buy": 1e8}}],
+    },
+    "margin_breakout": {
+        "cn": [{"interval": "1D", "params": {"lookback_days": 20, "breakout_ratio": 1.3}}],
+    },
+    "volume_price_divergence": {
+        # 全市场可用（纯指标）；加密/股票阈值差异
+        "crypto": [{"interval": "1H", "params": {"lookback": 30, "vol_shrink_ratio": 0.7,
+                                                  "min_price_diff_pct": 1.5}}],
+        "us":     [{"interval": "1H", "params": {"lookback": 30, "vol_shrink_ratio": 0.7,
+                                                  "min_price_diff_pct": 0.8}}],
+        "hk":     [{"interval": "1H", "params": {"lookback": 30, "vol_shrink_ratio": 0.7,
+                                                  "min_price_diff_pct": 1.0}}],
+        "cn":     [{"interval": "1D", "params": {"lookback": 30, "vol_shrink_ratio": 0.7,
+                                                  "min_price_diff_pct": 2.0}}],
+    },
+    "whale_activity": {
+        "crypto": [{"interval": "1H", "params": {"large_trade_usd": 5e5,
+                                                  "min_imbalance_ratio": 2.0,
+                                                  "lookback_trades": 100}}],
+    },
+    "stablecoin_flow": {
+        "crypto": [{"interval": "1H", "params": {"inflow_threshold_usd": 5e8}}],
+    },
+    "triple_screen": {
+        # 仅 1H — 168 = 1 周近似（单 interval 多周期合成）
+        "crypto": [{"interval": "1H", "params": {"weekly_ema_period": 168,
+                                                  "daily_rsi_period": 24, "vol_ratio": 1.2}}],
+        "us":     [{"interval": "1H", "params": {"weekly_ema_period": 168,
+                                                  "daily_rsi_period": 24, "vol_ratio": 1.2}}],
+        "hk":     [{"interval": "1H", "params": {"weekly_ema_period": 168,
+                                                  "daily_rsi_period": 24, "vol_ratio": 1.2}}],
+        # cn 1D 周期下：weekly=20D, daily=5D 等价
+        "cn":     [{"interval": "1D", "params": {"weekly_ema_period": 20,
+                                                  "daily_rsi_period": 5, "vol_ratio": 1.2}}],
     },
 }
 
