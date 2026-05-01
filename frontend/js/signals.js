@@ -32,6 +32,10 @@ const Signals = (function () {
     ema_triple: 'EMA 三线排列',
     squeeze_breakout: '布林挤压突破',
     adx_trend_follow: 'ADX 趋势跟随',
+    // RSI 组合系列 (v12.16.5)
+    rsi_pullback: 'RSI 趋势回踩',
+    rsi_real_divergence: 'RSI 真背离',
+    rsi_breakout_50: 'RSI 50 上穿',
     // 共振合并
     resonance: '🌟 多策略共振',
     // 加密专属

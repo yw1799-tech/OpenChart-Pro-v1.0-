@@ -12,6 +12,8 @@
     flash_event: '新闻事件驱动', chanlun: '缠论买卖点',
     macd_cross: 'MACD 金叉死叉', ema_triple: 'EMA 三线排列',
     squeeze_breakout: '布林挤压突破', adx_trend_follow: 'ADX 趋势跟随',
+    rsi_pullback: 'RSI 趋势回踩', rsi_real_divergence: 'RSI 真背离',
+    rsi_breakout_50: 'RSI 50 上穿',
     funding_extreme: '资金费率极值', oi_breakout: 'OI 持仓突破',
     long_short_ratio: '多空比反转', fear_greed_reversal: 'F&G 极值反转',
     limit_up_followup: '涨停后回踩', northbound_flow_top: '北向资金排名',
@@ -23,7 +25,7 @@
 
   const GROUPS = [
     { name: '🌐 通用型策略（全市场）',
-      strategies: ['ma_cross','donchian_breakout','bollinger_reversion','volume_breakout','flash_event','chanlun','macd_cross','ema_triple','squeeze_breakout','adx_trend_follow'] },
+      strategies: ['ma_cross','donchian_breakout','bollinger_reversion','volume_breakout','flash_event','chanlun','macd_cross','ema_triple','squeeze_breakout','adx_trend_follow','rsi_pullback','rsi_real_divergence','rsi_breakout_50'] },
     { name: '💰 加密专属（OKX 衍生品 + F&G）',
       strategies: ['funding_extreme','oi_breakout','long_short_ratio','fear_greed_reversal'] },
     { name: '🇨🇳 A 股专属（东财数据）',
@@ -42,6 +44,8 @@
     { name: '加密极值反转', strategies: ['fear_greed_reversal','funding_extreme'] },
     { name: '缠论 + 量能确认', strategies: ['chanlun','volume_breakout'] },
     { name: 'A 股政策资金', strategies: ['northbound_flow_top','sector_momentum','limit_up_followup'] },
+    { name: 'RSI 趋势回踩共振', strategies: ['ma_cross','rsi_pullback','volume_breakout'] },
+    { name: 'RSI 真背离反转', strategies: ['rsi_real_divergence','volume_breakout'] },
   ];
 
   const pane = document.querySelector('[data-pane="strategy-lib"]');

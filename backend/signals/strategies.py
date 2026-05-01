@@ -474,13 +474,204 @@ class BollingerReversion(Strategy):
 
 
 # ═══════════════════════════════════════════════════════════════════
-# 4. RSI 背离（简化版：极值反转）
+# 4. RSI 组合系列（v12.16.5 新增 — 替代旧 RSIDivergence 极值反转）
 # ═══════════════════════════════════════════════════════════════════
+# 设计原则：单一 RSI 极值不可信（趋势市场就是接刀子），必须配合
+#   - 趋势确认（MA 排列）
+#   - 量能确认（量比 > 1.2）
+#   - 价格行为确认（K 线方向 / 关键位突破）
+# 三个 RSI 组合策略：rsi_pullback / rsi_real_divergence / rsi_breakout_50
 
 
-# v12.16 (Step 2): RSIDivergence 已删除
-# 原因：实战 15 条信号 0 confirm 100% skipped。极值反转在趋势市场就是接刀子。
-# 替代：未来可加真背离逻辑（高点不创新高 + RSI 创新高 = 顶背离）— 暂未实现。
+class RSIPullbackStrategy(Strategy):
+    """RSI 趋势内回踩抄底：多头 (MA5>MA20) + RSI 30-40 + 收阳 → buy。"""
+    name = "rsi_pullback"
+    base_confidence = 65
+    description = "RSI 趋势回踩（多头中 RSI 回到 30-40 + 当根收阳 = 买入；空头反之）"
+
+    def __init__(self, rsi_period: int = 14,
+                 buy_lo: float = 30.0, buy_hi: float = 40.0,
+                 sell_lo: float = 60.0, sell_hi: float = 70.0,
+                 fast_ma: int = 5, slow_ma: int = 20):
+        self.rsi_period = rsi_period
+        self.buy_lo = buy_lo; self.buy_hi = buy_hi
+        self.sell_lo = sell_lo; self.sell_hi = sell_hi
+        self.fast_ma = fast_ma; self.slow_ma = slow_ma
+
+    def evaluate(self, symbol, market, candles, recent_news=None):
+        if len(candles) < max(self.slow_ma, self.rsi_period) + 2:
+            return None
+        closes = np.array([c.close for c in candles], dtype=np.float64)
+        rsi = calc_rsi(closes, self.rsi_period)
+        last_rsi = float(rsi[-1])
+        if np.isnan(last_rsi):
+            return None
+        ma_fast = calc_ma(closes, self.fast_ma)[-1]
+        ma_slow = calc_ma(closes, self.slow_ma)[-1]
+        if np.isnan(ma_fast) or np.isnan(ma_slow):
+            return None
+        last = candles[-1]
+        bullish_bar = last.close > last.open
+        bearish_bar = last.close < last.open
+
+        action = None
+        # 多头趋势中 RSI 回踩到 30-40 + 当根收阳 → 买入
+        if ma_fast > ma_slow and self.buy_lo <= last_rsi <= self.buy_hi and bullish_bar:
+            action = "buy"
+        # 空头趋势中 RSI 反弹到 60-70 + 当根收阴 → 卖出
+        elif ma_fast < ma_slow and self.sell_lo <= last_rsi <= self.sell_hi and bearish_bar:
+            action = "sell"
+        if action is None:
+            return None
+
+        confidence = self.base_confidence + self._common_modifier(candles, recent_news)
+        last_close = float(closes[-1])
+        return self._make_signal(
+            symbol, market, action, last_close, confidence,
+            f"RSI 趋势{'回踩抄底' if action == 'buy' else '反弹做空'} RSI={last_rsi:.1f} "
+            f"(MA{self.fast_ma}{'>' if action == 'buy' else '<'}MA{self.slow_ma})",
+            candles=candles,
+        )
+
+
+class RSIRealDivergenceStrategy(Strategy):
+    """RSI 真背离：价格创新高 RSI 不创新高（顶背离 sell）/ 价格创新低 RSI 不创新低（底背离 buy）。"""
+    name = "rsi_real_divergence"
+    base_confidence = 70
+    description = "RSI 真背离（价格创新高/低但 RSI 没跟上 = 反转高胜率信号）"
+
+    def __init__(self, rsi_period: int = 14, lookback: int = 20,
+                 min_price_diff_pct: float = 0.5):
+        self.rsi_period = rsi_period
+        self.lookback = lookback
+        self.min_price_diff_pct = min_price_diff_pct
+
+    def _find_pivots(self, arr, mode: str):
+        """简易枢轴点：在 lookback 窗口里取最大 2 个高点（mode='high'）或最小 2 个低点。
+        返回 [(idx, value), (idx, value)] — 按时间顺序（旧 → 新）；不足返回 []。"""
+        n = len(arr)
+        if n < self.lookback:
+            return []
+        window = arr[-self.lookback:]
+        idx_offset = n - self.lookback
+        # 取局部极值（非端点的相邻 3 根中最大/最小）
+        pivots = []
+        for i in range(1, len(window) - 1):
+            v = window[i]
+            if np.isnan(v):
+                continue
+            if mode == "high":
+                if v >= window[i-1] and v >= window[i+1]:
+                    pivots.append((i + idx_offset, float(v)))
+            else:  # low
+                if v <= window[i-1] and v <= window[i+1]:
+                    pivots.append((i + idx_offset, float(v)))
+        if len(pivots) < 2:
+            return []
+        # 按 value 排序取最值前 2，再按 idx 排序（旧→新）
+        if mode == "high":
+            pivots.sort(key=lambda p: -p[1])
+        else:
+            pivots.sort(key=lambda p: p[1])
+        top2 = sorted(pivots[:2], key=lambda p: p[0])
+        return top2
+
+    def evaluate(self, symbol, market, candles, recent_news=None):
+        if len(candles) < self.lookback + self.rsi_period + 2:
+            return None
+        closes = np.array([c.close for c in candles], dtype=np.float64)
+        highs = np.array([c.high for c in candles], dtype=np.float64)
+        lows = np.array([c.low for c in candles], dtype=np.float64)
+        rsi = calc_rsi(closes, self.rsi_period)
+        if np.isnan(rsi[-1]):
+            return None
+
+        action = None
+        reason = None
+        # 顶背离：价格高点创新高，RSI 高点没创新高
+        high_pivots = self._find_pivots(highs, "high")
+        if len(high_pivots) >= 2:
+            (i1, p1), (i2, p2) = high_pivots
+            r1 = float(rsi[i1]); r2 = float(rsi[i2])
+            if not (np.isnan(r1) or np.isnan(r2)):
+                price_diff_pct = (p2 - p1) / p1 * 100 if p1 > 0 else 0
+                if price_diff_pct >= self.min_price_diff_pct and r2 < r1:
+                    # 价格新高，RSI 没新高 → 顶背离
+                    action = "sell"
+                    reason = (f"RSI 顶背离 价格 {p1:.4f}→{p2:.4f} (+{price_diff_pct:.1f}%) "
+                              f"但 RSI {r1:.1f}→{r2:.1f}")
+
+        # 底背离：价格低点创新低，RSI 低点没创新低
+        if action is None:
+            low_pivots = self._find_pivots(lows, "low")
+            if len(low_pivots) >= 2:
+                (i1, p1), (i2, p2) = low_pivots
+                r1 = float(rsi[i1]); r2 = float(rsi[i2])
+                if not (np.isnan(r1) or np.isnan(r2)):
+                    price_diff_pct = (p1 - p2) / p1 * 100 if p1 > 0 else 0
+                    if price_diff_pct >= self.min_price_diff_pct and r2 > r1:
+                        action = "buy"
+                        reason = (f"RSI 底背离 价格 {p1:.4f}→{p2:.4f} (-{price_diff_pct:.1f}%) "
+                                  f"但 RSI {r1:.1f}→{r2:.1f}")
+
+        if action is None:
+            return None
+
+        confidence = self.base_confidence + self._common_modifier(candles, recent_news)
+        last_close = float(closes[-1])
+        return self._make_signal(
+            symbol, market, action, last_close, confidence, reason, candles=candles,
+        )
+
+
+class RSIBreakout50Strategy(Strategy):
+    """RSI 上穿 50 + 量能放大 + 价格站上 MA20 → 强势启动确认。"""
+    name = "rsi_breakout_50"
+    base_confidence = 65
+    description = "RSI 50 上穿（RSI 穿 50 + 量比≥1.2 + 价站上 MA20 = 强势启动）"
+
+    def __init__(self, rsi_period: int = 14, ma_period: int = 20,
+                 vol_ratio: float = 1.2):
+        self.rsi_period = rsi_period
+        self.ma_period = ma_period
+        self.vol_ratio = vol_ratio
+
+    def evaluate(self, symbol, market, candles, recent_news=None):
+        if len(candles) < max(self.ma_period, self.rsi_period) + 3:
+            return None
+        closes = np.array([c.close for c in candles], dtype=np.float64)
+        volumes = np.array([c.volume for c in candles], dtype=np.float64)
+        rsi = calc_rsi(closes, self.rsi_period)
+        if np.isnan(rsi[-1]) or np.isnan(rsi[-2]):
+            return None
+        rsi_prev = float(rsi[-2]); rsi_now = float(rsi[-1])
+        ma = calc_ma(closes, self.ma_period)
+        if np.isnan(ma[-1]):
+            return None
+        ma_now = float(ma[-1])
+        last_close = float(closes[-1])
+        vma = calc_volume_ma(volumes, 20)
+        if np.isnan(vma[-1]) or vma[-1] <= 0:
+            return None
+        vol_ratio_now = float(volumes[-1] / vma[-1])
+
+        action = None
+        # 上穿 50 + 站上 MA20 + 量能放大 → 买入
+        if rsi_prev < 50 <= rsi_now and last_close > ma_now and vol_ratio_now >= self.vol_ratio:
+            action = "buy"
+        # 下穿 50 + 跌破 MA20 + 量能放大 → 卖出
+        elif rsi_prev > 50 >= rsi_now and last_close < ma_now and vol_ratio_now >= self.vol_ratio:
+            action = "sell"
+        if action is None:
+            return None
+
+        confidence = self.base_confidence + self._common_modifier(candles, recent_news)
+        return self._make_signal(
+            symbol, market, action, last_close, confidence,
+            f"RSI {'上' if action == 'buy' else '下'}穿 50 ({rsi_prev:.1f}→{rsi_now:.1f}) "
+            f"+ 量比 {vol_ratio_now:.2f} + 价{'站上' if action == 'buy' else '跌破'} MA{self.ma_period}",
+            candles=candles,
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1525,6 +1716,7 @@ async def is_in_earnings_window(symbol: str, market: str,
 
 ALL_STRATEGIES: Dict[str, type] = {
     # v12.16 (Step 2): rsi_divergence 已删除（实战 0 confirm 100% skipped）
+    # v12.16.5: 用 3 个 RSI 组合策略替代（rsi_pullback / rsi_real_divergence / rsi_breakout_50）
     "ma_cross": MACrossStrategy,
     "donchian_breakout": DonchianBreakout,
     "bollinger_reversion": BollingerReversion,
@@ -1536,6 +1728,10 @@ ALL_STRATEGIES: Dict[str, type] = {
     "ema_triple": EMATripleStrategy,
     "squeeze_breakout": SqueezeBreakoutStrategy,
     "adx_trend_follow": ADXTrendFollowStrategy,
+    # v12.16.5 RSI 组合系列（替代旧 RSIDivergence）
+    "rsi_pullback": RSIPullbackStrategy,
+    "rsi_real_divergence": RSIRealDivergenceStrategy,
+    "rsi_breakout_50": RSIBreakout50Strategy,
     # v12.16 (Step 5) 加密专属
     "funding_extreme": FundingExtremeStrategy,
     "oi_breakout": OIBreakoutStrategy,
@@ -1624,6 +1820,29 @@ STRATEGY_MARKET_MATRIX: Dict[str, Dict[str, list]] = {
         "us":     [{"interval": "1H", "params": {"period": 14, "adx_threshold": 25.0}}],
         "hk":     [{"interval": "1H", "params": {"period": 14, "adx_threshold": 25.0}}],
         "cn":     [{"interval": "1D", "params": {"period": 14, "adx_threshold": 20.0}}],  # A 股趋势性弱 → 阈值放低
+    },
+    # ─── v12.16.5: RSI 组合系列（3 个，全市场通用）─────────
+    "rsi_pullback": {
+        # 加密波动大 → RSI 区间放宽到 25-40 / 60-75；A 股趋势更稳 → 用更紧的 30-40 / 60-70
+        "crypto": [{"interval": "1H", "params": {"buy_lo": 25, "buy_hi": 40, "sell_lo": 60, "sell_hi": 75}}],
+        "us":     [{"interval": "1H", "params": {"buy_lo": 30, "buy_hi": 40, "sell_lo": 60, "sell_hi": 70}}],
+        "hk":     [{"interval": "1H", "params": {"buy_lo": 30, "buy_hi": 40, "sell_lo": 60, "sell_hi": 70}}],
+        "cn":     [{"interval": "1D", "params": {"buy_lo": 30, "buy_hi": 40, "sell_lo": 60, "sell_hi": 70,
+                                                  "fast_ma": 5, "slow_ma": 20}}],
+    },
+    "rsi_real_divergence": {
+        # 真背离窗口：加密短 (15 根) / 股票中 (20 根)；最小价差 加密 1.0% / 股票 0.5%
+        "crypto": [{"interval": "1H", "params": {"lookback": 15, "min_price_diff_pct": 1.0}}],
+        "us":     [{"interval": "1H", "params": {"lookback": 20, "min_price_diff_pct": 0.5}}],
+        "hk":     [{"interval": "1H", "params": {"lookback": 20, "min_price_diff_pct": 0.5}}],
+        "cn":     [{"interval": "1D", "params": {"lookback": 20, "min_price_diff_pct": 1.0}}],  # 日线背离更显著
+    },
+    "rsi_breakout_50": {
+        # 加密量能要求更高（vol_ratio 1.5），股票 1.2 即可
+        "crypto": [{"interval": "1H", "params": {"vol_ratio": 1.5, "ma_period": 20}}],
+        "us":     [{"interval": "1H", "params": {"vol_ratio": 1.2, "ma_period": 20}}],
+        "hk":     [{"interval": "1H", "params": {"vol_ratio": 1.2, "ma_period": 20}}],
+        "cn":     [{"interval": "1D", "params": {"vol_ratio": 1.2, "ma_period": 20}}],
     },
     # ─── Step 5: 加密专属（4 个）──────────────────────────
     "funding_extreme": {

@@ -595,7 +595,7 @@
         <div class="row-time">${fmtTime(s.generated_at)}</div>
       </div>
       <div class="row-meta">
-        ${escape(s.strategy_name)} · 系统 ${s.confidence||0} / AI ${conf} · ${s.interval||''}
+        ${escape(STRATEGY_NAME_CN[s.strategy_name] || s.strategy_name)} · 系统 ${s.confidence||0} / AI ${conf} · ${s.interval||''}
       </div>
       ${s.ai_summary ? `<div class="row-reason">${escape(s.ai_summary).slice(0,140)}</div>`
                      : (s.ai_reason ? `<div class="row-reason">${escape(s.ai_reason).slice(0,140)}</div>` : '')}
@@ -616,7 +616,7 @@
         <h4>基本</h4>
         <div class="kv-row"><span class="k">代码 / 方向</span><span class="v">${escape(s.symbol)} · ${s.action}</span></div>
         <div class="kv-row"><span class="k">市场 / 周期</span><span class="v">${MARKET_LABEL[s.market]||s.market} · ${escape(s.interval||'')}</span></div>
-        <div class="kv-row"><span class="k">策略</span><span class="v">${escape(s.strategy_name||'')}</span></div>
+        <div class="kv-row"><span class="k">策略</span><span class="v">${escape(STRATEGY_NAME_CN[s.strategy_name] || s.strategy_name || '')}</span></div>
         <div class="kv-row"><span class="k">系统置信度</span><span class="v">${s.confidence||0}</span></div>
         <div class="kv-row"><span class="k">价位</span><span class="v">${s.price||'—'}</span></div>
         <div class="kv-row"><span class="k">生成时间</span><span class="v">${fmtTime(s.generated_at)}</span></div>
@@ -693,9 +693,11 @@
       if (p.entry_strategy === 'resonance' && p.entry_strategies) {
         const lvl = p.entry_resonance_level || '?';
         const boost = p.entry_sizing_boost || 1.0;
-        strategyTxt = `<div class="row-meta small" style="color:var(--accent);">📡 共振 L${lvl} (×${boost}): ${p.entry_strategies.join(' + ')}</div>`;
+        const namesCn = p.entry_strategies.map(s => STRATEGY_NAME_CN[s] || s).join(' + ');
+        strategyTxt = `<div class="row-meta small" style="color:var(--accent);">📡 共振 L${lvl} (×${boost}): ${escape(namesCn)}</div>`;
       } else {
-        strategyTxt = `<div class="row-meta small">📡 策略：${escape(p.entry_strategy)}</div>`;
+        const cn = STRATEGY_NAME_CN[p.entry_strategy] || p.entry_strategy;
+        strategyTxt = `<div class="row-meta small">📡 策略：${escape(cn)}</div>`;
       }
     }
     return `<div class="row ${cls}" data-id="${escape(p.id)}" style="cursor:pointer;">
@@ -1099,9 +1101,9 @@
     return _state.cache.strategies;
   }
 
-  // v12.16.2 (#2): 策略库分组定义
+  // v12.16.2 (#2): 策略库分组定义；v12.16.5 加 RSI 3 个到通用型
   const STRATEGY_GROUPS = [
-    { name: '🌐 通用型 (全市场)', strategies: ['ma_cross','donchian_breakout','bollinger_reversion','volume_breakout','flash_event','chanlun','macd_cross','ema_triple','squeeze_breakout','adx_trend_follow'] },
+    { name: '🌐 通用型 (全市场)', strategies: ['ma_cross','donchian_breakout','bollinger_reversion','volume_breakout','flash_event','chanlun','macd_cross','ema_triple','squeeze_breakout','adx_trend_follow','rsi_pullback','rsi_real_divergence','rsi_breakout_50'] },
     { name: '💰 加密专属', strategies: ['funding_extreme','oi_breakout','long_short_ratio','fear_greed_reversal'] },
     { name: '🇨🇳 A 股专属', strategies: ['limit_up_followup','northbound_flow_top','sector_momentum'] },
     { name: '🇭🇰 港股专属', strategies: ['southbound_inflow','ah_spread_revert'] },
@@ -1112,6 +1114,7 @@
     volume_breakout: '成交量突破', flash_event: '新闻事件驱动', chanlun: '缠论买卖点',
     macd_cross: 'MACD 金叉死叉', ema_triple: 'EMA 三线排列', squeeze_breakout: '布林挤压突破',
     adx_trend_follow: 'ADX 趋势跟随',
+    rsi_pullback: 'RSI 趋势回踩', rsi_real_divergence: 'RSI 真背离', rsi_breakout_50: 'RSI 50 上穿',
     funding_extreme: '资金费率极值', oi_breakout: 'OI 持仓突破', long_short_ratio: '多空比反转',
     fear_greed_reversal: 'F&G 极值反转',
     limit_up_followup: '涨停后回踩', northbound_flow_top: '北向资金排名', sector_momentum: '板块联动',

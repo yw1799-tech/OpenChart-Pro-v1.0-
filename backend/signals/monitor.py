@@ -720,6 +720,10 @@ class MonitorEngine:
         {"chanlun", "volume_breakout"},
         # A 股政策 + 资金组合
         {"northbound_flow_top", "sector_momentum", "limit_up_followup"},
+        # v12.16.5: RSI 趋势回踩 + 趋势确认 + 量能（经典 3 重共振，趋势内抄底）
+        {"ma_cross", "rsi_pullback", "volume_breakout"},
+        # v12.16.5: RSI 真背离 + 量能确认（反转高胜率，避免单一背离误信号）
+        {"rsi_real_divergence", "volume_breakout"},
     ]
 
     def _is_golden_combo(self, strat_set: set) -> bool:
