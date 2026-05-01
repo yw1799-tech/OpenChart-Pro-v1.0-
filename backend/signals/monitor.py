@@ -498,6 +498,14 @@ class MonitorEngine:
         # 非可交易时段不触发信号（加密 24/7；A/港/美按各自窗口含盘前盘后）
         if not is_market_tradable(market_str):
             return
+        # v12.16 财报窗口过滤：美股临近财报（前 3 日 / 后 1 日）不发信号
+        try:
+            from backend.signals.strategies import is_in_earnings_window
+            if await is_in_earnings_window(symbol, market_str):
+                logger.info(f"[earnings-window] {symbol}({market_str}) 临近财报，跳过信号生成")
+                return
+        except Exception as e:
+            logger.debug(f"[earnings-window] {symbol} 检查异常: {e}")
         try:
             market = Market(market_str)
         except ValueError:

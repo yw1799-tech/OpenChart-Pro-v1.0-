@@ -2679,8 +2679,13 @@ class BatchBindRequest(BaseModel):
 
 @strategy_router.get("")
 async def get_strategy_list():
-    """所有内置策略元信息。"""
-    return list_strategies()
+    """所有内置策略元信息。v12.16: 强制 utf-8 charset 防中文 description 乱码。"""
+    from fastapi.responses import JSONResponse
+    import json
+    return JSONResponse(
+        content=list_strategies(),
+        media_type="application/json; charset=utf-8",
+    )
 
 
 @strategy_router.post("/auto-bind-now")

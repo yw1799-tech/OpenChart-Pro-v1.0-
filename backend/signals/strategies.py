@@ -1196,26 +1196,106 @@ class LimitUpFollowupStrategy(Strategy):
 
 
 class NorthboundFlowTopStrategy(Strategy):
-    """北向资金连续净买入 + 排名前 50 — 当前数据源待对接，先占位"""
+    """v12.16 北向资金净买入排名前 50 → 该股 buy。
+    简化：用最新一期主力净流入排名（北向是主力的一部分）。
+    """
     name = "northbound_flow_top"
     base_confidence = 65
-    description = "A 股个股北向资金连续 3 日净买入（数据源待对接）"
+    description = "A 股个股北向/主力资金净买入排名前 50 → buy"
 
-    def evaluate(self, symbol, market, candles, recent_news=None):
-        # TODO: 对接东财北向资金 API → 拉个股最近 3 日 net inflow
-        # 暂时不发信号（不影响系统稳定）
-        return None
+    def __init__(self, top_n: int = 50, min_net_inflow_yuan: float = 5e7):
+        self.top_n = top_n
+        self.min_net_inflow_yuan = min_net_inflow_yuan  # 5000 万门槛
+
+    async def evaluate(self, symbol, market, candles, recent_news=None):
+        if (market.value if hasattr(market, "value") else str(market)) != "cn":
+            return None
+        try:
+            from backend.data.eastmoney_extra import fetch_northbound_top_stocks
+            top = await fetch_northbound_top_stocks(top_n=self.top_n)
+        except Exception as e:
+            logger.debug(f"[northbound] {symbol} fetch failed: {e}")
+            return None
+        if not top:
+            return None
+        # 看 symbol 是否在前 top_n 且净流入达标
+        match = next((it for it in top if it.get("symbol") == symbol), None)
+        if not match:
+            return None
+        net = float(match.get("main_net_inflow", 0))
+        if net < self.min_net_inflow_yuan:
+            return None
+        # rank 越靠前置信度越高
+        rank = next((i for i, it in enumerate(top) if it.get("symbol") == symbol), self.top_n)
+        rank_bonus = max(0, 15 - rank // 5)  # 前 5 +15, 6-10 +12, 11-15 +9 ...
+        confidence = self.base_confidence + rank_bonus + self._common_modifier(candles, recent_news)
+        last_close = float(candles[-1].close)
+        return self._make_signal(
+            symbol, market, "buy", last_close, confidence,
+            f"北向/主力净流入排名 #{rank+1} (净额 {net/1e8:.2f}亿 元)",
+            triggered_by={"net_inflow": net, "rank": rank + 1},
+            candles=candles,
+        )
 
 
 class SectorMomentumStrategy(Strategy):
-    """板块联动 — 个股属于涨幅榜前 3 板块且板块内联动股 ≥ 3 只 — 数据源待对接"""
+    """v12.16 板块联动 — 个股所属板块涨幅榜前 N + 板块内联动 ≥ M 只。"""
     name = "sector_momentum"
     base_confidence = 65
-    description = "A 股板块联动（板块涨幅榜前 3 + 联动股数 ≥ 3 — 数据源待对接）"
+    description = "A 股板块涨幅前 3 + 板块内联动 ≥ 3 只 → buy"
 
-    def evaluate(self, symbol, market, candles, recent_news=None):
-        # TODO: 对接东财板块 API → 拉所属板块涨幅 + 板块内强势股数量
-        return None
+    def __init__(self, top_sectors: int = 3, min_co_movers: int = 3,
+                 co_mover_threshold_pct: float = 5.0):
+        self.top_sectors = top_sectors
+        self.min_co_movers = min_co_movers
+        self.co_mover_threshold_pct = co_mover_threshold_pct
+
+    async def evaluate(self, symbol, market, candles, recent_news=None):
+        if (market.value if hasattr(market, "value") else str(market)) != "cn":
+            return None
+        try:
+            from backend.data.eastmoney_extra import (
+                fetch_top_sectors, fetch_sector_constituents, fetch_sectors_for_symbol
+            )
+            # 1. 个股所属板块
+            sym_sectors = await fetch_sectors_for_symbol(symbol)
+            if not sym_sectors:
+                return None
+            # 2. 拉涨幅前 N 板块
+            top_secs = await fetch_top_sectors(top_n=self.top_sectors)
+            if not top_secs:
+                return None
+            top_codes = {s["sector_code"] for s in top_secs}
+            # 3. 个股是否在前 N 板块中
+            matched_sector = next((c for c in sym_sectors if c in top_codes), None)
+            if not matched_sector:
+                return None
+            # 4. 该板块内联动股 (>= co_mover_threshold_pct) 数量
+            consts = await fetch_sector_constituents(matched_sector, max_n=100)
+            if not consts:
+                return None
+            co_movers = sum(1 for c in consts if c.get("change_pct", 0) >= self.co_mover_threshold_pct)
+            if co_movers < self.min_co_movers:
+                return None
+        except Exception as e:
+            logger.debug(f"[sector] {symbol} fetch failed: {e}")
+            return None
+        sec_info = next((s for s in top_secs if s["sector_code"] == matched_sector), None)
+        sec_name = sec_info.get("sector_name", "?") if sec_info else "?"
+        sec_change = sec_info.get("change_pct", 0) if sec_info else 0
+        confidence = self.base_confidence + self._common_modifier(candles, recent_news)
+        last_close = float(candles[-1].close)
+        return self._make_signal(
+            symbol, market, "buy", last_close, confidence,
+            f"板块联动: {sec_name} 涨 {sec_change:.2f}%, 板块内联动 {co_movers} 只",
+            triggered_by={
+                "sector_code": matched_sector,
+                "sector_name": sec_name,
+                "sector_change_pct": sec_change,
+                "co_movers": co_movers,
+            },
+            candles=candles,
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1223,25 +1303,101 @@ class SectorMomentumStrategy(Strategy):
 # ═══════════════════════════════════════════════════════════════════
 
 class SouthboundInflowStrategy(Strategy):
-    """港股通净流入排名前 30 — 数据源待对接"""
+    """v12.16 港股通南向资金净流入排名前 30 → buy。"""
     name = "southbound_inflow"
     base_confidence = 65
-    description = "港股通南向资金净流入排名前 30 → buy（数据源待对接）"
+    description = "港股通南向资金净流入排名前 30 → buy"
 
-    def evaluate(self, symbol, market, candles, recent_news=None):
-        # TODO: 对接腾讯港股通净流入数据
-        return None
+    def __init__(self, top_n: int = 30, min_net_inflow_hkd: float = 1e7):
+        self.top_n = top_n
+        self.min_net_inflow_hkd = min_net_inflow_hkd  # 1000 万 HKD
+
+    async def evaluate(self, symbol, market, candles, recent_news=None):
+        if (market.value if hasattr(market, "value") else str(market)) != "hk":
+            return None
+        try:
+            from backend.data.eastmoney_extra import fetch_southbound_top_stocks
+            top = await fetch_southbound_top_stocks(top_n=self.top_n)
+        except Exception as e:
+            logger.debug(f"[southbound] {symbol} fetch failed: {e}")
+            return None
+        if not top:
+            return None
+        match = next((it for it in top if it.get("symbol") == symbol), None)
+        if not match:
+            return None
+        net = float(match.get("net_inflow", 0))
+        if net < self.min_net_inflow_hkd:
+            return None
+        rank = next((i for i, it in enumerate(top) if it.get("symbol") == symbol), self.top_n)
+        rank_bonus = max(0, 12 - rank // 3)
+        confidence = self.base_confidence + rank_bonus + self._common_modifier(candles, recent_news)
+        last_close = float(candles[-1].close)
+        return self._make_signal(
+            symbol, market, "buy", last_close, confidence,
+            f"港股通南向净流入 #{rank+1} (净额 {net/1e8:.2f}亿 HKD)",
+            triggered_by={"net_inflow": net, "rank": rank + 1},
+            candles=candles,
+        )
 
 
 class AHSpreadRevertStrategy(Strategy):
-    """AH 价差回归 — 价差超历史均值 ±1.5σ → 折价方向入场（双重上市映射待对接）"""
+    """v12.16 AH 价差回归 — A 股较 H 股溢价 > 30% → 买 H（折价方）。
+    硬编码 30 只大蓝筹双重上市映射。
+    """
     name = "ah_spread_revert"
     base_confidence = 65
-    description = "A/H 双重上市价差回归（映射表待对接）"
+    description = "AH 双重上市价差 > 30% → 买折价方（30 只大蓝筹映射）"
 
-    def evaluate(self, symbol, market, candles, recent_news=None):
-        # TODO: 双重上市映射 + 实时价差计算
-        return None
+    def __init__(self, premium_threshold_pct: float = 30.0):
+        self.premium_threshold_pct = premium_threshold_pct
+
+    async def evaluate(self, symbol, market, candles, recent_news=None):
+        mkt = market.value if hasattr(market, "value") else str(market)
+        if mkt not in ("cn", "hk"):
+            return None
+        try:
+            from backend.data.eastmoney_extra import fetch_ah_spread, AH_PAIRS
+            # 找对应的 a_symbol
+            if mkt == "cn":
+                if symbol not in AH_PAIRS:
+                    return None
+                a_symbol = symbol
+            else:
+                # hk → 反查
+                a_symbol = next((a for a, h in AH_PAIRS.items() if h == symbol), None)
+                if not a_symbol:
+                    return None
+            data = await fetch_ah_spread(a_symbol)
+        except Exception as e:
+            logger.debug(f"[ah-spread] {symbol} fetch failed: {e}")
+            return None
+        if not data or data.get("signal") is None:
+            return None
+        premium = data["premium_pct"]
+        # 决定方向：当前查询的 symbol 是哪边？
+        action = None
+        if data["signal"] == "a_premium_high":
+            # A 高估 → 买 H 卖 A
+            if mkt == "hk": action = "buy"
+        elif data["signal"] == "h_premium_high":
+            # H 高估 → 买 A 卖 H
+            if mkt == "cn": action = "buy"
+        if action is None:
+            return None
+        if abs(premium) < self.premium_threshold_pct:
+            return None
+        confidence = self.base_confidence + self._common_modifier(candles, recent_news)
+        last_close = float(candles[-1].close)
+        return self._make_signal(
+            symbol, market, action, last_close, confidence,
+            f"AH 价差 {premium:+.1f}% (A/H 配对 {data['a_symbol']}↔{data['h_symbol']})",
+            triggered_by={
+                "premium_pct": premium, "a_price": data["a_price"], "h_price": data["h_price"],
+                "pair_a": data["a_symbol"], "pair_h": data["h_symbol"],
+            },
+            candles=candles,
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1294,15 +1450,77 @@ class VWAPPullbackStrategy(Strategy):
 
 
 class EarningsWindowFilter(Strategy):
-    """财报窗口过滤器 — 财报前后 N 日不发新仓信号（需要财报日历 API）"""
+    """v12.16 财报窗口过滤器 — 实施版：美股临近财报（前 3 日 / 后 1 日）evaluate 不发信号
+    注意：本策略本身只产生 None；真正的"屏蔽其他策略"由 monitor.is_in_earnings_window() 在入口检查
+    """
     name = "earnings_window_filter"
-    base_confidence = 0  # 不参与共振
-    description = "美股财报前 3 日 / 后 1 日规避新仓（财报日历 API 待对接）"
+    base_confidence = 0
+    description = "美股财报前 3 日 / 后 1 日规避新仓（yfinance 财报日历）"
 
     def evaluate(self, symbol, market, candles, recent_news=None):
-        # TODO: 对接 yfinance.Ticker.calendar 拉下次财报日期
-        # 这是个"过滤器"，未来可在 _evaluate_symbol 入口处特殊处理
+        return None  # 仅作为标记类策略；过滤逻辑在 monitor 入口
+
+
+# 模块级缓存 — yfinance 财报日历 24h TTL（财报日期不会频繁变）
+_EARNINGS_CACHE: Dict[str, Tuple[float, Optional[float]]] = {}
+_EARNINGS_TTL = 86400
+
+
+async def get_next_earnings_ts(symbol: str) -> Optional[float]:
+    """v12.16 拉美股下次财报日期（unix ts）。失败返回 None。"""
+    cache = _EARNINGS_CACHE.get(symbol)
+    now = time.time()
+    if cache and now - cache[0] < _EARNINGS_TTL:
+        return cache[1]
+    try:
+        # 在 thread 里跑 yfinance（同步库）
+        import asyncio
+        def _fetch():
+            try:
+                import yfinance as yf
+                t = yf.Ticker(symbol)
+                cal = t.calendar
+                if not cal:
+                    return None
+                # cal 可能是 dict 或 DataFrame
+                if isinstance(cal, dict):
+                    dates = cal.get("Earnings Date") or cal.get("Earnings Datetime") or []
+                    if isinstance(dates, list) and dates:
+                        d0 = dates[0]
+                        if hasattr(d0, "timestamp"):
+                            return d0.timestamp()
+                # DataFrame 兜底
+                try:
+                    if hasattr(cal, "iloc"):
+                        v = cal.iloc[0, 0]
+                        if hasattr(v, "timestamp"):
+                            return v.timestamp()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            return None
+        ts = await asyncio.get_event_loop().run_in_executor(None, _fetch)
+        _EARNINGS_CACHE[symbol] = (now, ts)
+        return ts
+    except Exception as e:
+        logger.debug(f"[earnings] {symbol} 拉财报日期失败: {e}")
+        _EARNINGS_CACHE[symbol] = (now, None)
         return None
+
+
+async def is_in_earnings_window(symbol: str, market: str,
+                                 days_before: int = 3, days_after: int = 1) -> bool:
+    """v12.16 美股是否临近财报。仅美股有效（其他市场返回 False）"""
+    if market != "us":
+        return False
+    ts = await get_next_earnings_ts(symbol)
+    if not ts:
+        return False
+    now = time.time()
+    diff_days = (ts - now) / 86400
+    # 前 N 日 / 后 N 日内（即 ts 在 now+N 到 now-N 之间）
+    return -days_after <= diff_days <= days_before
 
 
 ALL_STRATEGIES: Dict[str, type] = {
@@ -1443,10 +1661,10 @@ STRATEGY_MARKET_MATRIX: Dict[str, Dict[str, list]] = {
         "us": [{"interval": "1D", "params": {"gap_threshold_pct": 3.0}}],
     },
     "vwap_pullback": {
-        # 暂不绑定（数据源未到位，避免空跑）
+        # 暂不绑定（需要 1m / 5m K 线，数据基础设施未到位）
     },
     "earnings_window_filter": {
-        # 暂不绑定（财报 API 未对接，避免空跑）
+        # 不发信号 — 实际过滤逻辑在 monitor._evaluate_symbol 入口（is_in_earnings_window）
     },
 }
 
