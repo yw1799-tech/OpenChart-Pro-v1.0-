@@ -1233,11 +1233,17 @@ async def _aged_position_advice_loop():
 
 async def _pending_orders_retry_loop():
     """
-    待开市自动重触发循环：
-      扫描近 60 分钟内 ai_verdict='confirm' + auto_trade_log status='rejected'
-      且 rejected_reason 含"未到连续竞价时段"的信号；
-      若当前已开市 → 重新触发 auto_trader.on_signal_verified。
-    每 60 秒扫一次，覆盖 9:30 / 13:00 / 9:30ET 等开市瞬间。
+    v12.18.0: 待开市 4 层重验 + 重触发循环。
+      扫描近 7 天 ai_verdict='confirm' + auto_trade_log status='rejected'
+      且 rejected_reason 含 'pending' 的信号；当前已开市 + 未重验过 →
+        1. 走 signal_revalidator.revalidate_signal (4 层闸门)
+        2. tier='pass' → on_signal_verified (开仓)
+        3. tier='ai_error' → 不写 reval 结果，下轮再试
+        4. 其他 tier (gap/strategy/news/ai) → 写 reject log + 标记 revalidated_at
+    每 60 秒扫一次。
+
+    旧版 60min hardcoded cutoff 已废弃 — 改 7 天，覆盖春节/国庆等长假；
+    时效靠 revalidator 的 4 层闸门保证（行情变了就 reject，不靠时间硬截断）。
     """
     await asyncio.sleep(120)
     while True:
@@ -1246,16 +1252,18 @@ async def _pending_orders_retry_loop():
                 await asyncio.sleep(60)
                 continue
             from backend.signals.monitor import is_market_executable
+            from backend.trading.signal_revalidator import revalidate_signal
             now_ms = int(time.time() * 1000)
-            cutoff_ms = now_ms - 60 * 60 * 1000
-            cutoff_sec = int(time.time()) - 60 * 60
+            cutoff_ms = now_ms - 7 * 24 * 60 * 60 * 1000   # 7 天硬上限
+            cutoff_sec = int(time.time()) - 7 * 24 * 60 * 60
 
-            # 找近 60min 内的 confirm 信号：有 pending 拒绝记录 + 之后没有成功执行记录
+            # 找未重验过 + 有 pending 拒绝 + 没成功执行的 confirm 信号
             async with db.acquire() as conn:
                 cur = await conn.execute(
-                    """SELECT s.id, s.symbol, s.market FROM signals s
+                    """SELECT s.* FROM signals s
                        WHERE s.ai_verdict = 'confirm'
                          AND s.generated_at > ?
+                         AND (s.revalidated_at IS NULL OR s.revalidated_at = 0)
                          AND EXISTS (
                              SELECT 1 FROM auto_trade_log l
                              WHERE l.symbol = s.symbol AND l.market = s.market
@@ -1274,20 +1282,85 @@ async def _pending_orders_retry_loop():
                 )
                 pending = [dict(r) for r in await cur.fetchall()]
 
-            if pending:
-                fired = 0
-                for sig in pending:
-                    if not is_market_executable(sig["market"]):
-                        continue
+            if not pending:
+                await asyncio.sleep(60)
+                continue
+
+            fired = 0
+            rejected = 0
+            ai_errors = 0
+            for sig in pending:
+                if not is_market_executable(sig["market"]):
+                    continue
+                # 4 层重验
+                try:
+                    tier, reason, new_conf, new_sl, new_tp = await revalidate_signal(
+                        db, sig, monitor_engine=monitor_engine,
+                    )
+                except Exception as e:
+                    logger.warning(f"[reval-retry] {sig['symbol']} 重验异常: {e}")
+                    continue
+
+                # ai_error → 不持久化 revalidated_at，等下轮 60s 再试
+                if tier == "ai_error":
+                    ai_errors += 1
+                    logger.info(
+                        f"[reval-retry] {sig['symbol']}({sig['market']}) AI 重验失败 (将下轮重试): {reason}"
+                    )
+                    continue
+
+                # 其他结果都标记为已重验
+                try:
+                    async with db.acquire() as conn:
+                        await conn.execute(
+                            """UPDATE signals SET revalidated_at=?, revalidation_tier=?, revalidation_reason=?
+                               WHERE id=?""",
+                            (now_ms, tier, reason[:500], sig["id"]),
+                        )
+                        await conn.commit()
+                except Exception as e:
+                    logger.debug(f"[reval-retry] {sig['symbol']} 标记 revalidated 失败: {e}")
+
+                if tier == "pass":
+                    # 通过 4 层 → 触发开仓
                     try:
                         await auto_trader.on_signal_verified(sig["id"])
                         fired += 1
+                        logger.info(
+                            f"[reval-retry] {sig['symbol']}({sig['market']}) 重验通过 → 开仓 ({reason})"
+                        )
                     except Exception as e:
-                        logger.debug(f"[pending-retry] {sig['symbol']} 异常: {e}")
-                if fired > 0:
-                    logger.info(f"[pending-retry] 开市重触发 {fired}/{len(pending)} 个 pending 信号")
+                        logger.debug(f"[reval-retry] {sig['symbol']} on_signal_verified 异常: {e}")
+                else:
+                    # gap / strategy / news / ai → 写 reject log（reason 不含 pending，不再被本 loop 抓到）
+                    rejected += 1
+                    try:
+                        async with db.acquire() as conn:
+                            await conn.execute(
+                                """INSERT INTO auto_trade_log (symbol, market, action, quantity, price,
+                                   amount_usd, fx_rate, trigger_type, trigger_detail, reason, status,
+                                   rejected_reason, traded_at)
+                                   VALUES (?, ?, 'open', 0, 0, 0, 1, 'revalidation', ?, ?,
+                                           'rejected', ?, ?)""",
+                                (sig["symbol"], sig["market"],
+                                 json.dumps({"tier": tier, "signal_id": sig["id"]}, ensure_ascii=False),
+                                 sig.get("reason", "") or "",
+                                 f"重验失效({tier}): {reason}"[:500],
+                                 int(time.time())),
+                            )
+                            await conn.commit()
+                    except Exception as e:
+                        logger.debug(f"[reval-retry] {sig['symbol']} 写 reject 日志失败: {e}")
+                    logger.info(
+                        f"[reval-retry] {sig['symbol']}({sig['market']}) 重验失效 [{tier}]: {reason}"
+                    )
+
+            if fired or rejected or ai_errors:
+                logger.info(
+                    f"[reval-retry] 本轮 pending {len(pending)} 条: 开仓 {fired} / 拒单 {rejected} / AI 失败重试 {ai_errors}"
+                )
         except Exception as e:
-            logger.warning(f"待开市重试循环异常: {e}")
+            logger.warning(f"待开市重验循环异常: {e}")
         await asyncio.sleep(60)
 
 

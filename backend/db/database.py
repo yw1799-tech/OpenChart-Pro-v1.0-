@@ -272,7 +272,7 @@ class DatabaseManager:
         # 查当前 schema 版本
         cur = await conn.execute("PRAGMA user_version")
         current_version = (await cur.fetchone())[0]
-        TARGET_VERSION = 15  # v15: trade_review 加 strategy_param_analysis（v12.16.2 复盘策略参数分析）
+        TARGET_VERSION = 16  # v16 (v12.18.0): signals 加 revalidation 字段（4 层重验机制）
         if current_version < TARGET_VERSION:
             # v12.11: 用 BEGIN/COMMIT 包整个迁移；任何步骤抛错则 ROLLBACK + 不前进 user_version
             migration_ok = True
@@ -329,6 +329,12 @@ class DatabaseManager:
                 "ALTER TABLE lesson_pattern ADD COLUMN suggested_params TEXT",      # JSON：LLM 建议的参数
                 # v15 (v12.16.2) 复盘策略参数分析：LLM 评估开仓策略参数合理性 + 改进建议
                 "ALTER TABLE trade_review ADD COLUMN strategy_param_analysis TEXT",  # JSON
+                # v16 (v12.18.0) 4 层重验机制：开市后 pending 信号需重新验证有效性
+                "ALTER TABLE signals ADD COLUMN revalidated_at INTEGER DEFAULT 0",
+                "ALTER TABLE signals ADD COLUMN revalidation_tier TEXT DEFAULT ''",     # gap/strategy/news/ai/pass
+                "ALTER TABLE signals ADD COLUMN revalidation_reason TEXT DEFAULT ''",
+                "ALTER TABLE signals ADD COLUMN original_ai_verdict TEXT DEFAULT ''",   # 重验前备份
+                "ALTER TABLE signals ADD COLUMN original_ai_confidence INTEGER DEFAULT 0",
             ]:
                 try:
                     await conn.execute(alter)
