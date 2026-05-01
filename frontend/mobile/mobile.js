@@ -1,0 +1,1159 @@
+// OpenChart Pro Mobile — 7 tab SPA
+// 复用现有 API：
+//   /api/auto-trade/status       总览 + 池数据 + 系统配置
+//   /api/news/flash              新闻快讯列表
+//   /api/news/flash/{id}/analyze 触发 AI 深度解读
+//   /api/news/cost               LLM 今日成本
+//   /api/pool                    候选池列表
+//   /api/pool/{id}/diagnosis     候选池 AI 诊断
+//   /api/signals                 策略信号列表
+//   /api/signals/{id}            信号详情（含 related_news + pool_context）
+//   /api/positions               持仓
+//   /api/positions/advices/latest 每个持仓的最新 AI 建议
+//   /api/auto-trade/log          自动交易历史
+//   /api/trade-review                 复盘列表
+//   /api/trade-review/{position_id}   单笔复盘详情
+//   /api/trade-review/lessons/top     教训库
+//   /api/auto-trade/toggle       开关
+//   /api/auto-trade/summary-now  立即推持仓简报
+//   /api/settings/telegram-test  Telegram 测试
+
+(function() {
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => document.querySelectorAll(s);
+
+  const PAGE_TITLES = {
+    overview: '总览', news: '新闻快讯', pool: '候选池',
+    signals: '策略信号', positions: '持仓管理',
+    review: '复盘学习', settings: '设置',
+  };
+  const MARKET_LABEL = { crypto: '加密', us: '美股', hk: '港股', cn: 'A股', macro: '宏观' };
+  const ACTION_ICON = { open: '📥', add: '➕', reduce: '➖', close: '🏁' };
+  const ACTION_LABEL = { open: '开仓', add: '加仓', reduce: '减仓', close: '平仓' };
+  const VERDICT_LABEL = {
+    confirm: '✅', warn: '⚠️', reject: '❌',
+    skipped: '⊘', llm_error: '⛔', stale: '⌛',
+  };
+  const VERDICT_CLASS = {
+    confirm: 'up', warn: 'warn', reject: 'down',
+    skipped: 'muted', llm_error: 'down', stale: 'muted',
+  };
+  const POOL_STATUS_LABEL = {
+    active: '活跃', cooling: '冷却', archived: '归档', candidate: '候选',
+  };
+  const GRADE_LABEL = { A: '优', B: '良', C: '一般', D: '差' };
+
+  let _state = {
+    activeTab: 'overview',
+    signalFilter: 'all',
+    newsFilter: 'all',
+    poolFilter: 'all',
+    reviewFilter: 'reviews',
+    cache: {
+      status: null, positions: null, signals: null, history: null,
+      news: null, pool: null, reviews: null, lessons: null,
+      advices: null, llmCost: null, riskRules: null,
+    },
+  };
+
+  // ─── Tab 切换 ───
+  $$('.tab').forEach(tab => {
+    tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+  });
+
+  function switchTab(name) {
+    _state.activeTab = name;
+    $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    $$('.page').forEach(p => p.classList.toggle('active', p.dataset.page === name));
+    $('#page-title').textContent = PAGE_TITLES[name] || name;
+    refresh();
+  }
+
+  // ─── Filter chips ───
+  $$('.chip[data-vfilter]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      _state.signalFilter = chip.dataset.vfilter;
+      $$('.chip[data-vfilter]').forEach(c => c.classList.toggle('active', c === chip));
+      renderSignals();
+    });
+  });
+  $$('.chip[data-nfilter]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      _state.newsFilter = chip.dataset.nfilter;
+      $$('.chip[data-nfilter]').forEach(c => c.classList.toggle('active', c === chip));
+      _state.cache.news = null;
+      renderNews();
+    });
+  });
+  $$('.chip[data-pfilter]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      _state.poolFilter = chip.dataset.pfilter;
+      $$('.chip[data-pfilter]').forEach(c => c.classList.toggle('active', c === chip));
+      renderPool();
+    });
+  });
+  $$('.chip[data-rfilter]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      _state.reviewFilter = chip.dataset.rfilter;
+      $$('.chip[data-rfilter]').forEach(c => c.classList.toggle('active', c === chip));
+      renderReview();
+    });
+  });
+
+  // ─── 设置页交互 ───
+  $('#auto-trade-toggle').addEventListener('change', async (e) => {
+    try {
+      const r = await fetch('/api/auto-trade/toggle', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({enabled: e.target.checked}),
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      toast(e.target.checked ? '✅ 自动交易已开启' : '🔴 自动交易已关闭', 'up');
+      _state.cache.status = null; refresh();
+    } catch (err) {
+      toast('❌ 切换失败: ' + err.message, 'down');
+      e.target.checked = !e.target.checked;
+    }
+  });
+
+  $('#tg-test-btn').addEventListener('click', async () => {
+    toast('⏳ 发送中…');
+    try {
+      const r = await fetch('/api/settings/telegram-test', {method: 'POST'});
+      const d = await r.json();
+      if (d.ok) toast('✅ 已发送到 Telegram', 'up');
+      else toast('❌ ' + (d.error || '失败'), 'down');
+    } catch (err) {
+      toast('❌ ' + err.message, 'down');
+    }
+  });
+
+  $('#summary-now-btn').addEventListener('click', async () => {
+    toast('⏳ 推送中…');
+    try {
+      const r = await fetch('/api/auto-trade/summary-now', {method: 'POST'});
+      if (r.status === 404) { toast('该功能等下一个版本', 'warn'); return; }
+      const d = await r.json();
+      if (d.ok) toast('✅ 已推送', 'up');
+      else toast('❌ ' + (d.error || '失败'), 'down');
+    } catch (err) {
+      toast('❌ ' + err.message, 'down');
+    }
+  });
+
+  // ─── 刷新按钮 ───
+  $('#refresh-btn').addEventListener('click', () => {
+    Object.keys(_state.cache).forEach(k => _state.cache[k] = null);
+    const btn = $('#refresh-btn');
+    btn.classList.add('spinning');
+    setTimeout(() => btn.classList.remove('spinning'), 600);
+    refresh();
+  });
+
+  // ─── Sheet 抽屉 ───
+  function openSheet(title, html) {
+    $('#sheet-title').textContent = title;
+    $('#sheet-content').innerHTML = html;
+    $('#sheet').hidden = false;
+  }
+  function closeSheet() { $('#sheet').hidden = true; }
+  $('#sheet-close').addEventListener('click', closeSheet);
+  $('.sheet-mask').addEventListener('click', closeSheet);
+
+  // ─── 数据获取 ───
+  async function fetchJSON(url, opts) {
+    const r = await fetch(url, opts);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }
+  async function loadStatus() {
+    if (_state.cache.status) return _state.cache.status;
+    _state.cache.status = await fetchJSON('/api/auto-trade/status');
+    return _state.cache.status;
+  }
+  async function loadPositions() {
+    if (_state.cache.positions) return _state.cache.positions;
+    _state.cache.positions = await fetchJSON('/api/positions');
+    return _state.cache.positions;
+  }
+  async function loadAdvices() {
+    if (_state.cache.advices) return _state.cache.advices;
+    try {
+      _state.cache.advices = await fetchJSON('/api/positions/advices/latest');
+    } catch { _state.cache.advices = []; }
+    return _state.cache.advices;
+  }
+  async function loadSignals() {
+    if (_state.cache.signals) return _state.cache.signals;
+    _state.cache.signals = await fetchJSON('/api/signals?limit=100');
+    return _state.cache.signals;
+  }
+  async function loadHistory() {
+    if (_state.cache.history) return _state.cache.history;
+    _state.cache.history = await fetchJSON('/api/auto-trade/log?limit=50');
+    return _state.cache.history;
+  }
+  async function loadNews() {
+    if (_state.cache.news) return _state.cache.news;
+    const f = _state.newsFilter;
+    let url = '/api/news/flash?limit=80';
+    if (f === 'important') url += '&importance_min=3';
+    else if (['crypto','us','hk','cn','macro'].includes(f)) url += '&market=' + f;
+    _state.cache.news = await fetchJSON(url);
+    return _state.cache.news;
+  }
+  async function loadPool() {
+    if (_state.cache.pool) return _state.cache.pool;
+    _state.cache.pool = await fetchJSON('/api/pool?limit=200');
+    return _state.cache.pool;
+  }
+  async function loadReviews() {
+    if (_state.cache.reviews) return _state.cache.reviews;
+    _state.cache.reviews = await fetchJSON('/api/trade-review?limit=50');
+    return _state.cache.reviews;
+  }
+  async function loadLessons() {
+    if (_state.cache.lessons) return _state.cache.lessons;
+    _state.cache.lessons = await fetchJSON('/api/trade-review/lessons/top?limit=80');
+    return _state.cache.lessons;
+  }
+  async function loadLLMCost() {
+    if (_state.cache.llmCost) return _state.cache.llmCost;
+    try { _state.cache.llmCost = await fetchJSON('/api/news/cost'); }
+    catch { _state.cache.llmCost = null; }
+    return _state.cache.llmCost;
+  }
+
+  // ─── 工具 ───
+  function fmtMoney(v, ccy = 'USD') {
+    if (v == null || isNaN(v)) return '—';
+    const sym = ccy === 'CNY' ? '¥' : ccy === 'HKD' ? 'HK$' : '$';
+    const sign = v < 0 ? '-' : '';
+    const abs = Math.abs(v);
+    return `${sign}${sym}${abs.toLocaleString('en-US', {maximumFractionDigits: 2})}`;
+  }
+  function fmtPct(v) {
+    if (v == null || isNaN(v)) return '—';
+    return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+  }
+  function fmtPnl(v, ccy = 'USD') {
+    if (v == null || isNaN(v)) return '—';
+    const sym = ccy === 'CNY' ? '¥' : ccy === 'HKD' ? 'HK$' : '$';
+    return `${v >= 0 ? '+' : '-'}${sym}${Math.abs(v).toFixed(2)}`;
+  }
+  function fmtTime(ts) {
+    if (!ts) return '—';
+    const d = ts > 1e12 ? new Date(ts) : new Date(ts * 1000);
+    return d.toLocaleString('zh-CN', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'});
+  }
+  function fmtRelTime(ts) {
+    if (!ts) return '—';
+    const ms = ts > 1e12 ? ts : ts * 1000;
+    const diff = (Date.now() - ms) / 1000;
+    if (diff < 60) return '刚刚';
+    if (diff < 3600) return Math.floor(diff/60) + ' 分钟前';
+    if (diff < 86400) return Math.floor(diff/3600) + ' 小时前';
+    if (diff < 7*86400) return Math.floor(diff/86400) + ' 天前';
+    return fmtTime(ts);
+  }
+  function escape(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+  function stars(n) {
+    n = Math.max(0, Math.min(5, parseInt(n) || 0));
+    return '★'.repeat(n) + '☆'.repeat(5 - n);
+  }
+  function sentimentEmoji(s) {
+    if (s == null) return '';
+    if (s > 0.3) return '🟢';
+    if (s < -0.3) return '🔴';
+    return '⚪';
+  }
+  function toast(text, kind = '') {
+    const t = $('#toast');
+    t.textContent = text;
+    t.className = 'toast show' + (kind ? ' ' + kind : '');
+    setTimeout(() => t.classList.remove('show'), 2500);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 1. 总览
+  // ═══════════════════════════════════════════════════════════
+  async function renderOverview() {
+    try {
+      const [status, log, signals] = await Promise.all([
+        loadStatus(), loadHistory(), loadSignals(),
+      ]);
+
+      const enabled = status.enabled;
+      const badge = $('#enabled-badge');
+      badge.textContent = enabled ? '自动交易 开' : '自动交易 关';
+      badge.className = 'badge ' + (enabled ? 'on' : 'off');
+
+      const pools = status.pools || [];
+      let totalEquityUSD = 0, totalPnlUSD = 0, totalInitialUSD = 0;
+      for (const p of pools) {
+        totalEquityUSD += p.equity_usd || 0;
+        totalPnlUSD += p.pnl_usd || 0;
+        const fx = p.fx_to_usd || 1;
+        totalInitialUSD += (p.initial_capital || 0) * fx;
+      }
+      $('#ov-equity').textContent = fmtMoney(totalEquityUSD);
+      const pctTotal = totalInitialUSD > 0 ? (totalPnlUSD / totalInitialUSD * 100) : 0;
+      $('#ov-pnl').innerHTML = `<span class="${totalPnlUSD>=0?'up':'down'}">${fmtPnl(totalPnlUSD)} (${fmtPct(pctTotal)})</span>`;
+
+      const poolHtml = pools.sort((a,b)=> {
+        const ord = {us_hk:0, cn:1, crypto:2};
+        return (ord[a.pool_id]||9) - (ord[b.pool_id]||9);
+      }).map(p => {
+        const cls = (p.pnl||0) >= 0 ? 'up' : 'down';
+        const ccy = p.currency || 'USD';
+        return `<div class="pool-card ${cls}">
+          <div>
+            <div class="pool-name">${escape(p.name)} (${ccy})</div>
+            <div class="pool-equity">${fmtMoney(p.equity, ccy)}</div>
+            <div class="pool-pnl ${cls}">${fmtPnl(p.pnl, ccy)} (${fmtPct(p.pnl_pct)})</div>
+            <div class="pool-meta">现金 ${fmtMoney(p.cash, ccy)} · 持仓 ${fmtMoney(p.positions_value, ccy)}</div>
+          </div>
+          <div class="pool-arrow">›</div>
+        </div>`;
+      }).join('');
+      $('#ov-pools').innerHTML = poolHtml || '<div class="empty">暂无池数据</div>';
+
+      const trades = (log.items || []).filter(t => t.status === 'executed').slice(0, 5);
+      $('#ov-recent-trades-list').innerHTML = trades.length
+        ? trades.map(renderTradeRow).join('')
+        : '<div class="empty small">暂无成交</div>';
+
+      const sigs = (signals.items || []).filter(s => ['confirm','warn'].includes(s.ai_verdict)).slice(0, 5);
+      $('#ov-recent-signals-list').innerHTML = sigs.length
+        ? sigs.map(renderSignalRow).join('')
+        : '<div class="empty small">暂无重点信号</div>';
+
+    } catch (e) {
+      console.error(e);
+      $('#ov-equity').textContent = '加载失败';
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 2. 新闻快讯
+  // ═══════════════════════════════════════════════════════════
+  async function renderNews() {
+    try {
+      const data = await loadNews();
+      const items = data.items || [];
+      if (!items.length) {
+        $('#news-list').innerHTML = '<div class="empty"><div class="empty-icon">📰</div><div>暂无新闻</div></div>';
+        return;
+      }
+      $('#news-list').innerHTML = items.map(renderNewsCard).join('');
+      $$('#news-list .news-card').forEach(card => {
+        card.addEventListener('click', () => openNewsDetail(card.dataset.id));
+      });
+    } catch (e) {
+      console.error(e);
+      $('#news-list').innerHTML = '<div class="empty">加载失败</div>';
+    }
+  }
+
+  function renderNewsCard(n) {
+    const imp = parseInt(n.importance) || 1;
+    const sent = n.sentiment;
+    let cls = `imp-${imp}`;
+    if (sent > 0.3) cls = 'sent-up';
+    else if (sent < -0.3) cls = 'sent-down';
+    const aiBadge = n.ai_analysis ? '<span class="ai-badge">AI 已解读</span>' : '';
+    const market = MARKET_LABEL[n.market] || n.market || '';
+    return `<div class="news-card ${cls}" data-id="${escape(n.id)}">
+      <div class="news-title">${escape(n.title || '').slice(0, 120)}</div>
+      <div class="news-meta">
+        <span>${escape(n.source || '')}</span>
+        ${market ? `<span>${market}</span>` : ''}
+        <span class="stars">${stars(imp)}</span>
+        ${sent != null ? `<span>${sentimentEmoji(sent)}</span>` : ''}
+        ${aiBadge}
+        <span style="margin-left:auto;">${fmtRelTime(n.published_at || n.collected_at)}</span>
+      </div>
+    </div>`;
+  }
+
+  async function openNewsDetail(id) {
+    openSheet('新闻详情', '<div class="empty">加载中…</div>');
+    try {
+      const n = await fetchJSON('/api/news/flash/' + encodeURIComponent(id));
+      const aiHtml = n.ai_analysis
+        ? renderAIAnalysis(n.ai_analysis)
+        : `<div class="muted">尚无 AI 解读</div>
+           <button class="btn" id="ai-trigger-btn" style="margin-top:8px;">🤖 触发 LLM 深度解读</button>`;
+      const body = `
+        <h4>标题</h4>
+        <div>${escape(n.title || '')}</div>
+        <h4>正文</h4>
+        <div style="white-space:pre-wrap;">${escape((n.content || '').slice(0, 2000))}</div>
+        <h4>来源 / 时间</h4>
+        <div class="kv-row"><span class="k">来源</span><span class="v">${escape(n.source || '')}</span></div>
+        <div class="kv-row"><span class="k">发布</span><span class="v">${fmtTime(n.published_at)}</span></div>
+        <div class="kv-row"><span class="k">重要度</span><span class="v">${stars(n.importance || 1)}</span></div>
+        <div class="kv-row"><span class="k">情绪</span><span class="v">${sentimentEmoji(n.sentiment)} ${(n.sentiment||0).toFixed(2)}</span></div>
+        ${n.url ? `<div class="kv-row"><span class="k">原文</span><a href="${escape(n.url)}" target="_blank">打开</a></div>` : ''}
+        <h4>🤖 AI 深度解读</h4>
+        ${aiHtml}
+      `;
+      $('#sheet-content').innerHTML = body;
+      const btn = $('#ai-trigger-btn');
+      if (btn) btn.addEventListener('click', async () => {
+        btn.disabled = true; btn.textContent = '⏳ LLM 调用中…';
+        try {
+          const r = await fetch('/api/news/flash/' + encodeURIComponent(id) + '/analyze', {method:'POST'});
+          const d = await r.json();
+          if (r.ok) {
+            toast('✅ 解读完成', 'up');
+            _state.cache.news = null;
+            openNewsDetail(id);
+          } else {
+            toast('❌ ' + (d.detail || '失败'), 'down');
+            btn.disabled = false; btn.textContent = '🤖 重试';
+          }
+        } catch (e) {
+          toast('❌ ' + e.message, 'down');
+          btn.disabled = false; btn.textContent = '🤖 重试';
+        }
+      });
+    } catch (e) {
+      $('#sheet-content').innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
+    }
+  }
+
+  function renderAIAnalysis(a) {
+    if (typeof a === 'string') {
+      try { a = JSON.parse(a); } catch { return `<div>${escape(a)}</div>`; }
+    }
+    const fields = [];
+    if (a.summary) fields.push(`<h4>摘要</h4><div>${escape(a.summary)}</div>`);
+    if (a.impact) fields.push(`<h4>影响</h4><div>${escape(a.impact)}</div>`);
+    if (a.affected_symbols && a.affected_symbols.length) {
+      fields.push(`<h4>受影响标的</h4><div>${a.affected_symbols.map(s=>`<code>${escape(s)}</code>`).join(' · ')}</div>`);
+    }
+    if (a.action_suggestion) fields.push(`<h4>操作建议</h4><div>${escape(a.action_suggestion)}</div>`);
+    if (a.confidence != null) fields.push(`<div class="kv-row"><span class="k">置信度</span><span class="v">${a.confidence}</span></div>`);
+    return fields.join('') || `<pre style="white-space:pre-wrap;">${escape(JSON.stringify(a, null, 2))}</pre>`;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 3. 候选池
+  // ═══════════════════════════════════════════════════════════
+  async function renderPool() {
+    try {
+      const data = await loadPool();
+      let items = (data.items || []);
+      const f = _state.poolFilter;
+      if (f === 'active') items = items.filter(p => p.status === 'active');
+      else if (f === 'cooling') items = items.filter(p => p.status === 'cooling');
+      else if (['us','hk','cn'].includes(f)) items = items.filter(p => p.market === f);
+      $('#pool-count').textContent = items.length;
+      if (!items.length) {
+        $('#pool-list').innerHTML = '<div class="empty"><div class="empty-icon">🎯</div><div>无候选池条目</div></div>';
+        return;
+      }
+      $('#pool-list').innerHTML = items.map(renderPoolRow).join('');
+      $$('#pool-list .pool-row').forEach(r => {
+        r.addEventListener('click', () => openPoolDetail(r.dataset.id));
+      });
+    } catch (e) {
+      console.error(e);
+      $('#pool-list').innerHTML = '<div class="empty">加载失败</div>';
+    }
+  }
+
+  function renderPoolRow(p) {
+    const score = parseFloat(p.score) || 0;
+    let scoreCls = 'low';
+    if (score >= 70) scoreCls = 'high';
+    else if (score >= 50) scoreCls = 'mid';
+    const sCls = `s-${p.status || 'archived'}`;
+    return `<div class="pool-row ${sCls}" data-id="${p.id}">
+      <div class="pool-row-hdr">
+        <div class="row-symbol">${escape(p.symbol)} <span class="small muted">${MARKET_LABEL[p.market]||p.market}</span></div>
+        <div class="score-badge ${scoreCls}">${score.toFixed(1)}</div>
+      </div>
+      <div class="row-meta">
+        ${POOL_STATUS_LABEL[p.status] || p.status} · ${escape((p.reason || '').slice(0, 60))}
+      </div>
+      ${p.ai_diagnosis ? `<div class="row-reason">🤖 ${escape(extractDiagSummary(p.ai_diagnosis)).slice(0, 100)}</div>` : ''}
+    </div>`;
+  }
+  function extractDiagSummary(diag) {
+    if (typeof diag === 'string') {
+      try { diag = JSON.parse(diag); } catch { return diag; }
+    }
+    return diag.summary || diag.rating || diag.verdict || JSON.stringify(diag).slice(0, 80);
+  }
+
+  async function openPoolDetail(id) {
+    openSheet('候选池详情', '<div class="empty">加载中…</div>');
+    try {
+      // 用 list 缓存找到本条
+      const data = await loadPool();
+      const item = (data.items || []).find(x => String(x.id) === String(id));
+      if (!item) { $('#sheet-content').innerHTML = '<div class="empty">未找到</div>'; return; }
+      let diag = item.ai_diagnosis;
+      if (typeof diag === 'string') {
+        try { diag = JSON.parse(diag); } catch {}
+      }
+      const score = parseFloat(item.score) || 0;
+      const html = `
+        <h4>基本信息</h4>
+        <div class="kv-row"><span class="k">代码</span><span class="v">${escape(item.symbol)}</span></div>
+        <div class="kv-row"><span class="k">市场</span><span class="v">${MARKET_LABEL[item.market]||item.market}</span></div>
+        <div class="kv-row"><span class="k">状态</span><span class="v">${POOL_STATUS_LABEL[item.status]||item.status}</span></div>
+        <div class="kv-row"><span class="k">综合分</span><span class="v">${score.toFixed(1)}</span></div>
+        <div class="kv-row"><span class="k">入池时间</span><span class="v">${fmtTime(item.added_at)}</span></div>
+        <div class="kv-row"><span class="k">入池原因</span><span class="v small">${escape(item.reason || '')}</span></div>
+        ${diag ? renderPoolDiagnosis(diag) : '<h4>🤖 AI 诊断</h4><div class="muted">尚无诊断</div>'}
+      `;
+      $('#sheet-content').innerHTML = html;
+    } catch (e) {
+      $('#sheet-content').innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
+    }
+  }
+  function renderPoolDiagnosis(d) {
+    const out = ['<h4>🤖 AI 诊断</h4>'];
+    if (d.rating) out.push(`<div class="kv-row"><span class="k">评级</span><span class="v">${escape(d.rating)}</span></div>`);
+    if (d.summary) out.push(`<div style="margin:6px 0;">${escape(d.summary)}</div>`);
+    if (d.bull_points && d.bull_points.length) {
+      out.push('<h4>多头逻辑</h4><ul>' + d.bull_points.map(x => `<li>${escape(x)}</li>`).join('') + '</ul>');
+    }
+    if (d.bear_points && d.bear_points.length) {
+      out.push('<h4>空头风险</h4><ul>' + d.bear_points.map(x => `<li>${escape(x)}</li>`).join('') + '</ul>');
+    }
+    if (d.entry_zone) out.push(`<div class="kv-row"><span class="k">建议入场区</span><span class="v">${escape(String(d.entry_zone))}</span></div>`);
+    if (d.target) out.push(`<div class="kv-row"><span class="k">目标价</span><span class="v">${escape(String(d.target))}</span></div>`);
+    if (d.stop) out.push(`<div class="kv-row"><span class="k">止损位</span><span class="v">${escape(String(d.stop))}</span></div>`);
+    return out.join('');
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 4. 策略信号
+  // ═══════════════════════════════════════════════════════════
+  async function renderSignals() {
+    try {
+      const data = await loadSignals();
+      let items = data.items || [];
+      const f = _state.signalFilter;
+      if (f && f !== 'all') {
+        if (f === '') items = items.filter(s => !s.ai_verdict);
+        else items = items.filter(s => s.ai_verdict === f);
+      }
+      if (!items.length) {
+        $('#signals-list').innerHTML = '<div class="empty"><div class="empty-icon">📡</div><div>无信号</div></div>';
+        return;
+      }
+      $('#signals-list').innerHTML = items.slice(0, 100).map(renderSignalRow).join('');
+      $$('#signals-list .row').forEach(r => {
+        r.addEventListener('click', () => openSignalDetail(r.dataset.id));
+      });
+    } catch (e) {
+      console.error(e);
+      $('#signals-list').innerHTML = '<div class="empty">加载失败</div>';
+    }
+  }
+
+  function renderSignalRow(s) {
+    const v = s.ai_verdict || '';
+    const icon = VERDICT_LABEL[v] || '⏳';
+    const cls = VERDICT_CLASS[v] || 'accent';
+    const conf = s.ai_confidence || 0;
+    const dirCn = s.action === 'buy' ? 'BUY' : 'SELL';
+    const dirCls = s.action === 'buy' ? 'up' : 'down';
+    return `<div class="row ${cls}" data-id="${escape(s.id)}" style="cursor:pointer;">
+      <div class="row-title">
+        <div class="row-symbol">
+          ${icon} ${escape(s.symbol)}
+          <span class="small ${dirCls}">${dirCn}</span>
+          <span class="small muted">${MARKET_LABEL[s.market]||s.market}</span>
+        </div>
+        <div class="row-time">${fmtTime(s.generated_at)}</div>
+      </div>
+      <div class="row-meta">
+        ${escape(s.strategy_name)} · 系统 ${s.confidence||0} / AI ${conf} · ${s.interval||''}
+      </div>
+      ${s.ai_summary ? `<div class="row-reason">${escape(s.ai_summary).slice(0,140)}</div>`
+                     : (s.ai_reason ? `<div class="row-reason">${escape(s.ai_reason).slice(0,140)}</div>` : '')}
+    </div>`;
+  }
+
+  async function openSignalDetail(id) {
+    openSheet('信号详情', '<div class="empty">加载中…</div>');
+    try {
+      const s = await fetchJSON('/api/signals/' + encodeURIComponent(id));
+      const v = s.ai_verdict || '';
+      const verdictTxt = VERDICT_LABEL[v] || '⏳ 验证中';
+      const trig = s.triggered_by || {};
+      const trigKeys = Object.keys(trig);
+      const news = s.related_news || [];
+      const pool = s.pool_context;
+      const html = `
+        <h4>基本</h4>
+        <div class="kv-row"><span class="k">代码 / 方向</span><span class="v">${escape(s.symbol)} · ${s.action}</span></div>
+        <div class="kv-row"><span class="k">市场 / 周期</span><span class="v">${MARKET_LABEL[s.market]||s.market} · ${escape(s.interval||'')}</span></div>
+        <div class="kv-row"><span class="k">策略</span><span class="v">${escape(s.strategy_name||'')}</span></div>
+        <div class="kv-row"><span class="k">系统置信度</span><span class="v">${s.confidence||0}</span></div>
+        <div class="kv-row"><span class="k">价位</span><span class="v">${s.price||'—'}</span></div>
+        <div class="kv-row"><span class="k">生成时间</span><span class="v">${fmtTime(s.generated_at)}</span></div>
+        <h4>🤖 AI 验证</h4>
+        <div class="kv-row"><span class="k">判定</span><span class="v">${verdictTxt}</span></div>
+        <div class="kv-row"><span class="k">置信度</span><span class="v">${s.ai_confidence||0}</span></div>
+        ${s.ai_summary ? `<div style="margin:6px 0;">${escape(s.ai_summary)}</div>` : ''}
+        ${s.ai_reason ? `<h4>验证理由</h4><div>${escape(s.ai_reason)}</div>` : ''}
+        ${trigKeys.length ? `<h4>触发条件</h4><pre style="white-space:pre-wrap;font-size:12px;">${escape(JSON.stringify(trig, null, 2))}</pre>` : ''}
+        ${news.length ? `<h4>关联新闻 (${news.length})</h4>` + news.map(n => `
+          <div class="kv-row"><span class="k">${stars(n.importance||1)}</span><span class="v small">${escape((n.title||'').slice(0,80))}</span></div>
+        `).join('') : ''}
+        ${pool ? renderPoolContextInSignal(pool) : ''}
+      `;
+      $('#sheet-content').innerHTML = html;
+    } catch (e) {
+      $('#sheet-content').innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
+    }
+  }
+  function renderPoolContextInSignal(p) {
+    let d = p.diagnosis;
+    if (typeof d === 'string') { try { d = JSON.parse(d); } catch {} }
+    return `<h4>🎯 候选池上下文</h4>
+      <div class="kv-row"><span class="k">综合分</span><span class="v">${(p.pool_score||0).toFixed(1)}</span></div>
+      ${d && d.rating ? `<div class="kv-row"><span class="k">AI 评级</span><span class="v">${escape(d.rating)}</span></div>` : ''}
+      ${d && d.summary ? `<div style="margin:6px 0;font-size:12px;">${escape(d.summary).slice(0,200)}</div>` : ''}`;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 5. 持仓管理
+  // ═══════════════════════════════════════════════════════════
+  async function renderPositions() {
+    try {
+      const [items, advices] = await Promise.all([loadPositions(), loadAdvices()]);
+      $('#pos-count').textContent = items.length;
+      if (!items.length) {
+        $('#positions-list').innerHTML = `<div class="empty">
+          <div class="empty-icon">📭</div>
+          <div>暂无持仓</div>
+          <div class="small" style="margin-top:6px;">等系统自动开仓</div>
+        </div>`;
+        return;
+      }
+      const adviceMap = {};
+      (advices || []).forEach(a => { if (a && a.position_id) adviceMap[a.position_id] = a; });
+      $('#positions-list').innerHTML = items.map(p => renderPositionRow(p, adviceMap[p.id])).join('');
+      $$('#positions-list .row').forEach(r => {
+        r.addEventListener('click', () => openPositionDetail(r.dataset.id));
+      });
+    } catch (e) {
+      console.error(e);
+      $('#positions-list').innerHTML = '<div class="empty">加载失败</div>';
+    }
+  }
+
+  function renderPositionRow(p, advice) {
+    const avg = p.avg_cost || 0;
+    const cur = p.current_price || avg;
+    const qty = p.quantity || 0;
+    const side = p.side || 'long';
+    const sideCn = side === 'long' ? '多' : '空';
+    const ccy = p.cost_currency || 'USD';
+    const pnlPct = p.pnl_pct || 0;
+    const pnlLocal = p.pnl_local || 0;
+    const cls = pnlPct >= 0 ? 'up' : 'down';
+    const sl = p.stop_loss, tp = p.take_profit;
+    const adviceTxt = advice && advice.advice
+      ? `<div class="row-reason">🤖 ${escape(advice.advice)}${advice.reason ? ' · ' + escape(String(advice.reason).slice(0,80)) : ''}</div>`
+      : '';
+    return `<div class="row ${cls}" data-id="${escape(p.id)}" style="cursor:pointer;">
+      <div class="row-title">
+        <div class="row-symbol">${escape(p.symbol)} <span class="small muted">${MARKET_LABEL[p.market]||p.market} · ${sideCn}</span></div>
+        <div class="row-pnl ${cls}">${fmtPct(pnlPct)}</div>
+      </div>
+      <div class="row-meta">
+        ${qty.toLocaleString()} @ ${fmtMoney(avg, ccy)} → ${fmtMoney(cur, ccy)} · ${fmtPnl(pnlLocal, ccy)}
+      </div>
+      ${(sl || tp) ? `<div class="row-meta small">
+        ${sl ? `🛑 SL ${fmtMoney(sl, ccy)}` : ''} ${tp ? `🎯 TP ${fmtMoney(tp, ccy)}` : ''}
+      </div>` : ''}
+      ${adviceTxt}
+    </div>`;
+  }
+
+  async function openPositionDetail(id) {
+    openSheet('持仓详情', '<div class="empty">加载中…</div>');
+    try {
+      const [items, advices] = await Promise.all([loadPositions(), loadAdvices()]);
+      const p = items.find(x => String(x.id) === String(id));
+      if (!p) { $('#sheet-content').innerHTML = '<div class="empty">未找到</div>'; return; }
+      const advice = (advices || []).find(a => String(a.position_id) === String(id));
+      const ccy = p.cost_currency || 'USD';
+      const html = `
+        <h4>基本信息</h4>
+        <div class="kv-row"><span class="k">代码</span><span class="v">${escape(p.symbol)}</span></div>
+        <div class="kv-row"><span class="k">市场 / 方向</span><span class="v">${MARKET_LABEL[p.market]||p.market} · ${p.side==='long'?'多':'空'}</span></div>
+        <div class="kv-row"><span class="k">数量</span><span class="v">${(p.quantity||0).toLocaleString()}</span></div>
+        <div class="kv-row"><span class="k">均价</span><span class="v">${fmtMoney(p.avg_cost, ccy)}</span></div>
+        <div class="kv-row"><span class="k">现价</span><span class="v">${fmtMoney(p.current_price, ccy)}</span></div>
+        <div class="kv-row"><span class="k">浮盈</span><span class="v ${(p.pnl_pct||0)>=0?'up':'down'}">${fmtPnl(p.pnl_local, ccy)} (${fmtPct(p.pnl_pct)})</span></div>
+        <div class="kv-row"><span class="k">市值 USD</span><span class="v">${fmtMoney(p.market_value_usd)}</span></div>
+        <h4>风控</h4>
+        <div class="kv-row"><span class="k">止损 SL</span><span class="v">${p.stop_loss ? fmtMoney(p.stop_loss, ccy) : '—'}</span></div>
+        <div class="kv-row"><span class="k">止盈 TP</span><span class="v">${p.take_profit ? fmtMoney(p.take_profit, ccy) : '—'}</span></div>
+        <div class="kv-row"><span class="k">开仓时间</span><span class="v">${fmtTime(p.opened_at)}</span></div>
+        <h4>🤖 最新 AI 建议</h4>
+        ${advice && advice.advice
+          ? `<div class="kv-row"><span class="k">建议</span><span class="v">${escape(advice.advice)}</span></div>
+             ${advice.reason ? `<div style="margin:4px 0;">${escape(advice.reason)}</div>` : ''}
+             <div class="kv-row"><span class="k">时间</span><span class="v small">${fmtTime(advice.advised_at)}</span></div>`
+          : '<div class="muted">暂无建议</div>'}
+        <div class="sheet-actions">
+          <button class="btn" id="advise-now-btn">🤖 重新分析</button>
+        </div>
+      `;
+      $('#sheet-content').innerHTML = html;
+      const btn = $('#advise-now-btn');
+      if (btn) btn.addEventListener('click', async () => {
+        btn.disabled = true; btn.textContent = '⏳ 调用中…';
+        try {
+          const r = await fetch('/api/positions/' + encodeURIComponent(id) + '/advise', {method:'POST'});
+          if (r.ok) {
+            toast('✅ 已生成新建议', 'up');
+            _state.cache.advices = null;
+            openPositionDetail(id);
+          } else {
+            const d = await r.json().catch(()=>({}));
+            toast('❌ ' + (d.detail || '失败'), 'down');
+            btn.disabled = false; btn.textContent = '🤖 重试';
+          }
+        } catch (e) {
+          toast('❌ ' + e.message, 'down');
+          btn.disabled = false; btn.textContent = '🤖 重试';
+        }
+      });
+    } catch (e) {
+      $('#sheet-content').innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 6. 复盘学习（含历史成交、教训库）
+  // ═══════════════════════════════════════════════════════════
+  async function renderReview() {
+    const f = _state.reviewFilter;
+    if (f !== 'lessons') {
+      const ra = $('#review-actions');
+      if (ra) ra.style.display = 'none';
+    }
+    if (f === 'trades') return renderHistory();
+    if (f === 'lessons') return renderLessons();
+    return renderReviewList();
+  }
+
+  async function renderReviewList() {
+    try {
+      const data = await loadReviews();
+      const items = data.items || [];
+      if (!items.length) {
+        $('#review-list').innerHTML = '<div class="empty"><div class="empty-icon">🔍</div><div>暂无复盘</div><div class="small" style="margin-top:6px;">闭环交易后台自动生成</div></div>';
+        return;
+      }
+      $('#review-list').innerHTML = items.map(renderReviewRow).join('');
+      $$('#review-list .row').forEach(r => {
+        r.addEventListener('click', () => openReviewDetail(r.dataset.pid));
+      });
+    } catch (e) {
+      console.error(e);
+      $('#review-list').innerHTML = '<div class="empty">加载失败</div>';
+    }
+  }
+
+  function renderReviewRow(r) {
+    const grade = (r.grade || '').toUpperCase();
+    const pnl = r.realized_pnl_usd || 0;
+    const pnlPct = r.realized_pnl_pct || 0;
+    const cls = pnl >= 0 ? 'up' : 'down';
+    const lessonsArr = Array.isArray(r.lessons) ? r.lessons : [];
+    return `<div class="row ${cls}" data-pid="${escape(r.position_id)}" style="cursor:pointer;">
+      <div class="row-title">
+        <div class="row-symbol">
+          <span class="grade-pill ${grade}">${grade || '?'}</span>
+          ${escape(r.symbol)}
+          <span class="small muted">${MARKET_LABEL[r.market]||r.market}</span>
+        </div>
+        <div class="row-pnl ${cls}">${fmtPnl(pnl)} (${fmtPct(pnlPct)})</div>
+      </div>
+      <div class="row-meta">
+        持仓 ${Math.round((r.holding_seconds||0)/3600)} h · ${fmtTime(r.close_at)}
+      </div>
+      ${lessonsArr.length ? `<div class="row-reason">📌 ${escape(lessonsArr.slice(0,2).join(' / '))}</div>` : ''}
+    </div>`;
+  }
+
+  async function openReviewDetail(pid) {
+    openSheet('复盘详情', '<div class="empty">加载中…</div>');
+    try {
+      const r = await fetchJSON('/api/trade-review/' + encodeURIComponent(pid));
+      const grade = (r.grade || '').toUpperCase();
+      const pnl = r.realized_pnl_usd || 0;
+      const pros = Array.isArray(r.pros) ? r.pros : [];
+      const cons = Array.isArray(r.cons) ? r.cons : [];
+      const lessons = Array.isArray(r.lessons) ? r.lessons : [];
+      const turning = Array.isArray(r.turning_points) ? r.turning_points : [];
+      const html = `
+        <h4>结果</h4>
+        <div class="kv-row"><span class="k">代码</span><span class="v">${escape(r.symbol)}</span></div>
+        <div class="kv-row"><span class="k">评级</span><span class="v"><span class="grade-pill ${grade}">${grade||'?'}</span> ${GRADE_LABEL[grade]||''}</span></div>
+        <div class="kv-row"><span class="k">实现盈亏</span><span class="v ${pnl>=0?'up':'down'}">${fmtPnl(pnl)} (${fmtPct(r.realized_pnl_pct||0)})</span></div>
+        <div class="kv-row"><span class="k">持仓时长</span><span class="v">${Math.round((r.holding_seconds||0)/3600)} h</span></div>
+        <div class="kv-row"><span class="k">闭环时间</span><span class="v">${fmtTime(r.close_at)}</span></div>
+        ${r.summary ? `<h4>总结</h4><div>${escape(r.summary)}</div>` : ''}
+        ${pros.length ? `<h4>👍 做对了什么</h4><ul>${pros.map(x=>`<li>${escape(x)}</li>`).join('')}</ul>` : ''}
+        ${cons.length ? `<h4>👎 做错了什么</h4><ul>${cons.map(x=>`<li>${escape(x)}</li>`).join('')}</ul>` : ''}
+        ${turning.length ? `<h4>关键转折点</h4><ul>${turning.map(x=>{
+            const t = typeof x === 'object' ? `${escape(x.time||'')} ${escape(x.event||x.note||'')}` : escape(x);
+            return `<li>${t}</li>`;
+          }).join('')}</ul>` : ''}
+        ${lessons.length ? `<h4>📌 教训</h4><ul>${lessons.map(x=>`<li>${escape(x)}</li>`).join('')}</ul>` : ''}
+      `;
+      $('#sheet-content').innerHTML = html;
+    } catch (e) {
+      $('#sheet-content').innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
+    }
+  }
+
+  async function renderHistory() {
+    try {
+      const data = await loadHistory();
+      const items = data.items || [];
+      if (!items.length) {
+        $('#review-list').innerHTML = '<div class="empty"><div class="empty-icon">📜</div><div>暂无成交</div></div>';
+        return;
+      }
+      $('#review-list').innerHTML = items.map(renderTradeRow).join('');
+    } catch (e) {
+      console.error(e);
+      $('#review-list').innerHTML = '<div class="empty">加载失败</div>';
+    }
+  }
+
+  function renderTradeRow(t) {
+    const icon = ACTION_ICON[t.action] || '•';
+    const status = t.status === 'executed' ? '✅' : '❌';
+    const isExec = t.status === 'executed';
+    let cls = '';
+    let pnlHtml = '';
+    if (t.trigger_detail && t.trigger_detail.realized_pnl_usd != null) {
+      const pnl = t.trigger_detail.realized_pnl_usd;
+      const pct = t.trigger_detail.realized_pnl_pct || 0;
+      cls = pnl >= 0 ? 'up' : 'down';
+      pnlHtml = `<div class="row-pnl ${cls}">${fmtPnl(pnl)} (${fmtPct(pct)})</div>`;
+    } else if (t.action === 'open' || t.action === 'add') cls = 'accent';
+    else if (!isExec) cls = 'muted';
+    return `<div class="row ${cls}">
+      <div class="row-title">
+        <div class="row-symbol">
+          ${status} ${icon} ${escape(t.symbol)}
+          <span class="small muted">${MARKET_LABEL[t.market]||t.market} · ${ACTION_LABEL[t.action]||t.action}</span>
+        </div>
+        <div class="row-time">${fmtTime(t.traded_at)}</div>
+      </div>
+      <div class="row-meta">
+        ${isExec
+          ? `${(t.quantity||0).toLocaleString()} @ ${(t.price||0).toFixed(4)} = $${(t.amount_usd||0).toFixed(2)}`
+          : `<span class="muted">${escape(t.rejected_reason||'').slice(0,80)}</span>`}
+      </div>
+      ${pnlHtml}
+    </div>`;
+  }
+
+  async function renderLessons() {
+    try {
+      const data = await loadLessons();
+      const items = data.items || [];
+      // 显示顶部 actions（仅在教训页）
+      $('#review-actions').style.display = 'flex';
+      const actCnt = items.filter(l => l.status === 'active').length;
+      const adoptCnt = items.filter(l => l.status === 'adopted').length;
+      $('#lesson-stats').textContent = `${actCnt} 活跃 · ${adoptCnt} 已采纳`;
+      if (!items.length) {
+        $('#review-list').innerHTML = '<div class="empty"><div class="empty-icon">📌</div><div>暂无教训</div><div class="small" style="margin-top:6px;">闭环交易越多，教训库越丰富</div></div>';
+        return;
+      }
+      $('#review-list').innerHTML = items.map(renderLessonCard).join('');
+      $$('#review-list .lesson-adopt-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openLessonAdopt(btn.dataset.id);
+        });
+      });
+    } catch (e) {
+      console.error(e);
+      $('#review-list').innerHTML = '<div class="empty">加载失败</div>';
+    }
+  }
+
+  // 切到非教训 chip 时隐藏 actions
+  function hideLessonActions() { $('#review-actions').style.display = 'none'; }
+
+  // LLM 合并按钮
+  $('#lesson-merge-btn').addEventListener('click', async () => {
+    const btn = $('#lesson-merge-btn');
+    if (!confirm('调用 LLM 把语义相同的教训合并？耗时约 30s，预算 ~$0.05')) return;
+    btn.disabled = true;
+    const oldText = btn.textContent;
+    btn.textContent = '⏳ LLM 处理中…';
+    try {
+      const r = await fetch('/api/trade-review/lessons/merge', {method: 'POST'});
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || '失败');
+      const msg = `✅ ${d.before}→${d.after} 条 (合并 ${d.merged_clusters} 类，禁用 ${d.lessons_disabled} 条)`
+                + (d.auto_adopted_after_merge > 0 ? `，自动采纳 ${d.auto_adopted_after_merge} 条` : '');
+      toast(msg, 'up');
+      _state.cache.lessons = null;
+      _state.cache.riskRules = null;
+      renderLessons();
+    } catch (e) {
+      toast('❌ ' + e.message, 'down');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = oldText;
+    }
+  });
+
+  function renderLessonCard(l) {
+    const status = l.status || 'active';
+    const score = parseFloat(l.adoption_score || 0);
+    const hasParams = l.has_specific_params == 1 || l.has_specific_params === true;
+    let badge = '';
+    if (status === 'adopted') badge = '<span class="adopt-badge adopted">✅ 已采纳</span>';
+    else if (score >= 15 && hasParams) badge = '<span class="adopt-badge auto">🔴 立即采纳建议</span>';
+    else if (score >= 8 && hasParams) badge = '<span class="adopt-badge sug">🟠 推荐采纳</span>';
+    else if (!hasParams) badge = '<span class="adopt-badge prompt">⚪ 仅 prompt 软规则</span>';
+    else badge = `<span class="adopt-badge wait">🟡 score ${score.toFixed(1)}</span>`;
+    const showAdoptBtn = (status === 'active' && hasParams);
+    return `<div class="lesson-card ${status}">
+      <div class="lesson-pat">${escape(l.pattern || l.summary || '—')}</div>
+      <div class="row-meta">
+        ${POOL_STATUS_LABEL[status] || status} · 出现 ${l.occurrences||0} 次 · score ${score.toFixed(1)}
+        ${l.pool_id ? ' · ' + escape(l.pool_id) : ''}
+        ${l.worst_pnl_pct != null ? ' · 最差 ' + fmtPct(l.worst_pnl_pct) : ''}
+      </div>
+      <div style="margin-top:6px;display:flex;gap:8px;align-items:center;">
+        ${badge}
+        ${showAdoptBtn ? `<button class="btn lesson-adopt-btn" data-id="${l.id}" style="margin-left:auto;padding:4px 12px;font-size:12px;">📥 采纳为规则</button>` : ''}
+      </div>
+    </div>`;
+  }
+
+  async function openLessonAdopt(lessonId) {
+    openSheet('采纳为风控规则', '<div class="empty">翻译中…</div>');
+    try {
+      const r = await fetch('/api/trade-review/lessons/' + lessonId + '/translate', {method:'POST'});
+      const d = await r.json();
+      if (!d.ok) {
+        $('#sheet-content').innerHTML = `
+          <div class="empty">${escape(d.msg || '无法翻译')}</div>
+          <div class="row-reason" style="margin-top:8px;">${escape(d.lesson_text || '')}</div>`;
+        return;
+      }
+      const ruleType = d.rule_type;
+      const params = d.params || {};
+      const RULE_LABEL = {
+        rsi_block: 'RSI 超买拦截',
+        drawdown_force_close: '浮亏强平',
+        trend_block: '下跌趋势拦截',
+        cooldown_override: '冷却时长覆盖',
+        prompt_principle: '提示原则',
+      };
+      let paramsHtml = '';
+      Object.entries(params).forEach(([k,v]) => {
+        const id = `param-${k}`;
+        paramsHtml += `<div class="kv-row" style="display:flex;align-items:center;gap:8px;">
+          <span class="k" style="min-width:160px;">${escape(k)}</span>
+          <input id="${id}" data-key="${k}" value="${escape(String(v))}"
+                 style="flex:1;background:var(--bg-card-2);color:var(--text);padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;" />
+        </div>`;
+      });
+      const html = `
+        <h4>原始教训</h4>
+        <div style="margin:6px 0;">${escape(d.lesson_text || '')}</div>
+        <h4>规则类型</h4>
+        <div class="kv-row"><span class="k">类型</span><span class="v">${escape(ruleType)} (${RULE_LABEL[ruleType]||''})</span></div>
+        <div class="kv-row"><span class="k">作用域</span><span class="v">${escape(d.pool_id || 'all')}</span></div>
+        <h4>参数（可调整）</h4>
+        ${paramsHtml}
+        <div class="sheet-actions">
+          <button class="btn btn-secondary" id="adopt-cancel">取消</button>
+          <button class="btn" id="adopt-confirm">📥 采纳并启用</button>
+        </div>
+      `;
+      $('#sheet-content').innerHTML = html;
+      $('#adopt-cancel').addEventListener('click', closeSheet);
+      $('#adopt-confirm').addEventListener('click', async () => {
+        const newParams = {};
+        $$('#sheet-content input[data-key]').forEach(inp => {
+          let v = inp.value.trim();
+          if (v !== '' && !isNaN(parseFloat(v))) v = parseFloat(v);
+          newParams[inp.dataset.key] = v;
+        });
+        const btn = $('#adopt-confirm');
+        btn.disabled = true; btn.textContent = '⏳ 写入中…';
+        try {
+          const r = await fetch('/api/trade-review/lessons/' + lessonId + '/adopt', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({rule_type: ruleType, params: newParams}),
+          });
+          const dd = await r.json();
+          if (!r.ok) throw new Error(dd.detail || '失败');
+          toast('✅ 已采纳为规则 #' + dd.rule_id, 'up');
+          _state.cache.lessons = null;
+          closeSheet();
+          renderLessons();
+        } catch (e) {
+          toast('❌ ' + e.message, 'down');
+          btn.disabled = false; btn.textContent = '📥 采纳并启用';
+        }
+      });
+    } catch (e) {
+      $('#sheet-content').innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
+    }
+  }
+
+  // 风控规则加载
+  async function loadRiskRules() {
+    if (_state.cache.riskRules) return _state.cache.riskRules;
+    try { _state.cache.riskRules = await fetchJSON('/api/risk-rules'); }
+    catch { _state.cache.riskRules = {items: []}; }
+    return _state.cache.riskRules;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 7. 设置
+  // ═══════════════════════════════════════════════════════════
+  async function renderSettings() {
+    try {
+      const [status, llmCost, riskRules] = await Promise.all([loadStatus(), loadLLMCost(), loadRiskRules()]);
+      $('#auto-trade-toggle').checked = !!status.enabled;
+      const cfg = status.config || {};
+      $('#settings-status').innerHTML = `
+        <div class="kv-row"><span class="k">服务地址</span><span class="v small">${location.host}</span></div>
+        <div class="kv-row"><span class="k">初始资金</span><span class="v">$${(cfg.initial_capital_usd||0).toLocaleString()}</span></div>
+        <div class="kv-row"><span class="k">总仓位上限</span><span class="v">${((cfg.total_position_cap_pct||0)*100).toFixed(0)}%</span></div>
+        <div class="kv-row"><span class="k">单股软上限</span><span class="v">${((cfg.max_single_position_pct||0)*100).toFixed(0)}%</span></div>
+        <div class="kv-row"><span class="k">单股硬上限</span><span class="v">${((cfg.hard_single_cap_pct||0.30)*100).toFixed(0)}%</span></div>
+        <div class="kv-row"><span class="k">同股冷却</span><span class="v">${(cfg.cooldown_sec||0)/60} 分钟</span></div>
+        <div class="kv-row"><span class="k">每日操作上限</span><span class="v">${cfg.max_daily_ops_per_symbol||0} 次/股</span></div>
+        <div class="kv-row"><span class="k">并发持仓上限</span><span class="v">${cfg.max_concurrent_positions||0}</span></div>
+      `;
+      if (llmCost) {
+        const used = llmCost.today_cost_usd || 0;
+        const budget = llmCost.daily_budget || 0;
+        const pct = budget > 0 ? (used / budget * 100) : 0;
+        const byPath = (llmCost.by_path || []).map(b =>
+          `<div class="kv-row"><span class="k">└ ${escape(b.path||'其它')}</span><span class="v">$${(b.cost||0).toFixed(4)} (${b.n} 次)</span></div>`
+        ).join('');
+        $('#settings-llm-cost').innerHTML = `
+          <div class="kv-row"><span class="k">今日累计</span><span class="v ${pct>=80?'down':(pct>=50?'warn':'up')}">$${used.toFixed(4)} / $${budget.toFixed(2)} (${pct.toFixed(0)}%)</span></div>
+          ${byPath}
+        `;
+      } else {
+        $('#settings-llm-cost').innerHTML = '<div class="empty small">LLM 成本数据不可用</div>';
+      }
+
+      // 风控规则区块
+      const rules = (riskRules && riskRules.items) || [];
+      if (!rules.length) {
+        $('#settings-risk-rules').innerHTML = '<div class="empty small">暂无规则。在复盘 tab 把高分教训"采纳"后会出现在这里</div>';
+      } else {
+        $('#settings-risk-rules').innerHTML = rules.map(renderRuleCard).join('');
+        $$('#settings-risk-rules .rule-toggle input').forEach(inp => {
+          inp.addEventListener('change', async (e) => {
+            const id = inp.dataset.id;
+            const enabled = e.target.checked;
+            try {
+              const r = await fetch('/api/risk-rules/' + id + '/toggle', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({enabled}),
+              });
+              if (!r.ok) throw new Error('HTTP ' + r.status);
+              toast(enabled ? '✅ 规则已启用' : '🔴 规则已禁用', 'up');
+              _state.cache.riskRules = null;
+            } catch (e) {
+              toast('❌ ' + e.message, 'down');
+              inp.checked = !enabled;
+            }
+          });
+        });
+      }
+    } catch (e) {
+      $('#settings-status').innerHTML = '<div class="empty small">加载失败</div>';
+    }
+  }
+
+  function renderRuleCard(r) {
+    const RULE_LABEL = {
+      rsi_block: '🚫 RSI 超买拦截',
+      drawdown_force_close: '🛑 浮亏强平',
+      trend_block: '📉 下跌趋势拦截',
+      cooldown_override: '⏱️ 冷却覆盖',
+      prompt_principle: '💬 提示原则',
+    };
+    const SOURCE_LABEL = {
+      auto_adopted: '🤖 自动',
+      user_adopted: '👤 手动',
+      manual: '👤 手动',
+      migrated: '⚙️ 迁移',
+    };
+    const enabled = r.enabled == 1 || r.enabled === true;
+    const fr = r.false_reject_rate || 0;
+    const cls = !enabled ? 'disabled' : (fr > 30 ? 'high-fr' : '');
+    const params = r.params || {};
+    const paramsStr = Object.entries(params).map(([k,v]) => `${k}=${v}`).join(', ');
+    return `<div class="rule-card ${cls}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+        <div style="flex:1;">
+          <div class="rule-name">${RULE_LABEL[r.rule_type] || r.rule_type}</div>
+          <div class="rule-desc">${escape(r.description || paramsStr)}</div>
+          <div class="rule-meta">
+            <span>${escape(r.pool_id || 'all')}</span>
+            <span>${SOURCE_LABEL[r.source_kind] || r.source_kind}</span>
+            <span>命中 ${r.hits||0} 次</span>
+            ${fr > 0 ? `<span class="${fr>30?'down':''}">假阳率 ${fr}%</span>` : ''}
+          </div>
+        </div>
+        <label class="rule-toggle">
+          <input type="checkbox" data-id="${r.id}" ${enabled?'checked':''}>
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>`;
+  }
+
+  // ─── 主刷新 ───
+  async function refresh() {
+    const t = _state.activeTab;
+    if (t === 'overview') await renderOverview();
+    else if (t === 'news') await renderNews();
+    else if (t === 'pool') await renderPool();
+    else if (t === 'signals') await renderSignals();
+    else if (t === 'positions') await renderPositions();
+    else if (t === 'review') await renderReview();
+    else if (t === 'settings') await renderSettings();
+  }
+
+  // 自动 30s 轮询当前 tab
+  setInterval(() => {
+    Object.keys(_state.cache).forEach(k => _state.cache[k] = null);
+    refresh();
+  }, 30000);
+
+  refresh();
+})();
