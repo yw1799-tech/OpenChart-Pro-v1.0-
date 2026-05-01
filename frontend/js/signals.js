@@ -18,14 +18,38 @@ const Signals = (function () {
   let _sharedAudio = null;
 
   const ACTION_COLOR = { buy: 'var(--color-up)', sell: 'var(--color-down)' };
-  const ACTION_ICON = { buy: '🟢 BUY', sell: '🔴 SELL' };
+  const ACTION_ICON = { buy: '🟢 买入', sell: '🔴 卖出' };
   const STRATEGY_LABEL = {
+    // 通用型
     ma_cross: '均线金叉死叉',
     donchian_breakout: '唐奇安通道突破',
     bollinger_reversion: '布林带均值回归',
-    rsi_divergence: 'RSI 背离',
+    rsi_divergence: 'RSI 背离',  // 已废弃但保留兼容
     volume_breakout: '成交量突破',
     flash_event: '新闻事件驱动',
+    chanlun: '缠论买卖点',
+    macd_cross: 'MACD 金叉死叉',
+    ema_triple: 'EMA 三线排列',
+    squeeze_breakout: '布林挤压突破',
+    adx_trend_follow: 'ADX 趋势跟随',
+    // 共振合并
+    resonance: '🌟 多策略共振',
+    // 加密专属
+    funding_extreme: '资金费率极值反转',
+    oi_breakout: 'OI 持仓突破',
+    long_short_ratio: '多空比反转',
+    fear_greed_reversal: 'F&G 极值反转',
+    // A 股专属
+    limit_up_followup: '涨停后回踩',
+    northbound_flow_top: '北向资金排名',
+    sector_momentum: '板块联动',
+    // 港股专属
+    southbound_inflow: '港股通南向',
+    ah_spread_revert: 'AH 价差回归',
+    // 美股专属
+    gap_up_continuation: '高开延续',
+    vwap_pullback: 'VWAP 回踩',
+    earnings_window_filter: '财报窗口过滤',
   };
   const MARKET_LABEL = { crypto: '加密', us: '美股', hk: '港股', cn: 'A股' };
   const AI_VERDICT_LABEL = {
