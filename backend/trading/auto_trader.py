@@ -1098,6 +1098,17 @@ class AutoTrader:
                     pass
                 pos = None  # 视同无持仓
 
+        # v12.18.1 修复: 必须先检查市场是否可下单（盘前/集合竞价/闭市 → pending 等开市重试）
+        # 否则美股盘前 K 线稀疏 → fresh_price 拿不到 → 错以"实时价不可用"拒单
+        # 而 retry loop 只认 'pending' 关键词的拒因，导致这些盘前信号永久丢失
+        from backend.signals.monitor import is_market_executable as _ime
+        if not _ime(market):
+            await self._log_rejected(
+                sig, "open" if not pos else "add",
+                "未到连续竞价时段，等待市场开盘后重试（pending）"
+            )
+            return
+
         # v12.14 (A2 修复): 开仓/加仓必须用近实时价（15m K 线），不能用 sig.price（来自上一根 1H 收盘价）
         # 让 fresh price 决定真实成交价；信号价用作"必须 ≤ sig.price + 1.5%"的滑点保护
         sig_price = float(sig["price"])
