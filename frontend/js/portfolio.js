@@ -1229,6 +1229,30 @@ const Portfolio = (function () {
     // 僵尸标记（≥ 14 天 + 浮盈 ±5% 内）
     const isZombie = ageDays >= 14 && p.pnl_pct != null && Math.abs(Number(p.pnl_pct)) < 5;
     const zombieFlag = isZombie ? '<span style="color:var(--color-warning);font-size:10px;margin-left:4px;" title="持仓 14 天+ 浮盈 ±5% 内，每 1h 巡检会自动减半">💤</span>' : '';
+    // v12.16.3 入场策略显示
+    const STRATEGY_NAME_CN = {
+      ma_cross:'均线金叉死叉', donchian_breakout:'唐奇安通道突破', bollinger_reversion:'布林带均值回归',
+      volume_breakout:'成交量突破', flash_event:'新闻事件驱动', chanlun:'缠论买卖点',
+      macd_cross:'MACD 金叉死叉', ema_triple:'EMA 三线排列', squeeze_breakout:'布林挤压突破',
+      adx_trend_follow:'ADX 趋势跟随', resonance:'🌟 多策略共振',
+      funding_extreme:'资金费率极值', oi_breakout:'OI 持仓突破', long_short_ratio:'多空比反转',
+      fear_greed_reversal:'F&G 极值反转', limit_up_followup:'涨停后回踩',
+      northbound_flow_top:'北向资金排名', sector_momentum:'板块联动',
+      southbound_inflow:'港股通南向', ah_spread_revert:'AH 价差回归',
+      gap_up_continuation:'高开延续', vwap_pullback:'VWAP 回踩', earnings_window_filter:'财报窗口过滤',
+    };
+    let strategyChip = '';
+    if (p.entry_strategy) {
+      if (p.entry_strategy === 'resonance' && p.entry_strategies) {
+        const lvl = p.entry_resonance_level || '?';
+        const boost = p.entry_sizing_boost || 1.0;
+        const names = p.entry_strategies.map(s => STRATEGY_NAME_CN[s] || s).join('+');
+        strategyChip = `<span style="font-size:10px;color:var(--color-accent);background:rgba(88,166,255,0.12);padding:1px 6px;border-radius:4px;" title="共振 Level ${lvl}, 仓位 ×${boost}">📡 共振L${lvl}: ${names}</span>`;
+      } else {
+        const cn = STRATEGY_NAME_CN[p.entry_strategy] || p.entry_strategy;
+        strategyChip = `<span style="font-size:10px;color:var(--text-secondary);background:var(--bg-tertiary);padding:1px 6px;border-radius:4px;">📡 ${cn}</span>`;
+      }
+    }
     const symbolCell = `
       <div style="display:flex;flex-direction:column;gap:2px;">
         <div style="display:flex;align-items:center;gap:6px;">
@@ -1238,6 +1262,7 @@ const Portfolio = (function () {
         <div style="font-size:10px;color:var(--text-tertiary);">
           ${MARKET_FLAG[p.market]||''} ${MARKET_LABEL[p.market] || p.market.toUpperCase()} · ${openTime} · 持仓 ${ageStr}${lastAdv}
         </div>
+        ${strategyChip ? `<div style="margin-top:2px;">${strategyChip}</div>` : ''}
       </div>`;
 
     // ─── 2. 数量 ───
