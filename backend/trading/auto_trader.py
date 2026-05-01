@@ -781,16 +781,39 @@ class AutoTrader:
             return None
 
     async def _get_fresh_price(self, symbol: str, market: str, max_age_min: int = 30) -> Optional[float]:
-        """v12.14 (A2 修复): 开仓时取真正的"近实时"价格。
-        优先级 15m → 1H → 1D，且要求最新一根 K 线在 max_age_min 分钟内。
-        防止用 1H K 线 close 当成交价（GOOG 22:52 开仓时实际价 ~372 但记账成 366.20，44s 后触发 T1 假赢）。
-        失败时返回 None；调用方应 fallback 到 sig['price']（开仓被驳回比错价开仓更稳）。
+        """v12.18.3 修复: 解决 30-60 min 死区 bug
+          - 加密优先 OKX ticker API (毫秒级实时价)
+          - K 线 fallback 按 interval 分级容忍 (1H bar 65min / 1D bar 25h)
+
+        旧版 bug: max_age_min=30 一刀切，但 1H K 线 timestamp 是 bar 开始时刻 →
+                 每小时 30-60 分钟之间 (now-bar_start > 30min) 全部失败 → 死区。
         """
         if market not in ("cn", "hk", "us", "crypto"):
             return None
+
+        # ─── 加密优先用 ticker (实时价，避开 K 线死区) ───
+        if market == "crypto":
+            try:
+                from backend.data.fetcher import get_fetcher
+                from backend.data.models import Market
+                f = get_fetcher(Market.CRYPTO)
+                ticker = await f.get_ticker(symbol)
+                if ticker and ticker.get("last"):
+                    return float(ticker["last"])
+            except Exception as e:
+                logger.debug(f"[fresh-price] crypto ticker {symbol} 失败: {e}, fallback K 线")
+            # ticker 拉取失败时继续走 K 线兜底
+
+        # ─── K 线 fallback: 按 interval 分级容忍 ───
+        # 关键: K 线 timestamp 是 bar 开始时刻
+        # → 1H bar 最新可能 0~60 min 前；1D bar 最新可能 0~24h 前
+        # 加上少量 tolerance (5min) 避免边界跳变
         now_ms = int(time.time() * 1000)
-        max_age_ms = max_age_min * 60 * 1000
-        # 加密 24/7，可放宽到 5 min；股票市场最小粒度 15m，放宽到 30 min
+        interval_max_age_ms = {
+            "15m": 20 * 60 * 1000,           # 15min bar + 5min tolerance
+            "1H":  65 * 60 * 1000,           # 60min bar + 5min tolerance
+            "1D":  25 * 60 * 60 * 1000,      # 24h bar + 1h tolerance
+        }
         for interval in ("15m", "1H", "1D"):
             try:
                 async with self.db.acquire() as conn:
@@ -800,12 +823,14 @@ class AutoTrader:
                         (symbol,),
                     )
                     row = await cur.fetchone()
-                if row and row["timestamp"] and (now_ms - row["timestamp"]) <= max_age_ms:
-                    return float(row["close"])
+                if row and row["timestamp"]:
+                    age_ms = now_ms - row["timestamp"]
+                    if age_ms <= interval_max_age_ms[interval]:
+                        return float(row["close"])
             except Exception:
                 continue
         # 全部超期 → 返回 None（开仓应推迟而非用陈旧价）
-        logger.info(f"[fresh-price] {symbol}({market}) 无 {max_age_min} 分钟内 K 线，跳过本次开仓")
+        logger.info(f"[fresh-price] {symbol}({market}) 所有 K 线周期都太旧，跳过本次开仓")
         return None
 
 
