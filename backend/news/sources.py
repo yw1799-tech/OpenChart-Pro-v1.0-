@@ -119,6 +119,70 @@ NEWS_SOURCES = [
         "bonus": 1,
     },
 
+    # ─── v12.19.3: 补 6 个国际加密源 (原 4 源 24h 仅 53 条偏少) ───
+    # 全部 RSS / 无 API Key / 国际通用源
+    # 部署后 24h 观察拉取量, fail 多的可关
+    {
+        "name": "CryptoSlate",
+        "type": "rss",
+        "market": "crypto",
+        "url": "https://cryptoslate.com/feed/",
+        "interval": 180,
+        "enabled": True,
+        "trust": 0.85,
+        "bonus": 2,
+    },
+    {
+        "name": "BeInCrypto",
+        "type": "rss",
+        "market": "crypto",
+        "url": "https://beincrypto.com/feed/",
+        "interval": 180,
+        "enabled": True,
+        "trust": 0.8,
+        "bonus": 1,
+    },
+    {
+        "name": "U.Today",
+        "type": "rss",
+        "market": "crypto",
+        "url": "https://u.today/rss",
+        "interval": 180,
+        "enabled": True,
+        "trust": 0.75,        # 高频但偶尔 clickbait
+        "bonus": 1,
+    },
+    {
+        "name": "NewsBTC",
+        "type": "rss",
+        "market": "crypto",
+        "url": "https://www.newsbtc.com/feed/",
+        "interval": 180,
+        "enabled": True,
+        "trust": 0.75,
+        "bonus": 1,
+    },
+    {
+        "name": "Bitcoin.com News",
+        "type": "rss",
+        "market": "crypto",
+        "url": "https://news.bitcoin.com/feed/",
+        "interval": 240,
+        "enabled": True,
+        "trust": 0.8,
+        "bonus": 1,
+    },
+    {
+        "name": "CryptoPotato",
+        "type": "rss",
+        "market": "crypto",
+        "url": "https://cryptopotato.com/feed/",
+        "interval": 240,
+        "enabled": True,
+        "trust": 0.7,
+        "bonus": 1,
+    },
+
     # ═══════════════════════════════════════════════════════════════
     # 美股 (7 个源)
     # ═══════════════════════════════════════════════════════════════

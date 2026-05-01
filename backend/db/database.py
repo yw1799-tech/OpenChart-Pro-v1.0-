@@ -32,6 +32,11 @@ _SOURCE_MARKET_HINTS = {
     "OKX公告": ("crypto",), "OKX Announcement": ("crypto",),
     "ChainCatcher": ("crypto",), "Odaily": ("crypto",), "PANews": ("crypto",),
     "BeInCrypto": ("crypto",), "CryptoSlate": ("crypto",), "AMBCrypto": ("crypto",),
+    # v12.19.3: 国际加密源补充
+    "U.Today": ("crypto",), "NewsBTC": ("crypto",),
+    "Bitcoin.com News": ("crypto",), "CryptoPotato": ("crypto",),
+    "CoinGape": ("crypto",), "Crypto Briefing": ("crypto",),
+    "DLNews": ("crypto",), "Blockworks": ("crypto",),
     # 宏观补全
     "Federal Reserve": ("macro",), "BLS": ("macro",), "ECB": ("macro",),
 }
