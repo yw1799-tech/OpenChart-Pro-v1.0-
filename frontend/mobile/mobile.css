@@ -55,6 +55,14 @@ button {
   font-size: 18px; font-weight: 600;
 }
 
+.hdr-actions {
+  display: flex; align-items: center; gap: 10px;
+}
+.hdr-time {
+  font-size: 11px; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
 .badge {
   font-size: 11px; padding: 2px 8px; border-radius: 10px;
   background: var(--bg-card); color: var(--text-2);
@@ -252,33 +260,129 @@ button {
 .kv-row .k { color: var(--text-2); }
 .kv-row .v { font-variant-numeric: tabular-nums; }
 
-/* Tab bar — 7 tab，横向滚动 */
+/* v12.19.0: Tab bar — 5 tab 等宽 */
 .tabbar {
   position: fixed;
   bottom: 0; left: 0; right: 0;
   display: flex;
-  overflow-x: auto;
   background: rgba(13, 17, 23, 0.95);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border-top: 1px solid var(--border);
   padding-bottom: env(safe-area-inset-bottom);
   z-index: 100;
-  -webkit-overflow-scrolling: touch;
 }
-.tabbar::-webkit-scrollbar { display: none; }
 
 .tab {
-  flex: 1 0 14.28%;  /* 7 tab 等宽，iPhone 17 Pro 393pt 宽 → 56pt/tab */
-  min-width: 56px;
+  flex: 1;          /* 5 tab 等宽，iPhone 393pt → ~78pt/tab */
   padding: 8px 0 6px;
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
   color: var(--text-3);
   transition: color 0.15s;
 }
 .tab.active { color: var(--accent); }
-.tab-icon { font-size: 20px; }
-.tab-label { font-size: 10px; }
+.tab-icon { font-size: 22px; }
+.tab-label { font-size: 11px; font-weight: 500; }
+
+/* v12.19.0: Segment control (sub-tab 切换) */
+.segment {
+  display: flex;
+  background: var(--bg-card);
+  border-radius: 10px;
+  padding: 4px;
+  margin-bottom: 14px;
+  gap: 2px;
+}
+.seg {
+  flex: 1;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text-2);
+  border-radius: 8px;
+  transition: background 0.15s, color 0.15s;
+  text-align: center;
+  white-space: nowrap;
+}
+.seg.active {
+  background: var(--bg);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+.subpage[hidden] { display: none; }
+
+/* v12.19.0: Quick-stats grid (主页 4 卡) */
+.quick-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 8px;
+  text-align: center;
+}
+.stat-label { font-size: 10px; color: var(--text-2); margin-bottom: 4px; line-height: 1.2; }
+.stat-value {
+  font-size: 18px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.stat-value.warn { color: var(--warn); }
+.stat-value.up { color: var(--up); }
+.stat-value.down { color: var(--down); }
+
+/* v12.19.0: 持仓汇总条 */
+.page-summary {
+  background: var(--bg-card);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+}
+.page-summary:empty { display: none; }
+.summary-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 13px;
+  padding: 3px 0;
+}
+.summary-row + .summary-row { border-top: 1px solid var(--border); padding-top: 6px; margin-top: 3px; }
+.summary-k { color: var(--text-2); }
+.summary-v { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* v12.19.0: 持仓按市场分组 */
+.pos-group { margin-bottom: 14px; }
+.pos-group:last-child { margin-bottom: 0; }
+.pos-group-hdr {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 6px 4px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.pos-group-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.pos-group-meta { font-size: 11px; color: var(--text-3); }
+
+/* v12.19.0: 共振组合卡 */
+.combo-card {
+  background: var(--bg-card);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  border-left: 3px solid var(--accent);
+}
+.combo-name { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.combo-meta { font-size: 11px; color: var(--text-3); margin-bottom: 8px; }
+.combo-strats { display: flex; flex-wrap: wrap; gap: 4px; }
+.combo-chip {
+  font-size: 11px;
+  padding: 3px 8px;
+  background: var(--bg-card-2);
+  color: var(--text-2);
+  border-radius: 6px;
+}
 
 /* 新闻卡片 */
 .news-card {

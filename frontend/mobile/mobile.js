@@ -22,10 +22,24 @@
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => document.querySelectorAll(s);
 
+  // v12.19.0: 5-tab 结构 + 内部 sub-tab
   const PAGE_TITLES = {
-    overview: '总览', news: '新闻快讯', pool: '候选池',
-    signals: '策略信号', positions: '持仓管理',
-    review: '复盘学习', settings: '设置',
+    home: '主页', signals: '策略信号', positions: '持仓管理',
+    learn: '学习', more: '更多',
+  };
+  const SUB_TITLES = {
+    'home/home':       '主页',
+    'signals/signals': '策略信号',
+    'signals/library': '策略库',
+    'signals/combos':  '共振组合',
+    'positions/current':  '当前持仓',
+    'positions/rejected': '拒单记录',
+    'positions/reviews':  '复盘记录',
+    'learn/lessons': '教训库',
+    'learn/rules':   '风控规则',
+    'more/news':     '新闻快讯',
+    'more/pool':     '候选池',
+    'more/settings': '设置',
   };
   const MARKET_LABEL = { crypto: '加密', us: '美股', hk: '港股', cn: 'A股', macro: '宏观' };
   const ACTION_ICON = { open: '📥', add: '➕', reduce: '➖', close: '🏁' };
@@ -45,31 +59,78 @@
   };
   const GRADE_LABEL = { A: '优', B: '良', C: '一般', D: '差' };
 
+  // v12.19.0: 5 main tab × N sub-tab 路由表
+  // 默认 sub: 切到 main tab 时若没指定 sub 用此
+  const TAB_DEFAULT_SUB = {
+    home: 'home',
+    signals: 'signals',
+    positions: 'current',
+    learn: 'lessons',
+    more: 'news',
+  };
+
   let _state = {
-    activeTab: 'overview',
+    activeTab: 'home',
+    activeSub: 'home',         // 'home/home' / 'signals/signals' 等的右半
     signalFilter: 'all',
     newsFilter: 'all',
     poolFilter: 'all',
-    reviewFilter: 'reviews',
-    signalSubtab: 'signals',  // signals | library
+    rejectedFilter: 'all',
     cache: {
       status: null, positions: null, signals: null, history: null,
       news: null, pool: null, reviews: null, lessons: null,
       advices: null, llmCost: null, riskRules: null, strategies: null,
+      rejectedTrades: null,
     },
+    lastUpdate: 0,
   };
 
-  // ─── Tab 切换 ───
+  // ─── Main tab 切换 (5 个底部 tab) ───
   $$('.tab').forEach(tab => {
     tab.addEventListener('click', () => switchTab(tab.dataset.tab));
   });
 
   function switchTab(name) {
     _state.activeTab = name;
+    _state.activeSub = TAB_DEFAULT_SUB[name] || 'home';
     $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
     $$('.page').forEach(p => p.classList.toggle('active', p.dataset.page === name));
-    $('#page-title').textContent = PAGE_TITLES[name] || name;
+    // 切到 main tab 后，重置该 tab 下的 sub-tab UI 到 default
+    const activePage = $(`.page[data-page="${name}"]`);
+    if (activePage) {
+      activePage.querySelectorAll('.seg').forEach(s => {
+        s.classList.toggle('active', s.dataset.sub === _state.activeSub);
+      });
+      activePage.querySelectorAll('.subpage').forEach(sp => {
+        sp.hidden = sp.dataset.subpage !== _state.activeSub;
+      });
+    }
+    updatePageTitle();
     refresh();
+  }
+
+  // ─── Sub-tab 切换 (segment 内部) ───
+  $$('.seg').forEach(seg => {
+    seg.addEventListener('click', () => switchSubTab(seg.dataset.sub, seg));
+  });
+
+  function switchSubTab(subName, clickedSeg) {
+    _state.activeSub = subName;
+    const activePage = $(`.page[data-page="${_state.activeTab}"]`);
+    if (!activePage) return;
+    activePage.querySelectorAll('.seg').forEach(s => {
+      s.classList.toggle('active', s === clickedSeg || s.dataset.sub === subName);
+    });
+    activePage.querySelectorAll('.subpage').forEach(sp => {
+      sp.hidden = sp.dataset.subpage !== subName;
+    });
+    updatePageTitle();
+    refresh();
+  }
+
+  function updatePageTitle() {
+    const key = `${_state.activeTab}/${_state.activeSub}`;
+    $('#page-title').textContent = SUB_TITLES[key] || PAGE_TITLES[_state.activeTab] || _state.activeTab;
   }
 
   // ─── Filter chips ───
@@ -78,19 +139,6 @@
       _state.signalFilter = chip.dataset.vfilter;
       $$('.chip[data-vfilter]').forEach(c => c.classList.toggle('active', c === chip));
       renderSignals();
-    });
-  });
-  // v12.16.2 (#2): 信号 tab 顶部切换 (信号 / 策略库)
-  $$('.chip[data-stab]').forEach(chip => {
-    chip.addEventListener('click', () => {
-      _state.signalSubtab = chip.dataset.stab;
-      $$('.chip[data-stab]').forEach(c => c.classList.toggle('active', c === chip));
-      const isLib = _state.signalSubtab === 'library';
-      $('#signals-subtabs').style.display = isLib ? 'none' : 'flex';
-      $('#signals-list').style.display = isLib ? 'none' : '';
-      $('#library-list').style.display = isLib ? '' : 'none';
-      if (isLib) renderStrategyLibrary();
-      else renderSignals();
     });
   });
   $$('.chip[data-nfilter]').forEach(chip => {
@@ -108,11 +156,12 @@
       renderPool();
     });
   });
-  $$('.chip[data-rfilter]').forEach(chip => {
+  // v12.19.0: 拒单 filter
+  $$('.chip[data-rjfilter]').forEach(chip => {
     chip.addEventListener('click', () => {
-      _state.reviewFilter = chip.dataset.rfilter;
-      $$('.chip[data-rfilter]').forEach(c => c.classList.toggle('active', c === chip));
-      renderReview();
+      _state.rejectedFilter = chip.dataset.rjfilter;
+      $$('.chip[data-rjfilter]').forEach(c => c.classList.toggle('active', c === chip));
+      renderRejected();
     });
   });
 
@@ -298,10 +347,11 @@
   // ═══════════════════════════════════════════════════════════
   // 1. 总览
   // ═══════════════════════════════════════════════════════════
-  async function renderOverview() {
+  // v12.19.0: 主页 = 总览 + quick-stats 4 卡 + 各市场盈亏 + 最近成交/信号
+  async function renderHome() {
     try {
-      const [status, log, signals] = await Promise.all([
-        loadStatus(), loadHistory(), loadSignals(),
+      const [status, log, signals, positions, llmCost] = await Promise.all([
+        loadStatus(), loadHistory(), loadSignals(), loadPositions(), loadLLMCost(),
       ]);
 
       const enabled = status.enabled;
@@ -321,6 +371,43 @@
       const pctTotal = totalInitialUSD > 0 ? (totalPnlUSD / totalInitialUSD * 100) : 0;
       $('#ov-pnl').innerHTML = `<span class="${totalPnlUSD>=0?'up':'down'}">${fmtPnl(totalPnlUSD)} (${fmtPct(pctTotal)})</span>`;
 
+      // ─── Quick stats: 持仓数 / 今日交易 / 待重验 / AI 成本 ───
+      const posCount = (positions || []).length;
+      const now = Date.now();
+      const todayStart = (() => {
+        const d = new Date(); d.setHours(0,0,0,0); return d.getTime();
+      })();
+      const todayTrades = (log.items || []).filter(t =>
+        t.status === 'executed' && (t.traded_at * 1000) >= todayStart
+      ).length;
+      // 待重验：confirm + 24h 内 + 暂无 review (无完美 API，估算用 confirm-未触发数)
+      const sigItems = signals.items || [];
+      const pendingReval = sigItems.filter(s =>
+        s.ai_verdict === 'confirm'
+        && s.revalidated_at == 0
+        && (now - (s.generated_at || 0)) < 24 * 3600 * 1000
+      ).length;
+      const todayCost = (llmCost && llmCost.today_total_usd) || 0;
+      $('#home-stats').innerHTML = `
+        <div class="stat-card">
+          <div class="stat-label">📊 当前持仓</div>
+          <div class="stat-value">${posCount}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">📥 今日成交</div>
+          <div class="stat-value">${todayTrades}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">⏳ 待重验</div>
+          <div class="stat-value ${pendingReval>0?'warn':''}">${pendingReval}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">💰 今日 AI</div>
+          <div class="stat-value">$${todayCost.toFixed(3)}</div>
+        </div>
+      `;
+
+      // 各市场盈亏卡
       const poolHtml = pools.sort((a,b)=> {
         const ord = {us_hk:0, cn:1, crypto:2};
         return (ord[a.pool_id]||9) - (ord[b.pool_id]||9);
@@ -344,10 +431,15 @@
         ? trades.map(renderTradeRow).join('')
         : '<div class="empty small">暂无成交</div>';
 
-      const sigs = (signals.items || []).filter(s => ['confirm','warn'].includes(s.ai_verdict)).slice(0, 5);
+      const sigs = sigItems.filter(s => ['confirm','warn'].includes(s.ai_verdict)).slice(0, 5);
       $('#ov-recent-signals-list').innerHTML = sigs.length
         ? sigs.map(renderSignalRow).join('')
         : '<div class="empty small">暂无重点信号</div>';
+
+      // 给最近信号 row 绑定点击事件
+      $$('#ov-recent-signals-list .row').forEach(r => {
+        r.addEventListener('click', () => openSignalDetail(r.dataset.id));
+      });
 
     } catch (e) {
       console.error(e);
@@ -648,10 +740,34 @@
   // ═══════════════════════════════════════════════════════════
   // 5. 持仓管理
   // ═══════════════════════════════════════════════════════════
+  // v12.19.0: 持仓页 = 顶部汇总条 + 按市场分组 + 各持仓 row
   async function renderPositions() {
     try {
       const [items, advices] = await Promise.all([loadPositions(), loadAdvices()]);
-      $('#pos-count').textContent = items.length;
+      // ─ 顶部汇总条 ─
+      let totalUSD = 0, pnlUSD = 0, winN = 0, loseN = 0;
+      for (const p of items) {
+        const pnlPct = p.pnl_pct || 0;
+        if (pnlPct >= 0) winN++; else loseN++;
+        totalUSD += (p.market_value_usd || 0);
+        pnlUSD += (p.pnl_usd || 0);
+      }
+      const summaryCls = pnlUSD >= 0 ? 'up' : 'down';
+      $('#positions-summary').innerHTML = items.length ? `
+        <div class="summary-row">
+          <span class="summary-k">共 ${items.length} 笔</span>
+          <span class="summary-k">浮盈 ${winN} / 浮亏 ${loseN}</span>
+        </div>
+        <div class="summary-row">
+          <span class="summary-k">市值</span>
+          <span class="summary-v">${fmtMoney(totalUSD)}</span>
+        </div>
+        <div class="summary-row">
+          <span class="summary-k">浮动盈亏</span>
+          <span class="summary-v ${summaryCls}">${fmtPnl(pnlUSD)}</span>
+        </div>
+      ` : '';
+
       if (!items.length) {
         $('#positions-list').innerHTML = `<div class="empty">
           <div class="empty-icon">📭</div>
@@ -662,13 +778,68 @@
       }
       const adviceMap = {};
       (advices || []).forEach(a => { if (a && a.position_id) adviceMap[a.position_id] = a; });
-      $('#positions-list').innerHTML = items.map(p => renderPositionRow(p, adviceMap[p.id])).join('');
+      // ─ 按市场分组 ─
+      const groups = {us:[], hk:[], cn:[], crypto:[]};
+      for (const p of items) {
+        const m = p.market || 'crypto';
+        if (groups[m]) groups[m].push(p);
+        else groups[m] = [p];
+      }
+      const mktOrder = ['crypto','us','hk','cn'];
+      const groupHtml = mktOrder.filter(m => groups[m] && groups[m].length).map(m => {
+        const g = groups[m];
+        const subPnl = g.reduce((s,p) => s + (p.pnl_pct || 0), 0) / g.length;
+        return `<div class="pos-group">
+          <div class="pos-group-hdr">
+            <span class="pos-group-name">${MARKET_LABEL[m] || m}</span>
+            <span class="pos-group-meta">${g.length} 笔 · 均 ${fmtPct(subPnl)}</span>
+          </div>
+          ${g.map(p => renderPositionRow(p, adviceMap[p.id])).join('')}
+        </div>`;
+      }).join('');
+      $('#positions-list').innerHTML = groupHtml;
       $$('#positions-list .row').forEach(r => {
         r.addEventListener('click', () => openPositionDetail(r.dataset.id));
       });
     } catch (e) {
       console.error(e);
       $('#positions-list').innerHTML = '<div class="empty">加载失败</div>';
+    }
+  }
+
+  // v12.19.0: 拒单子页 — 显示自动交易日志中 status='rejected' 的记录
+  async function renderRejected() {
+    try {
+      const [log] = await Promise.all([loadHistory()]);
+      const allRejected = (log.items || []).filter(t => t.status === 'rejected');
+      const filterMkt = _state.rejectedFilter;
+      const items = filterMkt === 'all'
+        ? allRejected
+        : allRejected.filter(t => t.market === filterMkt);
+
+      if (!items.length) {
+        $('#rejected-list').innerHTML = `<div class="empty">
+          <div class="empty-icon">⊘</div>
+          <div>无拒单记录</div>
+          <div class="small" style="margin-top:6px;">${filterMkt === 'all' ? '系统未拒过单' : '该市场无拒单'}</div>
+        </div>`;
+        return;
+      }
+      $('#rejected-list').innerHTML = items.slice(0, 80).map(t => {
+        const action = ACTION_LABEL[t.action] || t.action;
+        const reason = t.rejected_reason || t.reason || '';
+        return `<div class="row warn">
+          <div class="row-title">
+            <div class="row-symbol">${escape(t.symbol)} <span class="small muted">${MARKET_LABEL[t.market]||t.market}</span></div>
+            <div class="row-time">${fmtRelTime(t.traded_at*1000)}</div>
+          </div>
+          <div class="row-meta small">尝试 ${action}</div>
+          <div class="row-reason">⊘ ${escape(reason)}</div>
+        </div>`;
+      }).join('');
+    } catch (e) {
+      console.error(e);
+      $('#rejected-list').innerHTML = '<div class="empty">加载失败</div>';
     }
   }
 
@@ -775,16 +946,7 @@
   // ═══════════════════════════════════════════════════════════
   // 6. 复盘学习（含历史成交、教训库）
   // ═══════════════════════════════════════════════════════════
-  async function renderReview() {
-    const f = _state.reviewFilter;
-    if (f !== 'lessons') {
-      const ra = $('#review-actions');
-      if (ra) ra.style.display = 'none';
-    }
-    if (f === 'trades') return renderHistory();
-    if (f === 'lessons') return renderLessons();
-    return renderReviewList();
-  }
+  // v12.19.0: renderReview 已废弃 — 拆为 positions/reviews(renderReviewList) + learn/lessons(renderLessons) + learn/rules(renderRulesOnly)
 
   async function renderReviewList() {
     try {
@@ -942,11 +1104,11 @@
       const adoptCnt = items.filter(l => l.status === 'adopted').length;
       $('#lesson-stats').textContent = `${actCnt} 活跃 · ${adoptCnt} 已采纳`;
       if (!items.length) {
-        $('#review-list').innerHTML = '<div class="empty"><div class="empty-icon">📌</div><div>暂无教训</div><div class="small" style="margin-top:6px;">闭环交易越多，教训库越丰富</div></div>';
+        $('#lessons-list').innerHTML = '<div class="empty"><div class="empty-icon">📌</div><div>暂无教训</div><div class="small" style="margin-top:6px;">闭环交易越多，教训库越丰富</div></div>';
         return;
       }
-      $('#review-list').innerHTML = items.map(renderLessonCard).join('');
-      $$('#review-list .lesson-adopt-btn').forEach(btn => {
+      $('#lessons-list').innerHTML = items.map(renderLessonCard).join('');
+      $$('#lessons-list .lesson-adopt-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
           openLessonAdopt(btn.dataset.id);
@@ -954,7 +1116,91 @@
       });
     } catch (e) {
       console.error(e);
-      $('#review-list').innerHTML = '<div class="empty">加载失败</div>';
+      $('#lessons-list').innerHTML = '<div class="empty">加载失败</div>';
+    }
+  }
+
+  // v12.19.0: 风控规则单独子页 (从 renderSettings 抽出)
+  async function renderRulesOnly() {
+    try {
+      const rules = await loadRiskRules();
+      const list = (rules.items || rules || []);
+      if (!Array.isArray(list) || !list.length) {
+        $('#rules-list').innerHTML = `<div class="empty">
+          <div class="empty-icon">🛡️</div>
+          <div>暂无风控规则</div>
+          <div class="small" style="margin-top:6px;">教训采纳后会自动生成</div>
+        </div>`;
+        return;
+      }
+      $('#rules-list').innerHTML = list.map(renderRuleCard).join('');
+      // 绑定 toggle 切换
+      $$('#rules-list .rule-toggle input').forEach(inp => {
+        inp.addEventListener('change', async (e) => {
+          const id = inp.dataset.id;
+          const enabled = e.target.checked;
+          try {
+            const r = await fetch('/api/risk-rules/' + id + '/toggle', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({enabled}),
+            });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            toast(enabled ? '✅ 规则已启用' : '🔴 规则已禁用', 'up');
+            _state.cache.riskRules = null;
+          } catch (e) {
+            toast('❌ ' + e.message, 'down');
+            inp.checked = !enabled;
+          }
+        });
+      });
+    } catch (e) {
+      console.error(e);
+      $('#rules-list').innerHTML = '<div class="empty">加载失败</div>';
+    }
+  }
+
+  // v12.19.0: 共振组合子页
+  async function renderCombos() {
+    try {
+      // 21 个 GOLDEN_COMBOS（与后端 monitor.py 同步）
+      const COMBOS = [
+        { name: '趋势 + 量能起爆', cn_strategies: ['均线金叉死叉','成交量突破','MACD 金叉死叉'], market: '全市场' },
+        { name: '反转底部确认', cn_strategies: ['布林带均值回归','成交量突破','EMA 三线排列'], market: '全市场' },
+        { name: '突破共振', cn_strategies: ['唐奇安通道突破','布林挤压突破','ADX 趋势跟随'], market: '全市场' },
+        { name: '加密 Smart Money', cn_strategies: ['资金费率极值','OI 持仓突破','多空比反转'], market: '加密' },
+        { name: '加密极值反转', cn_strategies: ['F&G 极值反转','资金费率极值'], market: '加密' },
+        { name: '缠论 + 量能确认', cn_strategies: ['缠论买卖点','成交量突破'], market: '全市场' },
+        { name: 'A 股政策资金', cn_strategies: ['北向资金排名','板块联动','涨停后回踩'], market: 'A 股' },
+        { name: 'RSI 趋势回踩共振', cn_strategies: ['均线金叉死叉','RSI 趋势回踩','成交量突破'], market: '全市场' },
+        { name: 'RSI 真背离反转', cn_strategies: ['RSI 真背离','成交量突破'], market: '全市场' },
+        { name: '美股财报后高开', cn_strategies: ['高开延续','均线金叉死叉','成交量突破'], market: '美股' },
+        { name: '美股高开 + MACD 动量', cn_strategies: ['高开延续','MACD 金叉死叉'], market: '美股' },
+        { name: '港股南向资金共振', cn_strategies: ['港股通南向','均线金叉死叉','成交量突破'], market: '港股' },
+        { name: '新闻驱动 + 量能确认', cn_strategies: ['新闻事件驱动','成交量突破','均线金叉死叉'], market: '全市场' },
+        { name: '美股盘前突破 + 趋势', cn_strategies: ['盘前/开盘突破','均线金叉死叉','成交量突破'], market: '美股' },
+        { name: '美股相对强势 + 三重过滤', cn_strategies: ['相对大盘强势','三重过滤'], market: '美股' },
+        { name: 'A 股龙虎榜 + 板块', cn_strategies: ['龙虎榜跟盘','板块联动'], market: 'A 股' },
+        { name: 'A 股融资 + 北向 + 板块', cn_strategies: ['融资余额突破','北向资金排名','板块联动'], market: 'A 股' },
+        { name: '加密巨鲸 + 量能 + 趋势', cn_strategies: ['链上巨鲸大单','成交量突破','均线金叉死叉'], market: '加密' },
+        { name: '加密稳定币 + F&G 共振', cn_strategies: ['稳定币流入','F&G 极值反转'], market: '加密' },
+        { name: '量价 + RSI 双背离', cn_strategies: ['量价背离','RSI 真背离'], market: '全市场' },
+        { name: '三重过滤 + RSI 回踩', cn_strategies: ['三重过滤','RSI 趋势回踩'], market: '全市场' },
+      ];
+      $('#combos-list').innerHTML = `
+        <div class="card section">
+          <div class="section-title">🌟 黄金共振组合（${COMBOS.length} 个）</div>
+          <div class="muted small" style="margin-bottom:10px;">命中即 conf=100，仓位 ×1.5</div>
+        </div>
+        ${COMBOS.map(c => `<div class="combo-card">
+          <div class="combo-name">${escape(c.name)}</div>
+          <div class="combo-meta">${c.market}</div>
+          <div class="combo-strats">${c.cn_strategies.map(s => `<span class="combo-chip">${escape(s)}</span>`).join('')}</div>
+        </div>`).join('')}
+      `;
+    } catch (e) {
+      console.error(e);
+      $('#combos-list').innerHTML = '<div class="empty">加载失败</div>';
     }
   }
 
@@ -1188,32 +1434,7 @@
         $('#settings-llm-cost').innerHTML = '<div class="empty small">LLM 成本数据不可用</div>';
       }
 
-      // 风控规则区块
-      const rules = (riskRules && riskRules.items) || [];
-      if (!rules.length) {
-        $('#settings-risk-rules').innerHTML = '<div class="empty small">暂无规则。在复盘 tab 把高分教训"采纳"后会出现在这里</div>';
-      } else {
-        $('#settings-risk-rules').innerHTML = rules.map(renderRuleCard).join('');
-        $$('#settings-risk-rules .rule-toggle input').forEach(inp => {
-          inp.addEventListener('change', async (e) => {
-            const id = inp.dataset.id;
-            const enabled = e.target.checked;
-            try {
-              const r = await fetch('/api/risk-rules/' + id + '/toggle', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({enabled}),
-              });
-              if (!r.ok) throw new Error('HTTP ' + r.status);
-              toast(enabled ? '✅ 规则已启用' : '🔴 规则已禁用', 'up');
-              _state.cache.riskRules = null;
-            } catch (e) {
-              toast('❌ ' + e.message, 'down');
-              inp.checked = !enabled;
-            }
-          });
-        });
-      }
+      // v12.19.0: 风控规则已移到 learn/rules 子页，此处不再渲染
     } catch (e) {
       $('#settings-status').innerHTML = '<div class="empty small">加载失败</div>';
     }
@@ -1260,15 +1481,49 @@
 
   // ─── 主刷新 ───
   async function refresh() {
-    const t = _state.activeTab;
-    if (t === 'overview') await renderOverview();
-    else if (t === 'news') await renderNews();
-    else if (t === 'pool') await renderPool();
-    else if (t === 'signals') await renderSignals();
-    else if (t === 'positions') await renderPositions();
-    else if (t === 'review') await renderReview();
-    else if (t === 'settings') await renderSettings();
+    const key = `${_state.activeTab}/${_state.activeSub}`;
+    const renderFn = TAB_RENDERERS[key];
+    if (renderFn) {
+      try { await renderFn(); }
+      catch (e) { console.error(`[refresh] ${key} 失败:`, e); }
+    } else {
+      console.warn(`[refresh] 未知路由: ${key}`);
+    }
+    _state.lastUpdate = Date.now();
+    updateLastUpdateLabel();
   }
+
+  function updateLastUpdateLabel() {
+    const el = $('#last-update');
+    if (!el) return;
+    const sec = Math.floor((Date.now() - _state.lastUpdate) / 1000);
+    if (_state.lastUpdate === 0) { el.textContent = '—'; return; }
+    if (sec < 5) el.textContent = '刚刚更新';
+    else if (sec < 60) el.textContent = `${sec}秒前`;
+    else if (sec < 3600) el.textContent = `${Math.floor(sec/60)}分钟前`;
+    else el.textContent = `${Math.floor(sec/3600)}h前`;
+  }
+  setInterval(updateLastUpdateLabel, 5000);
+
+  // v12.19.0: 5 main × N sub tab 路由表
+  // 注意：TAB_RENDERERS 必须在所有 render 函数定义后再赋值（见文件末尾）
+  let TAB_RENDERERS = {};
+
+  // v12.19.0: TAB_RENDERERS 在所有 render 函数定义后赋值
+  TAB_RENDERERS = {
+    'home/home':          renderHome,
+    'signals/signals':    renderSignals,
+    'signals/library':    renderStrategyLibrary,
+    'signals/combos':     renderCombos,
+    'positions/current':  renderPositions,
+    'positions/rejected': renderRejected,
+    'positions/reviews':  renderReviewList,
+    'learn/lessons':      renderLessons,
+    'learn/rules':        renderRulesOnly,
+    'more/news':          renderNews,
+    'more/pool':          renderPool,
+    'more/settings':      renderSettings,
+  };
 
   // 自动 30s 轮询当前 tab
   setInterval(() => {
