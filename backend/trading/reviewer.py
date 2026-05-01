@@ -303,10 +303,15 @@ class TradeReviewer:
             return None
 
         # v12.16.2 (#1): 策略参数分析 — LLM 评估开仓策略 params 合理性 + 改进建议
-        strategy_param_analysis = await self._llm_strategy_param_analysis(
-            position_id, symbol, market, side, open_at, close_at,
-            open_price, close_price, pnl_pct, period_high, period_low, snapshot_text,
-        )
+        # v12.18.4: 加防护 try/except — 此辅助步骤异常不应阻断主复盘落库
+        try:
+            strategy_param_analysis = await self._llm_strategy_param_analysis(
+                position_id, symbol, market, side, open_at, close_at,
+                open_price, close_price, pnl_pct, period_high, period_low, snapshot_text,
+            )
+        except Exception as e:
+            logger.warning(f"[strat-analysis] {symbol}({position_id[:8]}) 策略参数分析异常 (主复盘继续): {e}")
+            strategy_param_analysis = {}
 
         # 8. 落库（v12.8: 含 link_evaluations / primary_lesson / what_if_better）
         try:
@@ -889,7 +894,7 @@ class TradeReviewer:
 实现盈亏: {pnl_pct:+.2f}%
 持仓期间最高: {period_high or 0:.4f} (最大浮盈 {max_run_pct:+.2f}%)
 持仓期间最低: {period_low or 0:.4f} (最大浮亏 {max_drawdown_pct:+.2f}%)
-信号系统置信度: {sig.get('confidence', 0)}; AI 验证置信度: {sig.get('ai_confidence', 0)}
+信号系统置信度: {sig['confidence'] or 0}; AI 验证置信度: {sig['ai_confidence'] or 0}
 
 【入场策略 + 当前参数】
 """
