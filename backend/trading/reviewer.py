@@ -296,6 +296,12 @@ class TradeReviewer:
             logger.warning(f"[reviewer] {symbol}({position_id[:8]}) LLM 返回缺 score/grade，不写半成品")
             return None
 
+        # v12.16.2 (#1): 策略参数分析 — LLM 评估开仓策略 params 合理性 + 改进建议
+        strategy_param_analysis = await self._llm_strategy_param_analysis(
+            position_id, symbol, market, side, open_at, close_at,
+            open_price, close_price, pnl_pct, period_high, period_low, snapshot_text,
+        )
+
         # 8. 落库（v12.8: 含 link_evaluations / primary_lesson / what_if_better）
         try:
             async with self.db.acquire() as conn:
@@ -309,8 +315,9 @@ class TradeReviewer:
                      entry_analysis, mid_analysis, exit_analysis,
                      turning_points, improvements, lessons,
                      link_evaluations, primary_lesson, what_if_better,
+                     strategy_param_analysis,
                      snapshot_json, llm_model, llm_tokens, reviewed_at)
-                    VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?, ?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?,?)
+                    VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?, ?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?, ?, ?,?,?,?)
                 """, (
                     position_id, symbol, market, pool_id, side,
                     open_price, close_price, open_at, close_at, hold_hours,
@@ -326,6 +333,7 @@ class TradeReviewer:
                     json.dumps(result.get("lessons", []), ensure_ascii=False),
                     json.dumps(result.get("link_evaluations", {}), ensure_ascii=False),
                     result.get("primary_lesson", ""), result.get("what_if_better", ""),
+                    json.dumps(strategy_param_analysis, ensure_ascii=False) if strategy_param_analysis else "{}",
                     snapshot_text, result.get("llm_model", ""), result.get("llm_tokens", 0),
                     int(time.time())
                 ))
@@ -785,6 +793,137 @@ class TradeReviewer:
         except Exception as e:
             logger.debug(f"[reviewer] LLM 失败 → 兜底: {e}")
             return fallback
+
+    # ──────────────────── v12.16.2 (#1): 策略参数分析 ────────────────────
+
+    async def _llm_strategy_param_analysis(
+        self, position_id, symbol, market, side, open_at, close_at,
+        open_price, close_price, pnl_pct, period_high, period_low, snapshot_text,
+    ):
+        """v12.16.2 评估开仓使用的策略参数合理性 + 给出改进建议。
+        返回 {strategies: [{name, current_params, evaluation, reason, suggested_params, expected_improvement}]}
+        失败返回 {} (不阻断主复盘流程)
+        """
+        if not self.ai_analyzer:
+            return {}
+        # 1) 找入场策略 + params
+        try:
+            async with self.db.acquire() as conn:
+                # 拉首笔 open 的 signal_id
+                cur = await conn.execute(
+                    """SELECT trigger_detail FROM auto_trade_log
+                       WHERE position_id=? AND action='open' AND status='executed'
+                       ORDER BY id ASC LIMIT 1""",
+                    (position_id,),
+                )
+                row = await cur.fetchone()
+            if not row or not row["trigger_detail"]:
+                return {}
+            try: td = json.loads(row["trigger_detail"]) if isinstance(row["trigger_detail"], str) else row["trigger_detail"]
+            except Exception: td = {}
+            sid = td.get("signal_id") if isinstance(td, dict) else None
+            if not sid:
+                return {}
+            async with self.db.acquire() as conn:
+                cur = await conn.execute(
+                    "SELECT strategy_name, triggered_by, interval, confidence, ai_confidence FROM signals WHERE id=?",
+                    (sid,),
+                )
+                sig = await cur.fetchone()
+            if not sig:
+                return {}
+            strategy_name = sig["strategy_name"] or ""
+            try: trig_by = json.loads(sig["triggered_by"]) if sig["triggered_by"] else {}
+            except Exception: trig_by = {}
+            # 共振 — 拉所有原始策略
+            if strategy_name == "resonance":
+                strategy_list = trig_by.get("strategies", [])
+            else:
+                strategy_list = [strategy_name]
+        except Exception as e:
+            logger.debug(f"[strat-analysis] {symbol} 拉入场策略失败: {e}")
+            return {}
+
+        if not strategy_list:
+            return {}
+        # 2) 拉每个策略的 binding params (从 strategy_bindings 表)
+        strat_params = {}
+        try:
+            async with self.db.acquire() as conn:
+                for s in strategy_list:
+                    cur = await conn.execute(
+                        "SELECT params FROM strategy_bindings WHERE strategy_name=? AND market=? AND interval=? LIMIT 1",
+                        (s, market, sig["interval"] or "1H"),
+                    )
+                    pr = await cur.fetchone()
+                    if pr and pr["params"]:
+                        try: strat_params[s] = json.loads(pr["params"])
+                        except Exception: strat_params[s] = {}
+                    else:
+                        strat_params[s] = {}
+        except Exception:
+            pass
+
+        # 3) 构造 prompt
+        from datetime import datetime, timezone, timedelta
+        def fmt(ts):
+            if not ts: return "-"
+            return datetime.fromtimestamp(ts, timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
+        hold_hours = (close_at - open_at) / 3600 if open_at and close_at else 0
+        max_run_pct = (period_high - open_price) / open_price * 100 if (open_price and period_high) else 0
+        max_drawdown_pct = (period_low - open_price) / open_price * 100 if (open_price and period_low) else 0
+        prompt = f"""你是量化策略调参专家。下面是一笔已闭环的交易，使用了下列策略入场。请评估每个策略当前参数是否合理，给出改进建议。
+
+【交易概况】
+品种: {symbol} ({market})  方向: {side}
+开仓: {fmt(open_at)} @ {open_price:.4f}
+平仓: {fmt(close_at)} @ {close_price:.4f}
+持仓: {hold_hours:.1f} 小时
+实现盈亏: {pnl_pct:+.2f}%
+持仓期间最高: {period_high or 0:.4f} (最大浮盈 {max_run_pct:+.2f}%)
+持仓期间最低: {period_low or 0:.4f} (最大浮亏 {max_drawdown_pct:+.2f}%)
+信号系统置信度: {sig.get('confidence', 0)}; AI 验证置信度: {sig.get('ai_confidence', 0)}
+
+【入场策略 + 当前参数】
+"""
+        for s in strategy_list:
+            prompt += f"- {s}: {json.dumps(strat_params.get(s, {}), ensure_ascii=False)}\n"
+        prompt += f"""
+【入场时市场快照】
+{(snapshot_text or '')[:1500]}
+
+【任务】
+对每个策略评估：
+1. 当前参数是否适合当前市场（{market}）和品种？
+2. 给出 ★1-5 评级（5=完美 / 1=应放弃）
+3. 如果可改进，建议新参数（具体数值）+ 预期改善（一句话）
+4. 如果是某个共振组合命中，是否过早或过晚？
+
+输出严格 JSON：
+{{
+  "strategies": [
+    {{
+      "name": "策略名",
+      "current_params": {{...}},
+      "evaluation": 1-5,
+      "reason": "<= 80 字理由（中文）",
+      "suggested_params": {{...}} 或 null,
+      "expected_improvement": "<= 50 字（中文，null 也可）"
+    }}
+  ],
+  "overall_conclusion": "<= 60 字综合结论（中文）"
+}}
+
+只输出 JSON，不输出别的。
+"""
+        try:
+            result = await self.ai_analyzer._call_llm(prompt, max_tokens=800, path="strategy_param_review")
+            if not isinstance(result, dict) or not result.get("strategies"):
+                return {}
+            return result
+        except Exception as e:
+            logger.debug(f"[strat-analysis] LLM 调用失败 {symbol}: {e}")
+            return {}
 
     # ──────────────────── Phase A: 教训聚合 + 反馈 ────────────────────
 

@@ -78,17 +78,22 @@
       <div id="pool-list" class="list">—</div>
     </section>
 
-    <!-- 4. 策略信号 -->
+    <!-- 4. 策略信号 / 策略库 -->
     <section class="page" data-page="signals">
       <div class="filter-bar">
+        <button class="chip active" data-stab="signals">📡 信号</button>
+        <button class="chip" data-stab="library">📚 策略库</button>
+      </div>
+      <div id="signals-subtabs" class="filter-bar" style="display:flex;">
         <button class="chip active" data-vfilter="all">全部</button>
-        <button class="chip" data-vfilter="confirm">✅ confirm</button>
-        <button class="chip" data-vfilter="warn">⚠️ warn</button>
-        <button class="chip" data-vfilter="reject">❌ reject</button>
-        <button class="chip" data-vfilter="skipped">⊘ skipped</button>
+        <button class="chip" data-vfilter="confirm">✅ 已确认</button>
+        <button class="chip" data-vfilter="warn">⚠️ 警示</button>
+        <button class="chip" data-vfilter="reject">❌ 已拒绝</button>
+        <button class="chip" data-vfilter="skipped">⊘ 跳过</button>
         <button class="chip" data-vfilter="">⏳ 验证中</button>
       </div>
       <div id="signals-list" class="list">—</div>
+      <div id="library-list" class="list" style="display:none;">—</div>
     </section>
 
     <!-- 5. 持仓管理 -->

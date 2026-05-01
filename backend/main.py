@@ -2859,6 +2859,44 @@ async def list_positions():
         p["pnl_usd"] = round(pnl_usd, 2) if pnl_usd else 0
         p["pnl_pct"] = round(pnl_pct, 2) if pnl_pct else 0
         p["market_value_usd"] = round(market_value_usd, 2) if market_value_usd else 0
+
+        # v12.16.2 (#3): 加 entry_strategy — 从 auto_trade_log 找首笔 open 的 signal_id 反查 signals.strategy_name
+        try:
+            async with db.acquire() as conn:
+                cur = await conn.execute(
+                    """SELECT trigger_detail FROM auto_trade_log
+                       WHERE position_id=? AND action='open' AND status='executed'
+                       ORDER BY id ASC LIMIT 1""",
+                    (p.get("id"),),
+                )
+                row = await cur.fetchone()
+            if row and row["trigger_detail"]:
+                td = row["trigger_detail"]
+                if isinstance(td, str):
+                    try: td = json.loads(td)
+                    except Exception: td = {}
+                sid = td.get("signal_id") if isinstance(td, dict) else None
+                if sid:
+                    async with db.acquire() as conn:
+                        cur = await conn.execute(
+                            "SELECT strategy_name, triggered_by FROM signals WHERE id=?",
+                            (sid,),
+                        )
+                        sig_row = await cur.fetchone()
+                    if sig_row:
+                        strat_name = sig_row["strategy_name"] or ""
+                        p["entry_strategy"] = strat_name
+                        # 共振 super signal — 解析 triggered_by 拿原始策略列表
+                        if strat_name == "resonance":
+                            try:
+                                tb = json.loads(sig_row["triggered_by"]) if sig_row["triggered_by"] else {}
+                                p["entry_strategies"] = tb.get("strategies") or []
+                                p["entry_resonance_level"] = tb.get("resonance_level")
+                                p["entry_sizing_boost"] = tb.get("sizing_boost", 1.0)
+                            except Exception:
+                                pass
+        except Exception as e:
+            logger.debug(f"[positions] entry_strategy 查询失败 {p.get('id')}: {e}")
         enriched.append(p)
     return enriched
 
@@ -3861,7 +3899,7 @@ async def get_review(position_id: str):
         try: r[k] = json.loads(r.get(k) or "[]")
         except Exception: r[k] = []
     # 解析 JSON 对象字段
-    for k in ("link_evaluations",):
+    for k in ("link_evaluations", "strategy_param_analysis"):
         try: r[k] = json.loads(r.get(k) or "{}")
         except Exception: r[k] = {}
     return r
@@ -3909,7 +3947,7 @@ async def list_reviews(limit: int = Query(50, ge=1, le=500),
         for k in ("turning_points", "lessons", "pros", "cons"):
             try: r[k] = json.loads(r.get(k) or "[]")
             except Exception: r[k] = []
-        for k in ("link_evaluations",):
+        for k in ("link_evaluations", "strategy_param_analysis"):
             try: r[k] = json.loads(r.get(k) or "{}")
             except Exception: r[k] = {}
     return {"items": rows}

@@ -30,16 +30,18 @@
   const MARKET_LABEL = { crypto: '加密', us: '美股', hk: '港股', cn: 'A股', macro: '宏观' };
   const ACTION_ICON = { open: '📥', add: '➕', reduce: '➖', close: '🏁' };
   const ACTION_LABEL = { open: '开仓', add: '加仓', reduce: '减仓', close: '平仓' };
+  const ADVICE_LABEL_CN = { hold: '继续持有', reduce: '减仓', add: '加仓', close: '平仓' };
   const VERDICT_LABEL = {
-    confirm: '✅', warn: '⚠️', reject: '❌',
-    skipped: '⊘', llm_error: '⛔', stale: '⌛',
+    confirm: '✅ 已确认', warn: '⚠️ 警示', reject: '❌ 已拒绝',
+    skipped: '⊘ 已跳过', llm_error: '⛔ LLM错', stale: '⌛ 已过期',
   };
   const VERDICT_CLASS = {
     confirm: 'up', warn: 'warn', reject: 'down',
     skipped: 'muted', llm_error: 'down', stale: 'muted',
   };
   const POOL_STATUS_LABEL = {
-    active: '活跃', cooling: '冷却', archived: '归档', candidate: '候选',
+    active: '活跃', cooling: '冷却', archived: '已归档', candidate: '候选',
+    monitoring: '正式关注', adopted: '已采纳', disabled: '已禁用', expired: '已过期',
   };
   const GRADE_LABEL = { A: '优', B: '良', C: '一般', D: '差' };
 
@@ -49,10 +51,11 @@
     newsFilter: 'all',
     poolFilter: 'all',
     reviewFilter: 'reviews',
+    signalSubtab: 'signals',  // signals | library
     cache: {
       status: null, positions: null, signals: null, history: null,
       news: null, pool: null, reviews: null, lessons: null,
-      advices: null, llmCost: null, riskRules: null,
+      advices: null, llmCost: null, riskRules: null, strategies: null,
     },
   };
 
@@ -75,6 +78,19 @@
       _state.signalFilter = chip.dataset.vfilter;
       $$('.chip[data-vfilter]').forEach(c => c.classList.toggle('active', c === chip));
       renderSignals();
+    });
+  });
+  // v12.16.2 (#2): 信号 tab 顶部切换 (信号 / 策略库)
+  $$('.chip[data-stab]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      _state.signalSubtab = chip.dataset.stab;
+      $$('.chip[data-stab]').forEach(c => c.classList.toggle('active', c === chip));
+      const isLib = _state.signalSubtab === 'library';
+      $('#signals-subtabs').style.display = isLib ? 'none' : 'flex';
+      $('#signals-list').style.display = isLib ? 'none' : '';
+      $('#library-list').style.display = isLib ? '' : 'none';
+      if (isLib) renderStrategyLibrary();
+      else renderSignals();
     });
   });
   $$('.chip[data-nfilter]').forEach(chip => {
@@ -567,7 +583,7 @@
     const icon = VERDICT_LABEL[v] || '⏳';
     const cls = VERDICT_CLASS[v] || 'accent';
     const conf = s.ai_confidence || 0;
-    const dirCn = s.action === 'buy' ? 'BUY' : 'SELL';
+    const dirCn = s.action === 'buy' ? '买入' : '卖出';
     const dirCls = s.action === 'buy' ? 'up' : 'down';
     return `<div class="row ${cls}" data-id="${escape(s.id)}" style="cursor:pointer;">
       <div class="row-title">
@@ -667,9 +683,21 @@
     const pnlLocal = p.pnl_local || 0;
     const cls = pnlPct >= 0 ? 'up' : 'down';
     const sl = p.stop_loss, tp = p.take_profit;
+    const adviceCn = advice && advice.advice ? (ADVICE_LABEL_CN[advice.advice] || advice.advice) : '';
     const adviceTxt = advice && advice.advice
-      ? `<div class="row-reason">🤖 ${escape(advice.advice)}${advice.reason ? ' · ' + escape(String(advice.reason).slice(0,80)) : ''}</div>`
+      ? `<div class="row-reason">🤖 ${escape(adviceCn)}${advice.reason ? ' · ' + escape(String(advice.reason).slice(0,80)) : ''}</div>`
       : '';
+    // v12.16.2 (#3): 入场策略显示
+    let strategyTxt = '';
+    if (p.entry_strategy) {
+      if (p.entry_strategy === 'resonance' && p.entry_strategies) {
+        const lvl = p.entry_resonance_level || '?';
+        const boost = p.entry_sizing_boost || 1.0;
+        strategyTxt = `<div class="row-meta small" style="color:var(--accent);">📡 共振 L${lvl} (×${boost}): ${p.entry_strategies.join(' + ')}</div>`;
+      } else {
+        strategyTxt = `<div class="row-meta small">📡 策略：${escape(p.entry_strategy)}</div>`;
+      }
+    }
     return `<div class="row ${cls}" data-id="${escape(p.id)}" style="cursor:pointer;">
       <div class="row-title">
         <div class="row-symbol">${escape(p.symbol)} <span class="small muted">${MARKET_LABEL[p.market]||p.market} · ${sideCn}</span></div>
@@ -678,6 +706,7 @@
       <div class="row-meta">
         ${qty.toLocaleString()} @ ${fmtMoney(avg, ccy)} → ${fmtMoney(cur, ccy)} · ${fmtPnl(pnlLocal, ccy)}
       </div>
+      ${strategyTxt}
       ${(sl || tp) ? `<div class="row-meta small">
         ${sl ? `🛑 SL ${fmtMoney(sl, ccy)}` : ''} ${tp ? `🎯 TP ${fmtMoney(tp, ccy)}` : ''}
       </div>` : ''}
@@ -708,7 +737,7 @@
         <div class="kv-row"><span class="k">开仓时间</span><span class="v">${fmtTime(p.opened_at)}</span></div>
         <h4>🤖 最新 AI 建议</h4>
         ${advice && advice.advice
-          ? `<div class="kv-row"><span class="k">建议</span><span class="v">${escape(advice.advice)}</span></div>
+          ? `<div class="kv-row"><span class="k">建议</span><span class="v">${escape(ADVICE_LABEL_CN[advice.advice] || advice.advice)}</span></div>
              ${advice.reason ? `<div style="margin:4px 0;">${escape(advice.reason)}</div>` : ''}
              <div class="kv-row"><span class="k">时间</span><span class="v small">${fmtTime(advice.advised_at)}</span></div>`
           : '<div class="muted">暂无建议</div>'}
@@ -820,11 +849,40 @@
             return `<li>${t}</li>`;
           }).join('')}</ul>` : ''}
         ${lessons.length ? `<h4>📌 教训</h4><ul>${lessons.map(x=>`<li>${escape(x)}</li>`).join('')}</ul>` : ''}
+        ${renderStrategyParamAnalysis(r.strategy_param_analysis)}
       `;
       $('#sheet-content').innerHTML = html;
     } catch (e) {
       $('#sheet-content').innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
     }
+  }
+
+  // v12.16.2 (#1): 渲染策略参数分析段
+  function renderStrategyParamAnalysis(data) {
+    if (!data || typeof data !== 'object') return '';
+    let strategies = data.strategies;
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data); strategies = data.strategies; } catch { return ''; }
+    }
+    if (!Array.isArray(strategies) || !strategies.length) return '';
+    const conclusion = data.overall_conclusion || '';
+    let html = '<h4>🎯 策略参数分析</h4>';
+    if (conclusion) html += `<div style="margin-bottom:8px;color:var(--text-2);">${escape(conclusion)}</div>`;
+    for (const s of strategies) {
+      const stars = '★'.repeat(s.evaluation || 0) + '☆'.repeat(5 - (s.evaluation || 0));
+      const cur = JSON.stringify(s.current_params || {}, null, 0).slice(0, 80);
+      const sug = s.suggested_params ? JSON.stringify(s.suggested_params).slice(0, 80) : null;
+      html += `<div style="background:var(--bg-card-2);padding:8px 10px;border-radius:6px;margin-bottom:6px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-weight:600;">${escape(s.name || '?')}</span>
+          <span class="warn">${stars}</span>
+        </div>
+        <div class="row-meta small" style="margin-top:3px;">当前：${escape(cur)}</div>
+        ${s.reason ? `<div class="row-reason" style="margin-top:4px;">${escape(s.reason)}</div>` : ''}
+        ${sug ? `<div class="row-meta small" style="margin-top:4px;color:var(--accent);">💡 建议：${escape(sug)}${s.expected_improvement ? ` — ${escape(s.expected_improvement)}` : ''}</div>` : ''}
+      </div>`;
+    }
+    return html;
   }
 
   async function renderHistory() {
@@ -1032,6 +1090,61 @@
     try { _state.cache.riskRules = await fetchJSON('/api/risk-rules'); }
     catch { _state.cache.riskRules = {items: []}; }
     return _state.cache.riskRules;
+  }
+
+  async function loadStrategies() {
+    if (_state.cache.strategies) return _state.cache.strategies;
+    try { _state.cache.strategies = await fetchJSON('/api/strategies'); }
+    catch { _state.cache.strategies = []; }
+    return _state.cache.strategies;
+  }
+
+  // v12.16.2 (#2): 策略库分组定义
+  const STRATEGY_GROUPS = [
+    { name: '🌐 通用型 (全市场)', strategies: ['ma_cross','donchian_breakout','bollinger_reversion','volume_breakout','flash_event','chanlun','macd_cross','ema_triple','squeeze_breakout','adx_trend_follow'] },
+    { name: '💰 加密专属', strategies: ['funding_extreme','oi_breakout','long_short_ratio','fear_greed_reversal'] },
+    { name: '🇨🇳 A 股专属', strategies: ['limit_up_followup','northbound_flow_top','sector_momentum'] },
+    { name: '🇭🇰 港股专属', strategies: ['southbound_inflow','ah_spread_revert'] },
+    { name: '🇺🇸 美股专属', strategies: ['gap_up_continuation','vwap_pullback','earnings_window_filter'] },
+  ];
+  const STRATEGY_NAME_CN = {
+    ma_cross: '均线金叉死叉', donchian_breakout: '通道突破', bollinger_reversion: '布林带均值回归',
+    volume_breakout: '成交量突破', flash_event: '新闻事件驱动', chanlun: '缠论买卖点',
+    macd_cross: 'MACD 金叉死叉', ema_triple: 'EMA 三线排列', squeeze_breakout: '布林挤压突破',
+    adx_trend_follow: 'ADX 趋势跟随',
+    funding_extreme: '资金费率极值', oi_breakout: 'OI 持仓突破', long_short_ratio: '多空比反转',
+    fear_greed_reversal: 'F&G 极值反转',
+    limit_up_followup: '涨停后回踩', northbound_flow_top: '北向资金排名', sector_momentum: '板块联动',
+    southbound_inflow: '港股通南向', ah_spread_revert: 'AH 价差回归',
+    gap_up_continuation: '高开延续', vwap_pullback: 'VWAP 回踩', earnings_window_filter: '财报窗口过滤',
+  };
+
+  async function renderStrategyLibrary() {
+    const cont = $('#library-list');
+    try {
+      const strategies = await loadStrategies();
+      const byName = {};
+      strategies.forEach(s => byName[s.name] = s);
+      let html = '';
+      for (const grp of STRATEGY_GROUPS) {
+        html += `<div class="section-title" style="margin-top:12px;">${grp.name}</div>`;
+        for (const n of grp.strategies) {
+          const s = byName[n];
+          if (!s) continue;
+          const cn = STRATEGY_NAME_CN[n] || n;
+          html += `<div class="card" style="margin-bottom:8px;padding:10px 12px;">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;">
+              <div style="font-weight:600;font-size:14px;">${escape(cn)}</div>
+              <div class="small muted">${escape(n)}</div>
+            </div>
+            <div class="row-meta" style="margin-top:4px;">${escape(s.description || '')}</div>
+          </div>`;
+        }
+      }
+      cont.innerHTML = html || '<div class="empty">暂无策略</div>';
+    } catch (e) {
+      cont.innerHTML = '<div class="empty">加载失败</div>';
+    }
   }
 
   // ═══════════════════════════════════════════════════════════

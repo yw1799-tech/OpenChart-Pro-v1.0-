@@ -272,7 +272,7 @@ class DatabaseManager:
         # 查当前 schema 版本
         cur = await conn.execute("PRAGMA user_version")
         current_version = (await cur.fetchone())[0]
-        TARGET_VERSION = 14  # v14: lesson_pattern 加 adoption_score / worst_pnl_pct（教训采纳闭环）
+        TARGET_VERSION = 15  # v15: trade_review 加 strategy_param_analysis（v12.16.2 复盘策略参数分析）
         if current_version < TARGET_VERSION:
             # v12.11: 用 BEGIN/COMMIT 包整个迁移；任何步骤抛错则 ROLLBACK + 不前进 user_version
             migration_ok = True
@@ -327,6 +327,8 @@ class DatabaseManager:
                 "ALTER TABLE lesson_pattern ADD COLUMN has_specific_params INTEGER DEFAULT 0",
                 "ALTER TABLE lesson_pattern ADD COLUMN suggested_rule_type TEXT",   # LLM 翻译建议的 rule_type
                 "ALTER TABLE lesson_pattern ADD COLUMN suggested_params TEXT",      # JSON：LLM 建议的参数
+                # v15 (v12.16.2) 复盘策略参数分析：LLM 评估开仓策略参数合理性 + 改进建议
+                "ALTER TABLE trade_review ADD COLUMN strategy_param_analysis TEXT",  # JSON
             ]:
                 try:
                     await conn.execute(alter)
