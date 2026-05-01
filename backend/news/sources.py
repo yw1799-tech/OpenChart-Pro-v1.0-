@@ -72,7 +72,7 @@ NEWS_SOURCES = [
         "market": "crypto",
         "url": "https://www.theblock.co/rss.xml",
         "interval": 120,
-        "enabled": True,
+        "enabled": False,  # Cloudflare 反爬严格 (403)，CoinDesk/Cointelegraph 已覆盖
         "trust": 0.9,
         "bonus": 2,
     },
@@ -86,7 +86,8 @@ NEWS_SOURCES = [
         "trust": 0.8,
         "bonus": 1,
     },
-    # 金色财经 jinse.com/jinse.cn 域名在部分网络环境无法解析，已从启用列表移除
+    # 金色财经 jinse.com/jinse.cn 域名在云服务器（东京）无法解析（实测 HTTP 000），已从启用列表移除
+    # 巴比特 8btc.com 同 — DNS/网络层不通，需要换网络或代理才能用
     {
         "name": "CryptoPanic",
         "type": "rest",
@@ -96,6 +97,26 @@ NEWS_SOURCES = [
         "enabled": False,
         "trust": 0.7,
         "bonus": 0,
+    },
+    {
+        "name": "OKX公告",
+        "type": "rest",
+        "market": "crypto",
+        "url": "https://www.okx.com/api/v5/support/announcements",
+        "interval": 300,
+        "enabled": True,  # v12.13: 新 endpoint 实测 HTTP 200 + 标准 JSON
+        "trust": 1.0,
+        "bonus": 3,
+    },
+    {
+        "name": "TheDefiant",
+        "type": "rss",
+        "market": "crypto",
+        "url": "https://thedefiant.io/feed",
+        "interval": 300,
+        "enabled": True,  # v12.13: DeFi 专题视角（强 BTC/ETH 互补）
+        "trust": 0.85,
+        "bonus": 1,
     },
 
     # ═══════════════════════════════════════════════════════════════
@@ -218,7 +239,9 @@ NEWS_SOURCES = [
         "type": "rss",
         "market": "hk",
         "url": "https://hk.finance.yahoo.com/rss/",
-        "interval": 120,
+        # v12.13: 120→600（云服务器 IP 被 Yahoo 严格反爬，2min 高频导致持续 429）
+        # 港股新闻不需要 2min 实时；SCMP+金十+财联社已覆盖时效需求
+        "interval": 600,
         "enabled": True,
         "trust": 0.85,
         "bonus": 1,
@@ -249,19 +272,29 @@ NEWS_SOURCES = [
         "market": "hk",
         "url": "https://feed.mix.sina.com.cn/api/roll/get?pageid=153&lid=2510&num=30",
         "interval": 120,
-        "enabled": True,
+        "enabled": False,  # 2026-04: 最后采集 2025-05，来源已死，关闭
         "trust": 0.8,
         "bonus": 1,
     },
     {
         "name": "HKEX披露易",
-        "type": "scraper",
+        "type": "rest",
         "market": "hk",
-        "url": "https://www1.hkexnews.hk/listedco/listconews/mainindex/SEHK_LISTEDCO_DOCUMENTS_TODAY.HTM",
-        "interval": 600,
-        "enabled": False,  # HKEX HTML 爬取复杂，Phase 3B 启用
+        "url": "https://www1.hkexnews.hk/ncms/today/today.json",
+        "interval": 300,
+        "enabled": False,  # 2026-04: today.json 持续 JSON 解析失败（接口改/反爬），关闭止损刷屏
         "trust": 1.0,
         "bonus": 3,
+    },
+    {
+        "name": "经济通etnet",
+        "type": "scraper",
+        "market": "hk",
+        "url": "https://www.etnet.com.hk/www/tc/news/index.php",
+        "interval": 600,
+        "enabled": True,  # v12.13: HTML scraper 实测 1 页 ~60 条港股财经，含 (xxxxx) 港股代码自动 tag
+        "trust": 0.85,
+        "bonus": 2,
     },
 
     # ═══════════════════════════════════════════════════════════════
@@ -294,6 +327,16 @@ NEWS_SOURCES = [
         "url": "https://www.bls.gov/feed/cpi.rss",
         "interval": 600,
         "enabled": True,
+        "trust": 1.0,
+        "bonus": 3,
+    },
+    {
+        "name": "ECB欧洲央行",
+        "type": "rss",
+        "market": "macro",
+        "url": "https://www.ecb.europa.eu/rss/press.xml",
+        "interval": 600,
+        "enabled": True,  # v12.13: 实测 HTTP 200 + 标准 RSS（含 ECB 政策声明 + 行长讲话）
         "trust": 1.0,
         "bonus": 3,
     },

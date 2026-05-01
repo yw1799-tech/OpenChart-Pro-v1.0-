@@ -7,8 +7,19 @@ const Dashboard = (() => {
   let refreshTimer = null;
   let loaded = false;
 
+  let _inited = false;
   function init() {
-    // 不自动加载，等用户切换到仪表盘标签页再加载
+    if (_inited) { console.warn('[Dashboard] 已初始化，跳过重复 init'); return; }
+    _inited = true;
+    if (window.__visibilityHandlers) {
+      window.__visibilityHandlers.push(({ hidden }) => {
+        if (hidden && refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+        else if (!hidden && loaded && !refreshTimer) {
+          loadAll();
+          refreshTimer = setInterval(loadAll, 60000);
+        }
+      });
+    }
   }
 
   async function refresh() {

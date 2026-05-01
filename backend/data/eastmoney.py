@@ -54,9 +54,14 @@ def _get_secid(code: str) -> str:
     上海: 1.600xxx/1.601xxx/1.603xxx, 科创板: 1.688xxx
     深圳: 0.000xxx/0.001xxx, 中小板: 0.002xxx, 创业板: 0.300xxx/0.301xxx
     北交所: 0.8xxxxx/0.43xxxx
+    港股: 116.xxxxx (5 位数字，不足补零)
     """
     # 去掉可能的前缀
     code = code.strip().upper()
+    # 港股 .HK 后缀 → 116.{5位}
+    if code.endswith(".HK"):
+        hk_code = code[:-3].lstrip("0")
+        return f"116.{hk_code.zfill(5)}"
     for prefix in ("SH", "SZ", "BJ", "1.", "0."):
         if code.startswith(prefix):
             code = code[len(prefix) :]
@@ -154,19 +159,37 @@ class EastMoneyFetcher(DataFetcher):
         return self._session
 
     async def _throttle(self) -> None:
+        # v12.11: 加入指数退避——连续被限流时翻倍 sleep（最多 30s），成功一次后衰减
         now = time.monotonic()
-        delta = _RATE_LIMIT_INTERVAL - (now - self._last_request_ts)
+        backoff = getattr(self, "_backoff_sec", 0.0)
+        base_delta = _RATE_LIMIT_INTERVAL - (now - self._last_request_ts)
+        delta = max(base_delta, backoff)
         if delta > 0:
             await asyncio.sleep(delta)
         self._last_request_ts = time.monotonic()
 
     async def _get(self, url: str, params: Optional[Dict] = None) -> Any:
-        """发起 GET 请求并返回 JSON。"""
+        """发起 GET 请求并返回 JSON。v12.11: 429/封 IP 时指数退避（避免加剧封禁）。"""
         await self._throttle()
         session = await self._ensure_session()
-        async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-            body = await resp.json(content_type=None)
-            return body
+        try:
+            async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status in (429, 503, 502):
+                    # 触发退避：当前退避翻倍（封顶 30s）
+                    cur = getattr(self, "_backoff_sec", 0.0)
+                    self._backoff_sec = min(max(cur * 2, 1.0), 30.0)
+                    logger.warning(f"[eastmoney] {resp.status} 限流，退避 {self._backoff_sec:.1f}s")
+                    return None
+                body = await resp.json(content_type=None)
+                # 成功 → 退避快速衰减
+                if getattr(self, "_backoff_sec", 0.0) > 0:
+                    self._backoff_sec = max(0.0, self._backoff_sec * 0.5)
+                return body
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            cur = getattr(self, "_backoff_sec", 0.0)
+            self._backoff_sec = min(max(cur * 1.5, 0.5), 15.0)
+            logger.warning(f"[eastmoney] 网络异常，退避 {self._backoff_sec:.1f}s: {e}")
+            return None
 
     # ------------------------------------------------------------------ #
     #                     DataFetcher 抽象方法实现                          #
@@ -224,19 +247,28 @@ class EastMoneyFetcher(DataFetcher):
             code = item.get("Code", "")
             name = item.get("Name", "")
             market_type = item.get("MktNum", "")
-
-            # 过滤非股票类型
+            classify = item.get("Classify", "")
             security_type = item.get("SecurityTypeName", "")
-            if security_type and "股" not in security_type and "指数" not in security_type:
-                continue
 
-            # 判断交易所
+            # 用 Classify 过滤：只保留 A 股 / 指数（更可靠，避免"深A"等不含"股"字被误过滤）
+            #   AStock = A 股（沪深 + 科创 + 创业 + 北交所）
+            #   Index = 指数
+            #   OTCFUND / FUND / HK / Stock (US) 等跳过
+            if classify and classify not in ("AStock", "Index"):
+                continue
+            # 无 classify 时保留旧规则兜底
+            if not classify and security_type:
+                allowed_tokens = ("股", "A", "指数", "创业板", "科创板", "北证", "沪A", "深A")
+                if not any(tok in security_type for tok in allowed_tokens):
+                    continue
+
+            # 判断交易所（沪：1、深：0、北：2）
             if market_type == "1":
-                exchange = "SSE"  # 上交所
+                exchange = "SSE"
             elif market_type == "0":
-                exchange = "SZSE"  # 深交所
+                exchange = "SZSE"
             elif market_type == "2":
-                exchange = "BSE"  # 北交所
+                exchange = "BSE"
             else:
                 exchange = ""
 
@@ -306,7 +338,7 @@ class EastMoneyFetcher(DataFetcher):
                 params,
             )
         except Exception as exc:
-            logger.warning("东方财富K线请求异常: %s", exc)
+            logger.debug("东方财富K线请求异常: %s", exc)
             return []
 
         klines_data = data.get("data", {})

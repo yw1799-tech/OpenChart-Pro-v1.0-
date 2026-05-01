@@ -5,8 +5,11 @@
 const Backtest = (() => {
   let running = false;
   let equityChart = null;
+  let _inited = false;
 
   function init() {
+    if (_inited) return;
+    _inited = true;
     document.getElementById('bt-run')?.addEventListener('click', run);
     document.getElementById('bt-stop')?.addEventListener('click', stop);
     document.getElementById('bt-export')?.addEventListener('click', exportReport);
@@ -44,6 +47,15 @@ const Backtest = (() => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
       });
+      if (!resp.ok) {
+        let detail = '';
+        try { detail = (await resp.json()).detail || ''; } catch {}
+        // v11.6: 501 = 引擎未实现的友好提示
+        if (resp.status === 501) {
+          throw new Error('回测引擎尚未实现，敬请期待');
+        }
+        throw new Error(`HTTP ${resp.status}${detail ? ': ' + detail : ''}`);
+      }
       const data = await resp.json();
       if (data.error) {
         throw new Error(data.error);
@@ -138,18 +150,16 @@ const Backtest = (() => {
       </div>
     `;
 
-    // 渲染交易记录
+    // 渲染交易记录（一次性写入，避免 N 次 reflow）
     const tbody = document.getElementById('bt-trades-body');
     if (tbody && result.trades) {
-      for (const t of result.trades.slice(0, 50)) {
-        tbody.innerHTML += `<tr>
-          <td>${t.time || ''}</td>
-          <td style="color:${t.side === 'buy' ? 'var(--color-up)' : 'var(--color-down)'}">${t.side === 'buy' ? '买入' : '卖出'}</td>
-          <td class="mono">${t.price}</td>
-          <td class="mono">${t.qty}</td>
-          <td class="mono ${t.pnl >= 0 ? 'up' : 'down'}">${t.pnl >= 0 ? '+' : ''}${(t.pnl || 0).toFixed(2)}</td>
-        </tr>`;
-      }
+      tbody.innerHTML = result.trades.slice(0, 50).map(t => `<tr>
+        <td>${t.time || ''}</td>
+        <td style="color:${t.side === 'buy' ? 'var(--color-up)' : 'var(--color-down)'}">${t.side === 'buy' ? '买入' : '卖出'}</td>
+        <td class="mono">${t.price}</td>
+        <td class="mono">${t.qty}</td>
+        <td class="mono ${t.pnl >= 0 ? 'up' : 'down'}">${t.pnl >= 0 ? '+' : ''}${(t.pnl || 0).toFixed(2)}</td>
+      </tr>`).join('');
     }
 
     // 渲染权益曲线

@@ -47,7 +47,7 @@
   --toolbar-height: 50px;
   --watchlist-width: 180px;
   --info-panel-width: 240px;
-  --bottom-panel-height: 300px;
+  --bottom-panel-height: 50vh;  /* 默认半屏，可拖拽或在 app.js 读 localStorage 恢复 */
   --border-radius: 6px;
   --border-radius-sm: 4px;
   --border-radius-lg: 10px;
@@ -453,14 +453,31 @@ a:hover { text-decoration: underline; }
 .resize-handle-v.active { background: var(--color-accent); box-shadow: 0 0 8px var(--color-accent-glow); }
 
 .resize-handle-h {
-  height: 4px;
+  height: 5px;
   cursor: row-resize;
-  background: transparent;
-  transition: background var(--transition-fast);
+  background: var(--border-primary);
+  opacity: 0.3;
+  transition: all var(--transition-fast);
   flex-shrink: 0;
+  position: relative;
 }
+.resize-handle-h::after {
+  content: '⋯';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--text-tertiary);
+  font-size: 14px;
+  line-height: 0;
+  letter-spacing: 2px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  pointer-events: none;
+}
+.resize-handle-h:hover::after { opacity: 1; }
 .resize-handle-h:hover,
-.resize-handle-h.active { background: var(--color-accent); box-shadow: 0 0 8px var(--color-accent-glow); }
+.resize-handle-h.active { background: var(--color-accent); opacity: 1; box-shadow: 0 0 8px var(--color-accent-glow); }
 
 /* ---- 中间图表区 ---- */
 #chart-area {
@@ -727,6 +744,17 @@ a:hover { text-decoration: underline; }
   display: none;
 }
 .bottom-pane.active { display: block; }
+/* 持仓 / 候选池 / 信号 / 新闻 / 加密 pane 内部需要 column flex 才能让 list 撑满（toolbar 自然高度，list flex:1） */
+.bottom-pane[data-pane="portfolio"].active,
+.bottom-pane[data-pane="watchpool"].active,
+.bottom-pane[data-pane="signals"].active,
+.bottom-pane[data-pane="news"].active,
+.bottom-pane[data-pane="crypto"].active,
+.bottom-pane[data-pane="review"].active {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
 
 /* 公式编辑器 */
 .formula-editor-wrapper {
@@ -834,21 +862,26 @@ a:hover { text-decoration: underline; }
   padding: 4px 0;
 }
 .dashboard-card {
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--border-radius);
-  padding: 16px;
-  transition: all var(--transition-fast);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-secondary);
+  border-radius: 6px;
+  padding: 14px 16px;
+  transition: all 0.2s ease;
+  border-left: 3px solid var(--color-accent);
 }
 .dashboard-card:hover {
-  border-color: var(--border-secondary);
-  box-shadow: var(--shadow-sm);
+  border-color: var(--text-tertiary);
+  border-left-color: var(--color-accent);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  transform: translateY(-1px);
 }
 .dashboard-card-title {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 12px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -858,12 +891,13 @@ a:hover { text-decoration: underline; }
 }
 .dashboard-card-body {
   color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
 }
 .dashboard-grid-inner {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 12px;
-  padding: 8px;
+  padding: 12px;
 }
 
 /* ============================================================
@@ -2300,4 +2334,448 @@ table td.down { color: var(--color-down); }
     flex: 1 1 100%;
     min-width: unset;
   }
+}
+
+/* ════════════════════════════════════════════════════════════════ */
+/*  OKX 风设计系统 v1（oc-* 公用组件）                                  */
+/*  字号阶梯：10/11/12/13/14/16/22 · 间距阶梯：4/6/8/10/12/16/20         */
+/* ════════════════════════════════════════════════════════════════ */
+
+/* ─── 文字工具 ─── */
+.oc-num     { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+.oc-text-xs { font-size: 10px; }
+.oc-text-sm { font-size: 11px; }
+.oc-text-md { font-size: 12px; }
+.oc-text-lg { font-size: 13px; }
+.oc-text-xl { font-size: 16px; }
+.oc-text-2xl{ font-size: 22px; line-height: 1.2; }
+.oc-text-mono { font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace; }
+.oc-muted   { color: var(--text-tertiary); }
+.oc-secondary{color: var(--text-secondary); }
+.oc-up      { color: var(--color-up); }
+.oc-down    { color: var(--color-down); }
+.oc-warn    { color: var(--color-warning); }
+.oc-accent  { color: var(--color-accent); }
+
+/* ─── 卡片 ─── */
+.oc-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-secondary);
+  border-radius: 6px;
+  padding: 12px;
+}
+.oc-card-compact { padding: 8px 10px; }
+.oc-card-flat { background: var(--bg-tertiary); border: 0; }
+.oc-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ─── 统计/指标 (label/value 上下结构) ─── */
+.oc-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.oc-stat-label {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-weight: 600;
+}
+.oc-stat-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.oc-stat-value-lg { font-size: 22px; }
+.oc-stat-sub {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── 徽章 chips ─── */
+.oc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.oc-chip-up      { background: rgba(14,203,129,0.15);  color: var(--color-up); }
+.oc-chip-down    { background: rgba(246,70,93,0.15);   color: var(--color-down); }
+.oc-chip-warn    { background: rgba(240,185,11,0.15);  color: var(--color-warning); }
+.oc-chip-info    { background: rgba(41,98,255,0.15);   color: var(--color-accent); }
+.oc-chip-purple  { background: rgba(124,77,255,0.15);  color: var(--color-purple); }
+.oc-chip-neutral { background: var(--bg-tertiary);     color: var(--text-secondary); }
+.oc-chip-outline {
+  background: transparent;
+  border: 1px solid var(--border-secondary);
+  color: var(--text-secondary);
+}
+
+/* 大号 pill (用于 filter 切换 / segmented control) */
+.oc-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 14px;
+  font-size: 11px;
+  cursor: pointer;
+  border: 1px solid var(--border-secondary);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+.oc-pill:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--text-tertiary);
+}
+.oc-pill.active {
+  background: rgba(41,98,255,0.12);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+.oc-pill-count {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  min-width: 16px;
+  text-align: center;
+}
+.oc-pill.active .oc-pill-count {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+/* ─── 状态徽章 (stars / ratings) ─── */
+.oc-stars { color: var(--color-warning); font-size: 11px; letter-spacing: 1px; }
+.oc-led {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.oc-led-up   { background: var(--color-up);   box-shadow: 0 0 4px rgba(14,203,129,0.6); }
+.oc-led-warn { background: var(--color-warning); box-shadow: 0 0 4px rgba(240,185,11,0.6); }
+.oc-led-down { background: var(--color-down); box-shadow: 0 0 4px rgba(246,70,93,0.6); }
+
+/* ─── 表格 ─── */
+.oc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.oc-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-secondary);
+}
+.oc-table thead th {
+  padding: 8px 10px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border-secondary);
+  white-space: nowrap;
+}
+.oc-table tbody td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-secondary);
+  vertical-align: top;
+}
+.oc-table tbody tr:hover {
+  background: var(--bg-secondary);
+}
+.oc-table.oc-table-compact thead th,
+.oc-table.oc-table-compact tbody td {
+  padding: 6px 8px;
+}
+.oc-table .oc-col-num   { text-align: right; }
+.oc-table .oc-col-center{ text-align: center; }
+
+/* 进度条（小） */
+.oc-bar {
+  height: 4px;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.oc-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* ─── 空状态 ─── */
+.oc-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+.oc-empty-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+  opacity: 0.5;
+}
+.oc-empty-title {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+.oc-empty-hint {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* ─── Loading skeleton ─── */
+@keyframes oc-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.oc-skeleton {
+  background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-hover) 50%, var(--bg-tertiary) 75%);
+  background-size: 200% 100%;
+  animation: oc-shimmer 1.5s infinite;
+  border-radius: 3px;
+}
+
+/* ─── Toolbar / 工具栏 ─── */
+.oc-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-secondary);
+  flex-wrap: wrap;
+  background: var(--bg-secondary);
+}
+.oc-toolbar-spacer { flex: 1; }
+.oc-toolbar-section { display: flex; gap: 6px; align-items: center; }
+
+/* Tab strip (segmented) */
+.oc-tabs {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border-secondary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.oc-tab {
+  padding: 4px 12px;
+  font-size: 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+.oc-tab:not(:last-child) { border-right: 1px solid var(--border-secondary); }
+.oc-tab.active {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.oc-tab:hover:not(.active) {
+  background: rgba(255,255,255,0.03);
+  color: var(--text-primary);
+}
+
+/* 重要度星标徽章 */
+.oc-star-tag {
+  display: inline-flex;
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(240,185,11,0.15);
+  color: var(--color-warning);
+}
+
+/* 分隔线 */
+.oc-divider {
+  height: 1px;
+  background: var(--border-secondary);
+  margin: 8px 0;
+}
+.oc-vdivider {
+  width: 1px;
+  background: var(--border-secondary);
+  align-self: stretch;
+  margin: 0 4px;
+}
+
+/* ════════════════════════════════════════════════════════════════ */
+/*  Portfolio 持仓管理 — OKX 风重设计                                  */
+/* ════════════════════════════════════════════════════════════════ */
+
+/* Hero 账户面板 */
+.port-hero-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 8px;
+}
+@media (max-width: 900px) {
+  .port-hero-grid { grid-template-columns: repeat(2, 1fr); }
+}
+.port-hero-card {
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  border-left: 3px solid var(--border-secondary);
+  min-height: 56px;
+}
+.port-hero-equity {
+  border-left-color: var(--color-accent);
+}
+.port-hero-label {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-weight: 600;
+}
+.port-hero-value-lg {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.port-hero-value-md {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.port-hero-bar {
+  height: 4px;
+  background: var(--bg-secondary);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.port-hero-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* 健康指示灯 */
+.port-light {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 10px;
+  border-radius: 10px;
+  font-weight: 500;
+  cursor: help;
+}
+.port-light-warn {
+  background: rgba(240, 185, 11, 0.15);
+  color: var(--color-warning);
+  border: 1px solid rgba(240, 185, 11, 0.3);
+}
+.port-light-danger {
+  background: rgba(215, 90, 90, 0.15);
+  color: var(--color-down);
+  border: 1px solid rgba(215, 90, 90, 0.3);
+}
+.port-light-info {
+  background: rgba(74, 158, 255, 0.12);
+  color: var(--color-accent);
+  border: 1px solid rgba(74, 158, 255, 0.3);
+}
+
+/* 市场过滤 pill */
+.port-mfilter-pill {
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+.port-mfilter-pill:hover:not(.active) {
+  background: var(--bg-tertiary) !important;
+  border-color: var(--text-tertiary) !important;
+}
+
+/* 持仓表 */
+.port-table {
+  font-variant-numeric: tabular-nums;
+}
+.port-row:hover {
+  background: var(--bg-secondary);
+}
+.port-side-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+/* 止盈止损进度条 */
+.port-sltp-bar {
+  position: relative;
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.port-sltp-bar-grad {
+  position: absolute;
+  inset: 0;
+  opacity: 0.5;
+}
+.port-sltp-marker {
+  position: absolute;
+  top: -3px;
+  width: 3px;
+  height: 12px;
+  background: var(--text-primary);
+  border-radius: 1px;
+  transform: translateX(-50%);
+  box-shadow: 0 0 0 1px var(--bg-primary);
+  cursor: help;
+}
+
+/* AI 建议气泡 */
+.port-advice-pill {
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: help;
+  transition: filter 0.15s ease;
+}
+.port-advice-pill:hover {
+  filter: brightness(1.1);
+}
+.port-advice-empty {
+  padding: 4px 6px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  text-align: center;
 }

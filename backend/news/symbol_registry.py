@@ -32,6 +32,8 @@ class SymbolRegistry:
     def __init__(self):
         # _patterns: { (symbol, market): [compiled regex, ...] }
         self._patterns: Dict[Tuple[str, str], List[re.Pattern]] = {}
+        # v11.4: 单独标记动态新增的 key，refresh 时只剔除动态部分（保留静态词典）
+        self._dynamic_keys: Set[Tuple[str, str]] = set()
         self._lock = asyncio.Lock()
         # 默认装入静态词典
         self._load_static()
@@ -42,14 +44,38 @@ class SymbolRegistry:
             self._patterns[(sym, market)] = self._compile_aliases(aliases)
         logger.info(f"SymbolRegistry 静态词典加载: {len(STATIC_PATTERNS)} 个品种")
 
+    # 短代码黑名单：这些"股票代码"是常见英文介词/冠词/缩写，100% 误匹配
+    _SHORT_CODE_BLACKLIST = {
+        "A", "I", "IT", "ON", "AT", "BE", "DO", "GO", "IS", "IF", "OR", "TO", "UP", "US", "WE",
+        "ALL", "AND", "ANY", "ARE", "BUT", "CAN", "DID", "FOR", "GET", "HAS", "HOW", "LET",
+        "NOT", "NOW", "OLD", "ONE", "OUR", "OUT", "SEE", "SET", "SO", "TRY", "TWO", "WHO", "WHY", "YES",
+        "NEW", "USE", "WAY", "DAY", "RUN", "WIN", "TOP", "LOW", "HIGH",
+    }
+
     @staticmethod
     def _compile_aliases(aliases: List[str]) -> List[re.Pattern]:
-        """把别名列表编译为正则。代码类用 \\b 包围避免误匹配；中文名直接子串匹配。"""
+        """
+        把别名列表编译为正则：
+          - 纯英文短代码 (≤3)：必须大小写敏感 + 词边界；且黑名单里的常用英文单词直接跳过
+          - 英文长代码 (≥4)：忽略大小写 + 词边界
+          - 数字/中文：原样匹配
+        这样避免 'ON'/'JD' 等被介词/缩写误命中。
+        """
         compiled = []
         for alias in aliases:
             try:
-                if re.match(r"^[A-Za-z0-9.\-_]+$", alias):
-                    # 纯英数代码：用单词边界
+                if re.match(r"^[A-Za-z][A-Za-z]*$", alias):
+                    # 纯字母代码
+                    if len(alias) <= 3:
+                        if alias.upper() in SymbolRegistry._SHORT_CODE_BLACKLIST:
+                            continue  # 过度易误匹配，直接跳过
+                        # 大小写敏感 + 词边界
+                        compiled.append(re.compile(rf"\b{re.escape(alias)}\b"))
+                    else:
+                        # 长代码保留 IGNORECASE（NVIDIA/Tesla 等大小写混用容忍）
+                        compiled.append(re.compile(rf"\b{re.escape(alias)}\b", re.IGNORECASE))
+                elif re.match(r"^[A-Za-z0-9.\-_]+$", alias):
+                    # 含数字/符号（如 0700.HK、600519、BTC-USDT）：词边界
                     compiled.append(re.compile(rf"\b{re.escape(alias)}\b", re.IGNORECASE))
                 else:
                     # 中文/混合：直接子串匹配
@@ -104,15 +130,30 @@ class SymbolRegistry:
             except Exception as e:
                 logger.debug(f"refresh positions 失败: {e}")
 
-            # 合并到主表（动态新增的不覆盖静态已有别名）
-            added = 0
+            # v11.4 修复：先剔除已不在 watchlist/positions/pool 的旧动态条目，再合并新的
+            # 否则 setdefault-only 会让退市/移除的 symbol regex 永远保留 → 长期跑会污染匹配
+            stale_keys = [k for k in self._dynamic_keys if k not in new_dynamic]
+            for k in stale_keys:
+                self._patterns.pop(k, None)
+                self._dynamic_keys.discard(k)
+            if stale_keys:
+                logger.info(f"SymbolRegistry 移除陈旧动态条目 {len(stale_keys)} 个")
+            added = merged = 0
             for key, aliases in new_dynamic.items():
-                if key in self._patterns:
-                    continue  # 已在静态词典中
+                if key in self._patterns and key not in self._dynamic_keys:
+                    # v11.6 修复：静态已有但用户新加 alias（如 "苹果"）→ 合并而非丢弃
+                    static_aliases = STATIC_PATTERNS.get(key, [])
+                    full_aliases = list(set(static_aliases + aliases))
+                    if len(full_aliases) > len(static_aliases):
+                        self._patterns[key] = self._compile_aliases(full_aliases)
+                        self._dynamic_keys.add(key)
+                        merged += 1
+                    continue
                 self._patterns[key] = self._compile_aliases(aliases)
+                self._dynamic_keys.add(key)
                 added += 1
-            if added > 0:
-                logger.info(f"SymbolRegistry 动态新增 {added} 个品种 (总计 {len(self._patterns)})")
+            if added or merged:
+                logger.info(f"SymbolRegistry 动态新增 {added}, 合并别名 {merged} (总计 {len(self._patterns)})")
 
     def find_matches(self, text: str) -> List[str]:
         """

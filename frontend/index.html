@@ -6,7 +6,9 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
+  <meta http-equiv="refresh" content="1800">
   <title>OpenChart Pro</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23131722'/%3E%3Cpath d='M6 22l5-7 4 3 6-9 5 6' stroke='%2326a69a' stroke-width='2' fill='none'/%3E%3C/svg%3E">
 
   <!-- 等宽字体 -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -44,6 +46,13 @@
       <span class="search-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
       <input id="toolbar-search-input" type="text" placeholder="搜索品种..." readonly>
       <span class="search-shortcut">/</span>
+    </div>
+
+    <!-- 当前品种显示 -->
+    <div id="symbol-display" style="display:flex;align-items:center;gap:6px;padding:0 10px;border-left:1px solid var(--border-secondary);">
+      <span id="symbol-display-code" style="font-size:14px;font-weight:700;color:var(--text-primary);">-</span>
+      <span id="symbol-display-name" style="font-size:12px;color:var(--text-secondary);"></span>
+      <span id="symbol-display-market" style="font-size:10px;padding:1px 6px;border-radius:3px;background:var(--bg-tertiary);color:var(--text-tertiary);"></span>
     </div>
 
     <div class="toolbar-divider"></div>
@@ -184,11 +193,15 @@
       <button class="bottom-tab active" data-tab="news">📰 新闻快讯</button>
       <button class="bottom-tab" data-tab="watchpool">📊 候选池</button>
       <button class="bottom-tab" data-tab="signals">📡 策略信号</button>
+      <button class="bottom-tab" data-tab="crypto">🪙 加密诊断</button>
       <button class="bottom-tab" data-tab="portfolio">💼 持仓管理</button>
+      <button class="bottom-tab" data-tab="review">📝 复盘学习</button>
       <button class="bottom-tab" data-tab="alert-log">警报日志</button>
       <button class="bottom-tab" data-tab="backtest">回测报告</button>
       <button class="bottom-tab" data-tab="dashboard">仪表盘</button>
       <button class="bottom-tab" data-tab="console">控制台</button>
+      <button id="bottom-maximize" class="toggle-btn" title="最大化面板（占 80% 屏幕）" style="margin-left:auto;">⇈</button>
+      <button id="bottom-half" class="toggle-btn" title="半屏（50% 屏幕）">◨</button>
       <button id="bottom-toggle" class="toggle-btn" title="收起/展开">▼</button>
     </div>
     <div class="bottom-content">
@@ -198,8 +211,12 @@
       <div class="bottom-pane" data-pane="watchpool"></div>
       <!-- 策略信号 -->
       <div class="bottom-pane" data-pane="signals"></div>
+      <!-- 加密诊断（6 币种 + AI 建议） -->
+      <div class="bottom-pane" data-pane="crypto"></div>
       <!-- 持仓管理 -->
       <div class="bottom-pane" data-pane="portfolio"></div>
+      <!-- v12.4 复盘学习（独立面板） -->
+      <div class="bottom-pane" data-pane="review"></div>
       <!-- 控制台 -->
       <div class="bottom-pane" data-pane="console">
         <div class="console-output"></div>
@@ -440,19 +457,19 @@
           </div>
         </div>
         <div class="settings-row" id="row-llmApiKey">
-          <span class="setting-label">API Key</span>
+          <span class="setting-label">接口密钥</span>
           <div class="setting-control">
-            <input id="setting-llmApiKey" type="password" class="input" style="width:240px;" placeholder="sk-...">
+            <input id="setting-llmApiKey" type="password" class="input" style="width:240px;" placeholder="粘贴 sk- 开头的密钥">
           </div>
         </div>
         <div class="settings-row" id="row-llmModel">
-          <span class="setting-label">模型</span>
+          <span class="setting-label">模型名称</span>
           <div class="setting-control">
             <input id="setting-llmModel" type="text" class="input" style="width:200px;" value="deepseek-chat" placeholder="deepseek-chat">
           </div>
         </div>
         <div class="settings-row" id="row-llmBaseUrl">
-          <span class="setting-label">Base URL</span>
+          <span class="setting-label">接口地址</span>
           <div class="setting-control">
             <input id="setting-llmBaseUrl" type="text" class="input" style="width:240px;" value="https://api.deepseek.com/v1" placeholder="https://api.deepseek.com/v1">
           </div>
@@ -471,25 +488,25 @@
         </div>
       </div>
 
-      <!-- 第三方 API Key -->
+      <!-- 第三方接口密钥 -->
       <div class="settings-group">
-        <div class="settings-group-title">第三方 API Key</div>
+        <div class="settings-group-title">第三方接口密钥</div>
         <div class="settings-row">
-          <span class="setting-label">交易所 API Key</span>
+          <span class="setting-label">交易所密钥</span>
           <div class="setting-control">
-            <input id="setting-exchangeApiKey" type="password" class="input" style="width:240px;" placeholder="API Key">
+            <input id="setting-exchangeApiKey" type="password" class="input" style="width:240px;" placeholder="在交易所后台创建的 API Key">
           </div>
         </div>
         <div class="settings-row">
-          <span class="setting-label">交易所 Secret</span>
+          <span class="setting-label">交易所私钥</span>
           <div class="setting-control">
-            <input id="setting-exchangeApiSecret" type="password" class="input" style="width:240px;" placeholder="API Secret">
+            <input id="setting-exchangeApiSecret" type="password" class="input" style="width:240px;" placeholder="API Secret（私钥，请妥善保管）">
           </div>
         </div>
         <div class="settings-row">
-          <span class="setting-label">新闻 API Key</span>
+          <span class="setting-label">新闻接口密钥</span>
           <div class="setting-control">
-            <input id="setting-newsApiKey" type="password" class="input" style="width:240px;" placeholder="News API Key">
+            <input id="setting-newsApiKey" type="password" class="input" style="width:240px;" placeholder="Finnhub 等新闻服务密钥">
           </div>
         </div>
       </div>
@@ -516,9 +533,9 @@
           </div>
         </div>
         <div class="settings-row">
-          <span class="setting-label">Webhook URL</span>
+          <span class="setting-label">推送 Webhook 地址</span>
           <div class="setting-control">
-            <input id="setting-webhookUrl" type="text" class="input" style="width:240px;" placeholder="https://...">
+            <input id="setting-webhookUrl" type="text" class="input" style="width:240px;" placeholder="钉钉/企业微信/Telegram 等的回调地址">
           </div>
         </div>
       </div>
@@ -625,21 +642,24 @@
 <!-- ============================================================
      JavaScript 文件（按依赖顺序加载）
      ============================================================ -->
-<script src="js/toast.js?v=p3b"></script>
-<script src="js/websocket.js?v=p3b"></script>
-<script src="js/chart.js?v=p3b"></script>
-<script src="js/search.js?v=p3b"></script>
-<script src="js/settings.js?v=p3b"></script>
-<script src="js/indicators.js?v=p3b"></script>
-<script src="js/alerts.js?v=p3b"></script>
-<script src="js/backtest.js?v=p3b"></script>
-<script src="js/dashboard.js?v=p3b"></script>
-<script src="js/watchlist.js?v=p3b"></script>
-<script src="js/news.js?v=p3b"></script>
-<script src="js/watchpool.js?v=p3b"></script>
-<script src="js/signals.js?v=p3b"></script>
-<script src="js/portfolio.js?v=p3b"></script>
-<script src="js/app.js?v=p3b"></script>
+<!-- defer: 按顺序执行但不阻塞 HTML parse；DOMContentLoaded 前执行完 -->
+<script src="js/toast.js?v=p5a" defer></script>
+<script src="js/websocket.js?v=p5a" defer></script>
+<script src="js/chart.js?v=p5a" defer></script>
+<script src="js/search.js?v=p5a" defer></script>
+<script src="js/settings.js?v=p5a" defer></script>
+<script src="js/indicators.js?v=p5a" defer></script>
+<script src="js/alerts.js?v=p5a" defer></script>
+<script src="js/backtest.js?v=p5a" defer></script>
+<script src="js/dashboard.js?v=p5a" defer></script>
+<script src="js/watchlist.js?v=p5a" defer></script>
+<script src="js/news.js?v=p5a" defer></script>
+<script src="js/watchpool.js?v=p5a" defer></script>
+<script src="js/signals.js?v=p5a" defer></script>
+<script src="js/portfolio.js?v=p5a" defer></script>
+<script src="js/crypto.js?v=p5a" defer></script>
+<script src="js/review.js?v=p5a" defer></script>
+<script src="js/app.js?v=p5a" defer></script>
 <!-- 以下 JS 模块将在 Phase 3A/4/5 开发时添加：
      js/news.js         新闻快讯
      js/watchpool.js    候选池

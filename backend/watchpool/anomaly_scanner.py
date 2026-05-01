@@ -21,8 +21,25 @@ import aiohttp
 
 logger = logging.getLogger(__name__)
 
-_BJ_TZ = timezone(timedelta(hours=8))
-_ET_TZ = timezone(timedelta(hours=-5))  # 简化：不切夏令时
+_SHARED_SESSION: Optional[aiohttp.ClientSession] = None
+
+async def _get_session() -> aiohttp.ClientSession:
+    """模块级持久 session（避免每次 DNS/TCP/TLS 重来）。"""
+    global _SHARED_SESSION
+    if _SHARED_SESSION is None or _SHARED_SESSION.closed:
+        _SHARED_SESSION = aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(limit=20, ttl_dns_cache=300, force_close=False),
+            timeout=aiohttp.ClientTimeout(total=15),
+        )
+    return _SHARED_SESSION
+
+try:
+    from zoneinfo import ZoneInfo
+    _BJ_TZ = ZoneInfo("Asia/Shanghai")
+    _ET_TZ = ZoneInfo("America/New_York")  # 自动处理夏令时
+except ImportError:
+    _BJ_TZ = timezone(timedelta(hours=8))
+    _ET_TZ = timezone(timedelta(hours=-5))  # 退化：固定 EST 不切夏令时
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -79,9 +96,9 @@ async def fetch_a_stock_top_movers(top_n: int = 20) -> List[Dict[str, Any]]:
     )
     headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"}
     try:
-        async with aiohttp.ClientSession(headers=headers) as s:
-            async with s.get(url, timeout=aiohttp.ClientTimeout(total=10)) as r:
-                d = await r.json(content_type=None)
+        s = await _get_session()
+        async with s.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as r:
+            d = await r.json(content_type=None)
     except Exception as e:
         logger.warning(f"[anomaly] A股涨幅榜拉取失败: {e}")
         return []
@@ -120,9 +137,9 @@ async def fetch_us_stock_top_movers(top_n: int = 20) -> List[Dict[str, Any]]:
     url = f"https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?count={top_n}&scrIds=day_gainers"
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
-        async with aiohttp.ClientSession(headers=headers) as s:
-            async with s.get(url, timeout=aiohttp.ClientTimeout(total=10)) as r:
-                d = await r.json(content_type=None)
+        s = await _get_session()
+        async with s.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as r:
+            d = await r.json(content_type=None)
     except Exception as e:
         logger.warning(f"[anomaly] 美股涨幅榜拉取失败: {e}")
         return []
@@ -161,9 +178,9 @@ async def fetch_hk_stock_top_movers(top_n: int = 20) -> List[Dict[str, Any]]:
     )
     headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"}
     try:
-        async with aiohttp.ClientSession(headers=headers) as s:
-            async with s.get(url, timeout=aiohttp.ClientTimeout(total=10)) as r:
-                d = await r.json(content_type=None)
+        s = await _get_session()
+        async with s.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as r:
+            d = await r.json(content_type=None)
     except Exception as e:
         logger.warning(f"[anomaly] 港股涨幅榜拉取失败: {e}")
         return []
@@ -272,15 +289,29 @@ class AnomalyScanner:
         added = 0
         for it in items:
             try:
-                # 阈值过滤
+                # v11.4 修复：先做 cheap 阈值过滤，再做 expensive is_eligible（API call）
+                # 否则 Top30 全部被 is_eligible 命中外部 API → 触发 Yahoo 429
                 if it["change_pct"] < self.THRESHOLD_CHANGE_PCT:
                     continue
-                # A 股可额外要求资金净流入
+                # A 股额外要求资金净流入
                 if market == "cn" and it.get("net_inflow", 0) < 0:
-                    # 涨幅大但主力净流出：不入池
+                    continue
+                # 质量硬筛选（严格执行 — 含外部 API 查询）
+                from backend.watchpool.quality_filter import is_eligible
+                ok, reason = await is_eligible(self.db, it["symbol"], market)
+                if not ok:
+                    logger.info(f"[anomaly-filter] 拒绝 {it['symbol']}/{market}: {reason}")
+                    # 数据源失败的暂存到待审表，后续会重试
+                    if "数据源" in reason:
+                        try:
+                            score_estimate = 50 + it["change_pct"] * 1.0
+                            await self._enqueue_pending_review(it["symbol"], market, "anomaly", score_estimate, reason)
+                        except Exception as e:
+                            logger.debug(f"暂存待审失败 {it.get('symbol')}: {e}")
                     continue
                 # 评分：涨幅越大、排名越靠前评分越高
-                score = min(100, 50 + it["change_pct"] * 2 + (30 - min(it["rank"], 30)) * 0.5)
+                from backend.watchpool.scorer import event_score_anomaly
+                score = event_score_anomaly(it["change_pct"], it["rank"])
                 pool_id = await self.db.add_to_pool(
                     symbol=it["symbol"],
                     market=market,
@@ -303,3 +334,20 @@ class AnomalyScanner:
             except Exception as e:
                 logger.debug(f"[anomaly] 入池 {it.get('symbol')} 失败: {e}")
         return added
+
+    async def _enqueue_pending_review(self, symbol, market, source, score, reason):
+        """暂存到 pool_pending_review，后台 30 分钟重试。"""
+        import time as _t
+        now = int(_t.time())
+        async with self.db.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO pool_pending_review
+                   (symbol, market, source, score, reason, first_attempt_at, last_attempt_at, attempts)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+                   ON CONFLICT(symbol, market) DO UPDATE SET
+                       last_attempt_at=excluded.last_attempt_at,
+                       attempts=pool_pending_review.attempts+1,
+                       reason=excluded.reason""",
+                (symbol, market, source, score, reason, now, now),
+            )
+            await conn.commit()

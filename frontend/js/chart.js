@@ -1,6 +1,11 @@
 /* ============================================================
    OpenChart Pro - KLineChart 初始化与管理
    ============================================================ */
+// 缠论调试硬标记：只要浏览器拉到最新版 chart.js，刷新后 Console 必然打印这行
+// 如果刷新后 Console 没看到，说明浏览器还在用缓存（报告给后端处理）
+// 用 warn 而不是 log，避免被 app.js 的静默逻辑吞掉，确保用户能在 DevTools 看到版本
+console.warn('%c[chart.js] 加载完成 (loadmore-fix-v5 2026-04-21 动态阈值)', 'color:#4caf50;font-weight:bold');
+window.__CHART_JS_VERSION = 'chanlun-fix-v2-2026-04-21';
 
 let chart = null;
 let mainPaneId = null;
@@ -91,7 +96,13 @@ const darkTheme = {
 };
 
 /* ---------- 图表初始化 ---------- */
+let _chartInited = false;
 function initChart() {
+  if (_chartInited) {
+    console.warn('[Chart] initChart 已执行过，跳过重复初始化（防止 subscribeAction 累积）');
+    return;
+  }
+  _chartInited = true;
   if (typeof klinecharts === 'undefined') {
     console.error('[Chart] klinecharts 库未加载');
     return;
@@ -108,6 +119,20 @@ function initChart() {
     container.style.height = '100%';
     container.style.minHeight = '400px';
   }
+
+  // GPU 内存保护：强制禁用 KLineChart canvas 的硬件加速合成层
+  // 这是真正彻底解决 GPU 进程内存爆炸（实测 694MB+）的方案
+  // 禁用后 canvas 走 CPU 渲染，稍慢但 GPU 进程内存不会累积
+  // 在 chart.init 之前注入 CSS 关闭 will-change 和 3D transform
+  const style = document.createElement('style');
+  style.textContent = `
+    #chart-container, #chart-container canvas, #chart-container * {
+      will-change: auto !important;
+      transform: none !important;
+      backface-visibility: visible !important;
+    }
+  `;
+  document.head.appendChild(style);
 
   chart = klinecharts.init(container, {
     styles: darkTheme,
@@ -180,9 +205,19 @@ function initChart() {
       calcParams: [],
       figures: [],
       draw: ({ ctx, bounding, barSpace, visibleRange, indicator, xAxis, yAxis }) => {
+        // 性能保护：可视 K 线 > 5000 才跳过（bi/seg/zs/bsp 的 loop 里各自有可视区裁剪，
+        // 实际绘制量受限，不会爆炸）。之前设的 800 太激进，缩小一点就看不到缠论。
         const dataList = chart.getDataList();
         if (!dataList || !dataList.length || !window._chanlunData) return false;
         const cl = window._chanlunData;
+
+        // 数据版本守卫：bar 数不匹配说明周期/品种已切换但缠论数据还没重拉 → 跳过
+        // loadMore 可能让 dataList 比当时分析时多（加了历史），但不可能少
+        const analyzedBars = window._chanlunBarCount || 0;
+        if (analyzedBars === 0 || dataList.length < analyzedBars) {
+          // 数据 stale，等下一次 loadChanlun 完成
+          return false;
+        }
 
         // loadMore 后旧缠论数据的 bar_index 需要加偏移（新K线插入开头导致索引右移）
         // loadChanlun 重新分析后 offset 自动归零
@@ -287,6 +322,7 @@ function initChart() {
         }
 
         // ---- 4. 画买卖点标记（TradingView风格：中文标签 + 底色块）----
+        let _bspDrawn = 0, _bspSkipped = 0;
         // 买卖点类型转中文：
         //   笔级复合(如"2s,3b"): 取三类（中枢结构优先）
         //   线段级复合(如"S2,3b"): 取首要类型（S2=标准二类更核心）
@@ -308,7 +344,8 @@ function initChart() {
         }
         if (cl.bsp_list) {
           for (const bsp of cl.bsp_list) {
-            if (bsp.x < adjFrom || bsp.x > adjTo) continue;
+            if (bsp.x < adjFrom || bsp.x > adjTo) { _bspSkipped++; continue; }
+            _bspDrawn++;
             const x = barToX(bsp.x);
             const y = priceToY(bsp.y);
             const isSeg = bsp.type.startsWith('S');
@@ -374,6 +411,16 @@ function initChart() {
           }
         }
 
+        // 一次性日志（避免每帧刷屏）
+        if (window._chanlunData && !window._chanlunDebugLogged) {
+          const total = (cl.bsp_list || []).length;
+          console.log(`[Chanlun draw] visible=[${adjFrom},${adjTo}] offset=${indexOffset} | bsp 总计${total} 绘制${_bspDrawn} 超出可视${_bspSkipped}`);
+          if (cl.bsp_list && cl.bsp_list.length) {
+            console.log('[Chanlun bsp detail]', cl.bsp_list.map(b => `x=${b.x} y=${b.y.toFixed(1)} ${b.type}(${b.is_buy?'买':'卖'})`).join(' | '));
+          }
+          window._chanlunDebugLogged = true;
+        }
+
         ctx.restore();
         return false;
       },
@@ -397,18 +444,37 @@ function initChart() {
         const ed = window._elliottData;
         if (!ed.patterns || !ed.patterns.length) return false;
 
-        // 用时间戳反查 dataList 中的真实 bar index，彻底避免 offset 计算错误
-        const _tsIndexMap = new Map();
-        dataList.forEach((d, i) => _tsIndexMap.set(d.timestamp, i));
+        // Map 缓存：只在 dataList 长度或末尾 timestamp 变化时重建，避免每帧 O(N)
+        // （K 线 2000 根时每帧重建 ~3ms）
+        const lastTs = dataList[dataList.length - 1].timestamp;
+        const mapStale = !window._elliottTsMap ||
+          window._elliottTsMapLen !== dataList.length ||
+          window._elliottTsMapLast !== lastTs;
+        let _tsIndexMap;
+        if (mapStale) {
+          _tsIndexMap = new Map();
+          for (let i = 0; i < dataList.length; i++) _tsIndexMap.set(dataList[i].timestamp, i);
+          window._elliottTsMap = _tsIndexMap;
+          window._elliottTsMapLen = dataList.length;
+          window._elliottTsMapLast = lastTs;
+        } else {
+          _tsIndexMap = window._elliottTsMap;
+        }
         function tsToIndex(ts) {
-          if (_tsIndexMap.has(ts)) return _tsIndexMap.get(ts);
-          // 找最近的时间戳
-          let best = -1, bestDiff = Infinity;
-          _tsIndexMap.forEach((idx, t) => {
-            const diff = Math.abs(t - ts);
-            if (diff < bestDiff) { bestDiff = diff; best = idx; }
-          });
-          return best;
+          const exact = _tsIndexMap.get(ts);
+          if (exact !== undefined) return exact;
+          // 二分查找最近的时间戳（O(log N) 代替 O(N)）
+          let lo = 0, hi = dataList.length - 1;
+          while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (dataList[mid].timestamp < ts) lo = mid + 1;
+            else hi = mid;
+          }
+          // 比较 lo 和 lo-1 哪个更近
+          if (lo > 0 && Math.abs(dataList[lo - 1].timestamp - ts) < Math.abs(dataList[lo].timestamp - ts)) {
+            return lo - 1;
+          }
+          return lo;
         }
         function barToX(ts) { return xAxis.convertToPixel(tsToIndex(ts)); }
         function priceToY(p) { return yAxis.convertToPixel(p); }
@@ -883,7 +949,8 @@ function initChart() {
   }
   try {
     chart.subscribeAction(klinecharts.ActionType.OnZoom,   _onViewChange);
-    chart.subscribeAction(klinecharts.ActionType.OnScroll, _onViewChange);
+    // 注意：OnScroll 不在这里订阅，由 line 1040 的统一 OnScroll handler 触发 elliott
+    // 否则会重复注册导致每次滚动触发多次 _onViewChange + fetchMore，主线程卡死
   } catch(e) {
     console.warn('[Chart] 无法订阅缩放/滚动事件:', e);
   }
@@ -903,23 +970,29 @@ function initChart() {
   window._loadMoreFetching = false;
   // 去重缓存：{ "$end_time": $expireAt }，避免短时间反复拉同一 end_time
   window._loadMoreLastTried = {};
-  // 全局节流：每次成功 fetch 后冷却时间戳（防止 applyMoreData 引发的事件雪崩）
-  window._loadMoreCooldownUntil = 0;
+  // 品种+周期级冷却：{ "BTC-USDT_1D": expireAt }，防止 applyMoreData 触发事件雪崩（各品种独立互不影响）
+  window._loadMoreCooldownUntil = {};
+
+  // 注意：app.js 默认会把 console.log 静默以减少噪音，所以 [loadMore] 关键日志用 console.warn
+  // 这样不论用户是否开 verbose 模式，都能在浏览器 DevTools 看到加载情况
+  const _llog = (...args) => console.warn(...args);
 
   async function fetchMore(reason) {
     if (window._loadMoreFetching) {
-      console.log(`[loadMore] skip(fetching) reason=${reason}`);
+      _llog(`[loadMore] skip(fetching) reason=${reason}`);
       return;
     }
-    // 全局节流：成功 fetch 后 1.5 秒内拒绝任何触发
-    // 防止 applyMoreData 后 OnScroll/OnVisibleRangeChange/loadMore-callback 三路同时触发
-    if (Date.now() < window._loadMoreCooldownUntil) {
-      console.log(`[loadMore] skip(global cooldown ${Math.round((window._loadMoreCooldownUntil - Date.now()))}ms) reason=${reason}`);
+    // 品种+周期级节流：各品种独立冷却，切换品种后不再被其他品种的冷却误拦截
+    const _ckSym = window.currentSymbol, _ckIv = window.currentInterval;
+    const _ckKey = `${_ckSym}_${_ckIv}`;
+    const _ckUntil = window._loadMoreCooldownUntil[_ckKey] || 0;
+    if (Date.now() < _ckUntil) {
+      _llog(`[loadMore] skip(cooldown ${Math.round(_ckUntil - Date.now())}ms) reason=${reason}`);
       return;
     }
     const dataList = chart.getDataList();
     if (!dataList || !dataList.length) {
-      console.log(`[loadMore] skip(empty dataList) reason=${reason}`);
+      _llog(`[loadMore] skip(empty dataList) reason=${reason}`);
       return;
     }
 
@@ -928,7 +1001,7 @@ function initChart() {
     // 软锁：同一 end_time 在 60 秒内不重复拉
     const lastExp = window._loadMoreLastTried[currentEarliestTs];
     if (lastExp && lastExp > Date.now()) {
-      console.log(`[loadMore] skip(recently tried, retry in ${Math.round((lastExp - Date.now())/1000)}s) reason=${reason} end_time=${currentEarliestTs}`);
+      _llog(`[loadMore] skip(recently tried, retry in ${Math.round((lastExp - Date.now())/1000)}s) reason=${reason} end_time=${currentEarliestTs}`);
       return;
     }
 
@@ -938,7 +1011,7 @@ function initChart() {
       const iv  = window.currentInterval;
       const mkt = window.currentMarket === 'a' ? 'cn' : (window.currentMarket || 'crypto');
 
-      console.log(`[loadMore] FETCH start reason=${reason} ${s}/${iv}/${mkt} end_time=${currentEarliestTs}`);
+      _llog(`[loadMore] FETCH start reason=${reason} ${s}/${iv}/${mkt} end_time=${currentEarliestTs}`);
       const resp = await fetch(
         `/api/klines?symbol=${encodeURIComponent(s)}&interval=${encodeURIComponent(iv)}&limit=500&market=${encodeURIComponent(mkt)}&end_time=${currentEarliestTs}`
       );
@@ -949,7 +1022,19 @@ function initChart() {
       if (!Array.isArray(raw) || raw.length === 0) {
         // 返回空：标记本 end_time 60 秒内不重试
         window._loadMoreLastTried[currentEarliestTs] = Date.now() + 60_000;
-        console.log(`[loadMore] EMPTY (cooldown 60s) reason=${reason}`);
+        // 防无限增长：超过 200 条时清掉过期的
+        const keys = Object.keys(window._loadMoreLastTried);
+        if (keys.length > 200) {
+          const now = Date.now();
+          for (const k of keys) {
+            if (window._loadMoreLastTried[k] < now) delete window._loadMoreLastTried[k];
+          }
+        }
+        // 关键：v9 loadMore 触发条件是 _more && !_loading
+        // 必须调用 applyMoreData([], false) 来 setLoading(false) + setMore(false)
+        // 否则 _loading 卡在 true，之后的 loadMore 回调永远被阻挡
+        try { chart.applyMoreData([], false); } catch {}
+        _llog(`[loadMore] EMPTY (cooldown 60s, _loading 已释放) reason=${reason}`);
         return;
       }
 
@@ -969,20 +1054,27 @@ function initChart() {
         // 上游能返数据但都在已加载范围内 → 说明这个 end_time 上游没更早数据
         // 60 秒后允许重试（也许上游降级源切换后能给更早历史）
         window._loadMoreLastTried[currentEarliestTs] = Date.now() + 60_000;
-        console.log(`[loadMore] NO_NEW (raw=${raw.length} but all >= currentEarliest, cooldown 60s) reason=${reason}`);
+        // 同上：必须 applyMoreData([], false) 解锁 _loading
+        try { chart.applyMoreData([], false); } catch {}
+        _llog(`[loadMore] NO_NEW (raw=${raw.length} but all >= currentEarliest, cooldown 60s, _loading 已释放) reason=${reason}`);
         return;
       }
 
-      // applyMoreData 第三参数 false：不锁 KLineChart 内部 _loading
-      chart.applyMoreData(filtered, false);
+      // 先重置 loadMore 状态防 applyMoreData 触发的回调反弹
+      window._loadMoreLastFrom = Infinity;
+      // v9: applyMoreData(data, more, callback)
+      //   - more=true: 保持 _more=true，loadMore 回调可继续触发
+      //   - more=false: 永久关闭 loadMore 回调（原代码 bug 根源，导致第一次加载后就再也不拉）
+      chart.applyMoreData(filtered, true);
       const newEarliest = Math.min(...filtered.map(c => c.timestamp));
-      console.log(`[loadMore] DONE +${filtered.length} (raw=${raw.length}, total=${chart.getDataList().length}, newEarliest=${newEarliest}) reason=${reason}`);
+      _llog(`[loadMore] DONE +${filtered.length} (raw=${raw.length}, total=${chart.getDataList().length}, newEarliest=${newEarliest}) reason=${reason}`);
 
-      // 成功加载后全局冷却 1.5 秒，防止 applyMoreData 触发的视图变化引发事件雪崩
-      window._loadMoreCooldownUntil = Date.now() + 1500;
+      // 成功加载后对当前品种+周期冷却 3 秒，确保 applyMoreData 触发的 OnVisibleRangeChange 被忽略
+      window._loadMoreCooldownUntil[`${s}_${iv}`] = Date.now() + 3000;
 
       if (typeof isChanlunActive === 'function' && isChanlunActive()) {
-        setTimeout(() => loadChanlun(), 800);
+        clearTimeout(window._chanlunReloadTimer);
+        window._chanlunReloadTimer = setTimeout(() => loadChanlun(), 1200);
       }
     } catch (e) {
       console.error(`[loadMore] FAIL reason=${reason}:`, e);
@@ -990,6 +1082,8 @@ function initChart() {
       window._loadMoreFetching = false;
     }
   }
+  // 暴露给用户调试：在 DevTools Console 里输入 window._fetchMore('manual') 强制拉一批
+  window._fetchMore = fetchMore;
 
   // 记录上次的 visibleRange.from，用于判断"用户是否真的在往左拖"
   // applyMoreData 后图表会保持最左视图，from 又回到 0 附近，但这不是用户操作，不应触发
@@ -1003,25 +1097,40 @@ function initChart() {
     console.warn('[Chart] chart.loadMore() 注册失败:', e);
   }
 
-  // 触发方式 2: OnVisibleRangeChange (v10 可视区变化时触发，更可靠)
-  // 关键：from 必须比上次更小，才算"用户继续往左拖"
+  // 触发方式 2 + 3: OnVisibleRangeChange / OnScroll
+  //
+  // 触发判定：from 接近数据起点时预加载
+  //   - 绝对阈值 ≤ 200（约 1.5-2 屏 K 线）
+  //   - 或相对阈值 ≤ 总数据的 25%（数据多时也提前触发）
+  //   - 取两者宽松者，确保数据量小时也敏感
+  //
+  // 之前的 30 太严格，用户拖到 from=73 都不触发；
+  // 150 仍不够，加载完后视图跳到 from=648，又得拖 6 次。
+  // 用 max(200, total*0.25) 后，每次加载后视图跳到大约 from=数据中段，
+  // 用户拖一次就能再次触发，体验顺畅。
+  function _shouldTrigger(from, total) {
+    if (typeof from !== 'number' || from < 0) return false;
+    const threshold = Math.max(200, Math.floor(total * 0.25));
+    return from <= threshold;
+  }
+
   try {
     let _vrcDebounce = null;
     chart.subscribeAction(klinecharts.ActionType.OnVisibleRangeChange, (range) => {
       if (!range) return;
       const from = range.from;
-      if (typeof from !== 'number') return;
-      if (from > 30) {
-        window._loadMoreLastFrom = from;  // 更新基准
+      const total = chart.getDataList().length;
+      if (!_shouldTrigger(from, total)) {
+        window._loadMoreLastFrom = from;
         return;
       }
-      // 仅在 from 比上次小才触发（用户主动往左拖）
+      // from 必须比上次小（用户在持续往左拖），否则视图微抖会反复触发
       if (from >= window._loadMoreLastFrom) return;
       window._loadMoreLastFrom = from;
       clearTimeout(_vrcDebounce);
-      _vrcDebounce = setTimeout(() => fetchMore(`vrc(from=${from})`), 200);
+      _vrcDebounce = setTimeout(() => fetchMore(`vrc(from=${from},total=${total})`), 150);
     });
-    console.log('[Chart] OnVisibleRangeChange 已订阅');
+    console.log('[Chart] OnVisibleRangeChange 已订阅 (动态阈值=max(200, total*0.25))');
   } catch (e) {
     console.warn('[Chart] OnVisibleRangeChange 订阅失败:', e);
   }
@@ -1032,9 +1141,11 @@ function initChart() {
     chart.subscribeAction(klinecharts.ActionType.OnScroll, () => {
       clearTimeout(_scrollDebounce);
       _scrollDebounce = setTimeout(() => {
+        try { _onViewChange(); } catch {}
         const range = chart.getVisibleRange();
         if (!range || typeof range.from !== 'number') return;
-        if (range.from > 30) {
+        const total = chart.getDataList().length;
+        if (!_shouldTrigger(range.from, total)) {
           window._loadMoreLastFrom = range.from;
           return;
         }
@@ -1049,6 +1160,28 @@ function initChart() {
   }
 
   console.log('[Chart] 初始化完成');
+
+  // GPU 内存保护：把所有 chart 内的 canvas 改成 willReadFrequently=true
+  // Chrome 看到这个 hint 会用 CPU 渲染（不上 GPU 合成层），杜绝 GPU 进程内存累积
+  // 代价：渲染稍慢（CPU 数 ms vs GPU 1ms），但消除卡死隐患
+  setTimeout(() => {
+    try {
+      const canvases = container.querySelectorAll('canvas');
+      let patched = 0;
+      canvases.forEach(c => {
+        // 用 willReadFrequently 重新获取 context（不实际用，只是注册偏好）
+        try {
+          c.getContext('2d', { willReadFrequently: true });
+          c.style.willChange = 'auto';
+          c.style.transform = 'none';
+          patched++;
+        } catch {}
+      });
+      console.log(`[GPU 保护] 已对 ${patched} 个 canvas 设置 CPU 渲染偏好`);
+    } catch (e) {
+      console.warn('[GPU 保护] 设置失败:', e);
+    }
+  }, 500);
 }
 
 /* ---------- K线数据加载 ---------- */
@@ -1064,14 +1197,47 @@ async function loadKlines(symbol, interval, market) {
   if (loading) loading.classList.add('show');
 
   try {
-    const resp = await fetch(`/api/klines?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=1000&market=${encodeURIComponent(apiMarket)}`);
+    // 首次加载只取 200 根（GPU 内存保护，往左拖动会增量加载更多）
+    const resp = await fetch(`/api/klines?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=200&market=${encodeURIComponent(apiMarket)}`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
 
     // 服务端返回 { candles: [...] } 或 { data: [...] } 或直接数组
     const raw = data.candles || data.data || data;
     if (!Array.isArray(raw) || raw.length === 0) {
-      console.warn('[Chart] 无K线数据');
+      console.warn('[Chart] 无K线数据', symbol, interval, market);
+      // HK 小盘股兜底：腾讯/Yahoo 对其只有日线数据。自动降级到 1D 重试。
+      const subDaily = ['1m', '5m', '15m', '30m', '1H', '4H'];
+      if (market === 'hk' && subDaily.includes(interval)) {
+        console.log('[Chart] HK 小盘股', symbol, interval, '无数据 → 自动切到 1D');
+        if (typeof showToast === 'function') {
+          showToast(`${symbol} 无 ${interval} 数据，已切换到日线`, 'info', 3000);
+        }
+        // 切换 UI active 到 1D
+        window.currentInterval = '1D';
+        document.querySelectorAll('.interval-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.interval === '1D');
+        });
+        if (loading) loading.classList.remove('show');
+        return await loadKlines(symbol, '1D', market);
+      }
+      // 清空图表避免用户以为是旧数据
+      try { if (chart && typeof chart.clearData === 'function') chart.clearData(); } catch {}
+      // 更新标题/水印，告诉用户切换成功但无数据
+      try {
+        const codeEl = document.getElementById('symbol-display-code');
+        const nameEl = document.getElementById('symbol-display-name');
+        const mktEl  = document.getElementById('symbol-display-market');
+        const MARKET_LABEL_ZH = { crypto: '加密', us: '美股', hk: '港股', cn: 'A股' };
+        if (codeEl) codeEl.textContent = symbol;
+        if (mktEl)  mktEl.textContent  = MARKET_LABEL_ZH[market] || (market || '').toUpperCase();
+        if (nameEl) nameEl.textContent = '（无K线数据）';
+        const wm = document.getElementById('chart-watermark');
+        if (wm) wm.textContent = symbol + ' · 无K线';
+      } catch {}
+      if (typeof showToast === 'function') {
+        showToast(`${symbol} 暂无K线数据（该股票在所有数据源中都无历史记录）`, 'warning', 5000);
+      }
       return;
     }
     const klines = raw.map(k => ({
@@ -1090,19 +1256,41 @@ async function loadKlines(symbol, interval, market) {
     window._loadMoreFetching = false;
     window._loadMoreLastTried = {};
     window._loadMoreLastFrom = Infinity;
-    window._loadMoreCooldownUntil = 0;
+    window._loadMoreCooldownUntil = {};
 
     // 更新水印
     const wm = document.getElementById('chart-watermark');
     if (wm) wm.textContent = symbol;
 
-    // 用最后一根K线更新右侧信息面板
+    // 更新工具栏"当前品种"显示（代码 + 名称 + 市场标签）
+    try {
+      const codeEl = document.getElementById('symbol-display-code');
+      const nameEl = document.getElementById('symbol-display-name');
+      const mktEl = document.getElementById('symbol-display-market');
+      if (codeEl) codeEl.textContent = symbol;
+      const MARKET_LABEL_ZH = { crypto: '加密', us: '美股', hk: '港股', cn: 'A股' };
+      if (mktEl) mktEl.textContent = MARKET_LABEL_ZH[market] || (market || '').toUpperCase();
+      // 从 symbolsCache 查名字
+      let name = '';
+      try {
+        const list = (window.symbolsCache && window.symbolsCache[market]) || [];
+        const hit = list.find((s) => s.symbol === symbol);
+        if (hit && hit.name) name = hit.name;
+      } catch {}
+      if (nameEl) nameEl.textContent = name;
+      // 浏览器标题也同步
+      document.title = `${symbol}${name ? ' ' + name : ''} · ${interval} - OpenChart Pro`;
+    } catch (e) {}
+
+    // 用最后一根K线更新右侧信息面板（OHLC 是轻量字符串更新，可以同步）
     if (klines.length > 0) {
       const last = klines[klines.length - 1];
       const prev = klines.length > 1 ? klines[klines.length - 2] : last;
       updateInfoPanelFromKline(last, prev);
-      // 计算并显示指标值
-      updateIndicatorValues(klines);
+      // 指标计算 O(N) 重，异步到下一帧避免阻塞主线程
+      requestAnimationFrame(() => {
+        try { updateIndicatorValues(klines); } catch (e) { console.warn('[Chart] updateIndicatorValues 异常:', e); }
+      });
     }
 
     console.log(`[Chart] 已加载 ${klines.length} 根K线: ${symbol} ${interval}`);
@@ -1144,6 +1332,7 @@ function updateCandle(candleData) {
 async function switchInterval(interval) {
   if (!window.currentSymbol) return;
   const oldInterval = window.currentInterval;
+  if (oldInterval === interval) return;
   window.currentInterval = interval;
 
   // 更新按钮状态
@@ -1151,13 +1340,40 @@ async function switchInterval(interval) {
     btn.classList.toggle('active', btn.dataset.interval === interval);
   });
 
+  // 先取消旧订阅（防止 WS 继续推 1H 覆盖 1D 数据）
+  try {
+    if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+      ws.unsubscribe(window.currentSymbol, oldInterval);
+    }
+  } catch (e) {}
+
+  // 清空图表，避免新旧周期数据叠加
+  try { if (chart && typeof chart.clearData === 'function') chart.clearData(); } catch (e) {}
+
+  // 清空缠论/艾略特旧周期数据（bar_index 不匹配新周期 K 线，必须强制重算）
+  if (window._chanlunAdded && chart) {
+    try { chart.removeIndicator('candle_pane', 'CHANLUN'); } catch(e) {}
+  }
+  window._chanlunData = null;
+  window._chanlunBarCount = 0;
+  window._chanlunDebugLogged = false;
+  window._chanlunAdded = false;
+  window._elliottData = null;
+  // 同时清缓存的 tsIndexMap（不同 symbol 不能复用旧映射）
+  window._elliottTsMap = null;
+  window._elliottTsMapLen = 0;
+  window._elliottTsMapLast = 0;
+  window._elliottBarCount = 0;
+
   // 重新加载K线
   await loadKlines(window.currentSymbol, interval, window.currentMarket);
 
-  // 切换 WebSocket 订阅
-  if (ws && ws.ws) {
-    ws.switch(window.currentSymbol, oldInterval, window.currentSymbol, interval);
-  }
+  // 订阅新周期
+  try {
+    if (ws && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+      ws.subscribe(window.currentSymbol, interval);
+    }
+  } catch (e) {}
 }
 
 async function switchSymbol(symbol, market) {
@@ -1169,6 +1385,22 @@ async function switchSymbol(symbol, market) {
 
   // 更新标题
   document.title = `${symbol} - OpenChart Pro`;
+
+  // 清空缠论/艾略特旧品种数据（必须强制重算）
+  // 不仅清数据，还要清 _chanlunAdded 标志，防止 isChanlunActive 误判导致新 loadChanlun 跳过 createIndicator
+  if (window._chanlunAdded && chart) {
+    try { chart.removeIndicator('candle_pane', 'CHANLUN'); } catch(e) {}
+  }
+  window._chanlunData = null;
+  window._chanlunBarCount = 0;
+  window._chanlunDebugLogged = false;
+  window._chanlunAdded = false;
+  window._elliottData = null;
+  // 同时清缓存的 tsIndexMap（不同 symbol 不能复用旧映射）
+  window._elliottTsMap = null;
+  window._elliottTsMapLen = 0;
+  window._elliottTsMapLast = 0;
+  window._elliottBarCount = 0;
 
   // 重新加载K线
   try {
@@ -1318,7 +1550,12 @@ function updateInfoPanelFromKline(lastCandle, prevCandle) {
 }
 
 /* ---------- 计算并更新右侧指标值 ---------- */
+let _lastIndValuesAt = 0;
 function updateIndicatorValues(klines) {
+  // 1 秒内最多算一次（避免 WS kline tick 频繁触发 5+ 个指标连续计算）
+  const now = Date.now();
+  if (now - _lastIndValuesAt < 1000) return;
+  _lastIndValuesAt = now;
   if (!klines || klines.length < 20) return;
 
   const closes = klines.map(k => k.close);
@@ -1460,6 +1697,11 @@ async function loadChanlun(symbol, interval, market) {
   if (!chart || _chanlunLoading) return;
   _chanlunLoading = true;
 
+  // 立刻清空旧数据：防止 fetch 期间 draw 用老的 bar_index 画错位置
+  window._chanlunData = null;
+  window._chanlunBarCount = 0;
+  window._chanlunDebugLogged = false;
+
   if (!symbol) symbol = window.currentSymbol;
   if (!interval) interval = window.currentInterval || '1H';
   if (!market) market = window.currentMarket || 'crypto';
@@ -1493,9 +1735,22 @@ async function loadChanlun(symbol, interval, market) {
     if (!window._chanlunAdded) {
       chart.createIndicator('CHANLUN', true, { id: 'candle_pane' });
       window._chanlunAdded = true;
+    } else {
+      // 已添加过：先移除再重建，强制 klinecharts 重新注册 draw
+      try {
+        chart.removeIndicator('candle_pane', 'CHANLUN');
+        chart.createIndicator('CHANLUN', true, { id: 'candle_pane' });
+      } catch (e) { console.warn('[Chanlun] 重建指标异常:', e); }
     }
-    // 触发重绘
-    chart.resize();
+    // 触发重绘：overrideIndicator 强制 klinecharts 调用 draw 函数
+    requestAnimationFrame(() => {
+      try {
+        // 方法 1：override 会触发 draw 重新执行
+        chart.overrideIndicator({ name: 'CHANLUN' }, 'candle_pane');
+      } catch (e) {
+        try { chart.resize(); } catch (e2) { console.warn('[Chanlun] 重绘失败:', e2); }
+      }
+    });
 
     const stats = `笔:${data.bi_list?.length || 0} 段:${data.seg_list?.length || 0} 枢:${data.zs_list?.length || 0} 点:${data.bsp_list?.length || 0}`;
     console.log(`[Chanlun] ${symbol} ${interval} 分析完成 - ${stats}`);

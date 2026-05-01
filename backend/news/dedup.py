@@ -10,9 +10,11 @@ from typing import Optional
 
 
 def url_hash(url: str) -> str:
-    """URL 规范化后 SHA1 hash。"""
+    """URL 规范化后 SHA1 hash。空 URL 返回基于时间+随机的唯一值（防多新闻共享空 hash）。"""
     if not url:
-        return ""
+        # 关键：返回唯一占位，避免多个 url 缺失的新闻共享 "" 被去重误删
+        import time, random
+        return f"empty-{int(time.time()*1000)}-{random.randint(0, 999999)}"
     # 去掉常见追踪参数
     u = re.sub(r"[?&](utm_[^&]+|ref=[^&]+|fbclid=[^&]+)", "", url)
     u = u.rstrip("/?&#")
@@ -44,20 +46,58 @@ def make_news_id(source: str, title: str, published_at: int) -> str:
 # ───────── Phase 3B 占位：SimHash 语义去重 ─────────
 
 
+def _tokenize(text: str):
+    """中英混合粗分词：英文单词 + 中文 2-gram。"""
+    if not text:
+        return []
+    text = re.sub(r"[\s\W_]+", " ", text.lower())
+    tokens = []
+    # 英文词
+    for w in re.findall(r"[a-z0-9]+", text):
+        if len(w) >= 2:
+            tokens.append(w)
+    # 中文 2-gram
+    zh = re.findall(r"[\u4e00-\u9fa5]+", text)
+    for phrase in zh:
+        for i in range(len(phrase) - 1):
+            tokens.append(phrase[i:i + 2])
+    return tokens
+
+
 def simhash_text(text: str) -> Optional[str]:
     """
-    SimHash 64-bit 指纹（Phase 3B 用 simhash 库实现）。
-    Phase 3A 暂不启用，返回 None。
+    64-bit SimHash 指纹（hex 字符串 16 位）。
+    纯 Python 实现，无外部依赖。
     """
-    return None
+    tokens = _tokenize(text or "")
+    if not tokens:
+        return None
+    bits = [0] * 64
+    for tk in tokens:
+        h = int(hashlib.md5(tk.encode("utf-8")).hexdigest()[:16], 16)
+        for i in range(64):
+            if h & (1 << i):
+                bits[i] += 1
+            else:
+                bits[i] -= 1
+    fingerprint = 0
+    for i in range(64):
+        if bits[i] > 0:
+            fingerprint |= (1 << i)
+    return format(fingerprint, "016x")
 
 
 def simhash_distance(h1: str, h2: str) -> int:
-    """
-    计算两个 SimHash 指纹的汉明距离（Phase 3B 用）。
-    """
+    """两个 SimHash 指纹的汉明距离。"""
     if not h1 or not h2:
         return 64
-    n1 = int(h1, 16)
-    n2 = int(h2, 16)
+    try:
+        n1 = int(h1, 16)
+        n2 = int(h2, 16)
+    except ValueError:
+        return 64
     return bin(n1 ^ n2).count("1")
+
+
+# 相似度阈值：64-bit 汉明距离 ≤ 3 视为"语义重复"（同一事件的不同表述）
+SIMHASH_DUP_THRESHOLD = 3

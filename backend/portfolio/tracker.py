@@ -94,9 +94,14 @@ class PortfolioTracker:
         if not candles:
             return
 
-        # 拉新闻
+        # 拉新闻（v11.6: 支持 sync 或 async news_provider）
+        import inspect
+        recent_news = []
         try:
-            recent_news = self.news_provider(symbol) or []
+            res = self.news_provider(symbol)
+            if inspect.isawaitable(res):
+                res = await res
+            recent_news = res or []
         except Exception:
             recent_news = []
 

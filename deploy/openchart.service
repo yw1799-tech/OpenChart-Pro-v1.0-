@@ -1,0 +1,38 @@
+[Unit]
+Description=OpenChart Pro Trading Dashboard
+Documentation=https://github.com/yw1799-tech/OpenChart-Pro
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/openchart
+EnvironmentFile=-/opt/openchart/.env
+# 用 venv 里的 python 直接跑 uvicorn（绑 0.0.0.0:8000，无 reload）
+ExecStart=/opt/openchart/.venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1 --log-level info
+# 崩溃自动重启（最多 3 次/分钟，避免疯狂重启）
+Restart=on-failure
+RestartSec=5s
+StartLimitBurst=3
+StartLimitIntervalSec=60s
+# 资源限制（2GB 服务器友好）
+MemoryMax=1500M
+MemoryHigh=1200M
+TasksMax=200
+# 安全加固
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/openchart/data /opt/openchart/logs /backup
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+# 日志输出到 systemd journal
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=openchart
+
+[Install]
+WantedBy=multi-user.target

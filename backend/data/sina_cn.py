@@ -154,7 +154,7 @@ class SinaCNFetcher:
                         low=float(item["low"]),
                         close=float(item["close"]),
                         volume=float(item["volume"]),
-                        turnover=0.0,  # 新浪 K 线不返回成交额
+                        turnover=float(item["volume"]) * float(item["close"]),
                     )
                 )
             except (KeyError, ValueError) as e:

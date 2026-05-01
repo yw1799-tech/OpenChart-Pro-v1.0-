@@ -26,17 +26,18 @@ class StrategyBindingManager:
         symbol: str,
         market: str,
         strategy_name: str,
+        interval: str = "1H",
         params: Optional[Dict] = None,
         enabled: bool = True,
     ) -> str:
-        """绑定单个策略到单只品种。重复绑定返回原 id。"""
+        """绑定单个策略到单只品种 + 周期。重复绑定返回原 id。"""
         binding_id = str(uuid.uuid4())
         async with self.db.acquire() as conn:
             cursor = await conn.execute(
                 """
-                INSERT INTO strategy_bindings (id, symbol, market, strategy_name, params, enabled, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(symbol, market, strategy_name) DO UPDATE SET
+                INSERT INTO strategy_bindings (id, symbol, market, strategy_name, interval, params, enabled, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(symbol, market, strategy_name, interval) DO UPDATE SET
                     params = excluded.params,
                     enabled = excluded.enabled
                 RETURNING id
@@ -46,6 +47,7 @@ class StrategyBindingManager:
                     symbol,
                     market,
                     strategy_name,
+                    interval,
                     json.dumps(params or {}),
                     1 if enabled else 0,
                     int(time.time()),
@@ -58,7 +60,7 @@ class StrategyBindingManager:
     async def batch_bind(
         self,
         strategy_name: str,
-        targets: List[Dict[str, str]],  # [{"symbol":..., "market":...}]
+        targets: List[Dict[str, str]],  # [{"symbol":..., "market":..., "interval":可选}]
         params: Optional[Dict] = None,
     ) -> Dict[str, int]:
         """一个策略批量绑定多只品种。"""
@@ -66,7 +68,14 @@ class StrategyBindingManager:
         failed = 0
         for t in targets:
             try:
-                await self.bind(t["symbol"], t["market"], strategy_name, params)
+                # v11.4 修复：必须用关键字传 params，否则会被 bind() 的 interval 位置参数吃掉
+                await self.bind(
+                    symbol=t["symbol"],
+                    market=t["market"],
+                    strategy_name=strategy_name,
+                    interval=t.get("interval", "1H"),
+                    params=params,
+                )
                 ok += 1
             except Exception:
                 failed += 1

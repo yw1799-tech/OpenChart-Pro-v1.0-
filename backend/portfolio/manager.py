@@ -23,21 +23,51 @@ class PortfolioManager:
         quantity: float,
         avg_cost: float,
         notes: str = "",
+        side: Optional[str] = None,
     ) -> str:
+        """
+        新增/更新持仓。UPSERT 策略：
+          - 新建：side 缺省用 'long'（schema 默认）
+          - 冲突（同 symbol+market 已存在）：
+              · side 显式传入 → 覆盖（用于 auto_trader 开反向仓）
+              · side 未传 → 保留原值（用于用户手动 add，不破坏 auto 字段）
+          - 自动维护字段（cost_currency/entry_fx_rate/total_cost_usd/auto_traded）始终保留原值
+        """
+        from backend.trading.fx import market_to_currency
         position_id = str(uuid.uuid4())
+        new_side = side if side in ("long", "short") else "long"
+        # 按市场设置本币（避免留 schema 默认 'USD' 导致 CNY/HKD 持仓被当 USD 计值）
+        ccy = market_to_currency(market)
         async with self.db.acquire() as conn:
-            cursor = await conn.execute(
-                """
-                INSERT INTO positions (id, symbol, market, quantity, avg_cost, opened_at, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(symbol, market) DO UPDATE SET
-                    quantity = excluded.quantity,
-                    avg_cost = excluded.avg_cost,
-                    notes = excluded.notes
-                RETURNING id
-                """,
-                (position_id, symbol, market, quantity, avg_cost, int(time.time()), notes),
-            )
+            if side in ("long", "short"):
+                # 显式传 side（auto_trader 主动调用）→ 冲突时覆盖 side
+                cursor = await conn.execute(
+                    """
+                    INSERT INTO positions (id, symbol, market, quantity, avg_cost, opened_at, notes, side, cost_currency)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(symbol, market) DO UPDATE SET
+                        quantity = excluded.quantity,
+                        avg_cost = excluded.avg_cost,
+                        notes = excluded.notes,
+                        side = excluded.side
+                    RETURNING id
+                    """,
+                    (position_id, symbol, market, quantity, avg_cost, int(time.time()), notes, new_side, ccy),
+                )
+            else:
+                # side 未传（用户手动 add）→ 冲突时保留原 side 和 cost_currency，避免破坏 auto 字段
+                cursor = await conn.execute(
+                    """
+                    INSERT INTO positions (id, symbol, market, quantity, avg_cost, opened_at, notes, cost_currency)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(symbol, market) DO UPDATE SET
+                        quantity = excluded.quantity,
+                        avg_cost = excluded.avg_cost,
+                        notes = excluded.notes
+                    RETURNING id
+                    """,
+                    (position_id, symbol, market, quantity, avg_cost, int(time.time()), notes, ccy),
+                )
             row = await cursor.fetchone()
             await conn.commit()
             return row["id"] if row else position_id
@@ -70,6 +100,10 @@ class PortfolioManager:
         async with self.db.acquire() as conn:
             cursor = await conn.execute(
                 "DELETE FROM positions WHERE id = ?", (position_id,)
+            )
+            # v11.4: 同步清掉 position_state（防 stale 行积累 + 影响下次同 id 复用）
+            await conn.execute(
+                "DELETE FROM position_state WHERE position_id = ?", (position_id,)
             )
             await conn.commit()
             return cursor.rowcount > 0

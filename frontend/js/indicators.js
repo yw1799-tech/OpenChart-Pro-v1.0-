@@ -50,7 +50,10 @@ const Indicators = (() => {
     localStorage.setItem('oc_indicators', JSON.stringify([...activeIndicators]));
   }
 
+  let _inited = false;
   function init() {
+    if (_inited) return;
+    _inited = true;
     overlay = document.getElementById('indicator-modal');
     if (!overlay) return;
     overlay.querySelector('.modal-close')?.addEventListener('click', close);

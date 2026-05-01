@@ -36,6 +36,12 @@ logger = logging.getLogger(__name__)
 class NewsCollector(ABC):
     """采集器基类。"""
 
+    # 自动降级参数（基类常量，子类可覆盖）
+    # v12.13: 失败 N 次门槛 5→2（429 限速场景下连续失败 5 次再退避太晚，浪费配额且持续刷 WARNING 日志）
+    BACKOFF_AFTER_FAILURES = 2      # 连续失败 2 次开始降级（之前 5 次太宽松）
+    BACKOFF_MAX_INTERVAL = 1800     # 降级时最长每 30 分钟尝试一次
+    DISABLE_AFTER_FAILURES = 50     # 连续失败 50 次彻底停掉
+
     def __init__(self, source_config: Dict[str, Any]):
         self.config = source_config
         self.name = source_config["name"]
@@ -48,8 +54,48 @@ class NewsCollector(ABC):
             "successful_fetches": 0,
             "consecutive_failures": 0,
             "last_success_at": 0,
+            "last_attempt_at": 0,
             "last_error": None,
+            "skipped": 0,            # 因降级被跳过的次数
+            "disabled": False,       # 永久禁用（连续失败超过阈值）
         }
+
+    def should_skip_fetch(self) -> bool:
+        """
+        动态降级判断：
+          - disabled=True 永久跳过
+          - consecutive_failures >= BACKOFF_AFTER_FAILURES 时按指数退避（间隔 = interval × 2^(N-阈值)，封顶 BACKOFF_MAX_INTERVAL）
+        子类（或 scheduler）在 fetch() 入口先检查此方法。
+        """
+        import time as _t
+        if self._stats.get("disabled"):
+            return True
+        fails = self._stats.get("consecutive_failures", 0)
+        if fails < self.BACKOFF_AFTER_FAILURES:
+            return False
+        # 计算退避后的下次允许时间
+        last = self._stats.get("last_attempt_at") or 0
+        backoff = min(self.BACKOFF_MAX_INTERVAL, self.interval * (2 ** (fails - self.BACKOFF_AFTER_FAILURES + 1)))
+        if (_t.time() - last) < backoff:
+            self._stats["skipped"] = self._stats.get("skipped", 0) + 1
+            return True
+        self._stats["last_attempt_at"] = _t.time()
+        return False
+
+    def _record_attempt(self, success: bool, error: Optional[str] = None):
+        import time as _t
+        self._stats["last_attempt_at"] = _t.time()
+        if success:
+            self._stats["consecutive_failures"] = 0
+            self._stats["last_success_at"] = _t.time()
+            self._stats["successful_fetches"] = self._stats.get("successful_fetches", 0) + 1
+        else:
+            self._stats["consecutive_failures"] = self._stats.get("consecutive_failures", 0) + 1
+            self._stats["last_error"] = (error or "")[:200]
+            if self._stats["consecutive_failures"] >= self.DISABLE_AFTER_FAILURES:
+                if not self._stats.get("disabled"):
+                    logger.warning(f"[{self.name}] 连续失败 {self.DISABLE_AFTER_FAILURES} 次，永久禁用此源（重启可恢复）")
+                self._stats["disabled"] = True
 
     # 子类可覆盖：定制请求 headers（应对反爬）
     EXTRA_HEADERS: Dict[str, str] = {}
@@ -120,12 +166,19 @@ class RSSCollector(NewsCollector):
         try:
             session = await self._get_session()
             async with session.get(self.url) as resp:
+                if resp.status == 429:
+                    self._record_attempt(False, "429 Rate Limited")
+                    logger.warning(f"[{self.name}] 限速 429，跳过本次采集，等待退避")
+                    return []
+                if resp.status in (401, 403):
+                    self._record_attempt(False, f"HTTP {resp.status} 鉴权失败")
+                    logger.error(f"[{self.name}] 鉴权失败 {resp.status}，请检查 API Key 配置")
+                    return []
                 if resp.status != 200:
                     raise RuntimeError(f"HTTP {resp.status}")
                 text = await resp.text()
         except Exception as e:
-            self._stats["consecutive_failures"] += 1
-            self._stats["last_error"] = str(e)
+            self._record_attempt(False, str(e)[:200])
             logger.warning(f"[{self.name}] RSS 拉取失败: {e}")
             return []
 
@@ -186,13 +239,20 @@ class RESTCollector(NewsCollector):
             if "{ts}" in url:
                 url = url.replace("{ts}", str(int(time.time() * 1000)))
             async with session.get(url) as resp:
+                if resp.status == 429:
+                    self._record_attempt(False, "429 Rate Limited")
+                    logger.warning(f"[{self.name}] 限速 429，跳过本次采集，等待退避")
+                    return []
+                if resp.status in (401, 403):
+                    self._record_attempt(False, f"HTTP {resp.status} 鉴权失败")
+                    logger.error(f"[{self.name}] 鉴权失败 {resp.status}，请检查 API Key 配置")
+                    return []
                 if resp.status != 200:
                     raise RuntimeError(f"HTTP {resp.status}")
                 # 部分接口返回 jsonp/text，统一先取 text
                 text = await resp.text()
         except Exception as e:
-            self._stats["consecutive_failures"] += 1
-            self._stats["last_error"] = str(e)
+            self._record_attempt(False, str(e)[:200])
             logger.warning(f"[{self.name}] REST 拉取失败: {e}")
             return []
 
@@ -262,7 +322,9 @@ class EastmoneyFlashCollector(RESTCollector):
 
 
 class OKXAnnouncementCollector(RESTCollector):
-    """OKX 公告采集器（v2 实装，按类型拉新上线公告）。"""
+    """OKX 公告采集器。
+    v12.13: 适配新 endpoint /api/v5/support/announcements，返回 data=[{details:[{title,url,pTime,...}]}]
+    """
 
     def _parse_response(self, text: str) -> List[Dict[str, Any]]:
         import json
@@ -272,14 +334,30 @@ class OKXAnnouncementCollector(RESTCollector):
             return []
         items: List[Dict[str, Any]] = []
         try:
-            details = data.get("data", {}).get("details") or data.get("data", []) or []
-            # OKX 接口可能返回不同结构
-            for entry in details if isinstance(details, list) else []:
-                ann_list = entry.get("details", []) if isinstance(entry, dict) else []
+            data_field = data.get("data", [])
+            # 新 endpoint: data 是 list，每个元素含 details
+            # 旧 endpoint: data 可能是 dict 含 details
+            if isinstance(data_field, list):
+                groups = data_field
+            elif isinstance(data_field, dict):
+                groups = [data_field]
+            else:
+                groups = []
+            for entry in groups:
+                if not isinstance(entry, dict):
+                    continue
+                ann_list = entry.get("details", []) or []
                 for ann in ann_list:
-                    title = ann.get("title", "")
+                    if not isinstance(ann, dict):
+                        continue
+                    title = (ann.get("title") or "").strip()
                     url = ann.get("url", "")
-                    pub_ms = int(ann.get("pTime", 0))
+                    try:
+                        pub_ms = int(ann.get("pTime") or 0)
+                    except (ValueError, TypeError):
+                        pub_ms = 0
+                    if not title:
+                        continue
                     n = self._normalize(title, "", url, pub_ms or None)
                     if n:
                         items.append(n)
@@ -543,6 +621,186 @@ class ScraperCollector(NewsCollector):
         return []
 
 
+class EtnetCollector(NewsCollector):
+    """v12.13: 经济通 etnet 港股财经新闻 HTML scraper。
+    页面：https://www.etnet.com.hk/www/tc/news/index.php
+    每条新闻链接形如 categorized_news_detail.php?category=latest&newsid=20260430755
+    newsid 格式：YYYYMMDD + 当日序号（用于解析时间戳）
+    标题里如有 (XXXXX) 5位数字 = 港股代码，自动加进 categories（精确匹配后续 flash_event 用）
+    """
+
+    LIST_URL = "https://www.etnet.com.hk/www/tc/news/index.php"
+    DETAIL_PREFIX = "https://www.etnet.com.hk/www/tc/news/"
+    HK_TICKER_RE = None  # lazy init
+
+    async def fetch(self) -> List[Dict[str, Any]]:
+        if self.should_skip_fetch():
+            return []
+        import aiohttp
+        import re
+        from bs4 import BeautifulSoup
+        import time as _t
+        from datetime import datetime
+
+        if EtnetCollector.HK_TICKER_RE is None:
+            # (00700) 或 (700.HK) — etnet 习惯用 (xxxxx) 5 位数字
+            EtnetCollector.HK_TICKER_RE = re.compile(r"\((\d{4,5})\)")
+
+        self._stats["total_fetches"] += 1
+        try:
+            session = await self._get_session()
+            async with session.get(self.LIST_URL, timeout=aiohttp.ClientTimeout(total=15)) as r:
+                if r.status == 429:
+                    self._record_attempt(False, "429 Rate Limited")
+                    logger.warning(f"[{self.name}] 限速 429，跳过本次采集")
+                    return []
+                if r.status >= 400:
+                    self._record_attempt(False, f"HTTP {r.status}")
+                    return []
+                html = await r.text()
+        except Exception as e:
+            self._record_attempt(False, str(e))
+            logger.warning(f"[{self.name}] 拉取失败: {e}")
+            return []
+
+        items: List[Dict[str, Any]] = []
+        try:
+            soup = BeautifulSoup(html, "html.parser")
+            seen_ids = set()
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                if "categorized_news_detail.php" not in href:
+                    continue
+                title = a.get_text(strip=True)
+                if not title or len(title) < 5:
+                    continue
+                # 提取 newsid
+                m = re.search(r"newsid=(\d{8,14})", href)
+                if not m:
+                    continue
+                newsid = m.group(1)
+                if newsid in seen_ids:
+                    continue
+                seen_ids.add(newsid)
+
+                # 解析时间：YYYYMMDD + 序号 → 当天某时刻（精度只到日）
+                published_at = int(_t.time() * 1000)
+                if len(newsid) >= 8:
+                    try:
+                        dt = datetime.strptime(newsid[:8], "%Y%m%d")
+                        published_at = int(dt.timestamp() * 1000)
+                    except ValueError:
+                        pass
+
+                # 提取港股 ticker（标题里 (00700) 这种）
+                categories: List[str] = []
+                for tk in EtnetCollector.HK_TICKER_RE.findall(title):
+                    code = tk.lstrip("0") or "0"
+                    if len(code) < 4:
+                        code = code.zfill(4)
+                    categories.append(f"{code}.HK")
+
+                full_url = href if href.startswith("http") else self.DETAIL_PREFIX + href.lstrip("./")
+
+                items.append({
+                    "id": f"etnet-{newsid}",
+                    "title": title[:200],
+                    "content": "",
+                    "source": self.name,
+                    "url": full_url,
+                    "published_at": published_at,
+                    "categories": categories,
+                })
+                if len(items) >= 60:
+                    break
+        except Exception as e:
+            self._record_attempt(False, str(e))
+            logger.warning(f"[{self.name}] 解析失败: {e}")
+            return []
+
+        self._record_attempt(True)
+        return items
+
+
+class HKEXCollector(NewsCollector):
+    """
+    HKEX 披露易（Phase 3B）。
+    从 https://www1.hkexnews.hk/ncms/today/today.json 拉取当日全部披露文件。
+    字段：t1(代码), t2(公司名), tt(文件标题), d(发布时间 YYYYMMDDHHmmSS), fl(PDF 路径)
+    """
+
+    async def fetch(self) -> List[Dict[str, Any]]:
+        import aiohttp
+        import time as _t
+        from datetime import datetime
+        self._stats["total_fetches"] += 1
+        url = "https://www1.hkexnews.hk/ncms/today/today.json"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Referer": "https://www1.hkexnews.hk/",
+            "Accept": "application/json",
+        }
+        items: List[Dict[str, Any]] = []
+        try:
+            async with aiohttp.ClientSession(headers=headers) as s:
+                async with s.get(url, timeout=aiohttp.ClientTimeout(total=15)) as r:
+                    body = await r.json(content_type=None)
+        except Exception as e:
+            self._stats["consecutive_failures"] += 1
+            self._stats["last_error"] = str(e)
+            logger.warning(f"[HKEX] 拉取失败: {e}")
+            return []
+
+        rows = body if isinstance(body, list) else (body.get("lcf") or body.get("data") or [])
+        for row in rows:
+            try:
+                code = str(row.get("t1") or "").strip().zfill(5)
+                name = str(row.get("t2") or "").strip()
+                title = str(row.get("tt") or row.get("title") or "").strip()
+                doc_time = str(row.get("d") or row.get("date") or "")
+                file_path = row.get("fl") or row.get("file") or ""
+                if not code or not title:
+                    continue
+                # 解析时间 YYYYMMDDHHmmss → ms
+                try:
+                    if len(doc_time) >= 14:
+                        dt = datetime.strptime(doc_time[:14], "%Y%m%d%H%M%S")
+                    elif len(doc_time) >= 8:
+                        dt = datetime.strptime(doc_time[:8], "%Y%m%d")
+                    else:
+                        dt = datetime.now()
+                    published_at = int(dt.timestamp() * 1000)
+                except ValueError:
+                    published_at = int(_t.time() * 1000)
+
+                symbol = f"{code}.HK"
+                full_url = (
+                    f"https://www1.hkexnews.hk{file_path}"
+                    if str(file_path).startswith("/")
+                    else str(file_path)
+                )
+                # 强标题：含公司名 + 披露类型 → 便于规则引擎打标
+                rich_title = f"[HKEX] {symbol} {name}: {title}"
+                item = {
+                    "id": f"hkex-{code}-{published_at}",
+                    "title": rich_title,
+                    "content": title,
+                    "source": "HKEX披露易",
+                    "url": full_url,
+                    "published_at": published_at,
+                    "categories": [symbol],   # 预标品种，规则引擎直接命中
+                }
+                items.append(item)
+            except Exception as e:
+                logger.debug(f"[HKEX] 单条解析异常: {e}")
+                continue
+        if items:
+            self._stats["successful_fetches"] += 1
+            self._stats["consecutive_failures"] = 0
+            self._stats["last_success_at"] = int(time.time())
+        return items
+
+
 # ═══════════════════════════════════════════════════════════════════
 # 工厂
 # ═══════════════════════════════════════════════════════════════════
@@ -568,6 +826,8 @@ def create_collector(source_config: Dict[str, Any]) -> NewsCollector:
         "BLS就业数据": BLSRSSCollector,
         "BLS物价指数": BLSRSSCollector,
         "Bitcoin Magazine": BitcoinMagazineCollector,
+        "HKEX披露易": HKEXCollector,
+        "经济通etnet": EtnetCollector,
     }
     if name in SPECIAL:
         return SPECIAL[name](source_config)

@@ -10,18 +10,22 @@ const Search = (() => {
   let flatResults = [];       // 扁平化的搜索结果列表（用于键盘导航）
   let allSymbols = [];        // 缓存的品种列表 { symbol, name, market }
 
+  // v11.6: market 字段统一用全局 MARKETS key（crypto/us/hk/cn），之前 'A股' 等中文标签让 selectSymbol 找不到 market
   const HOT_SYMBOLS = [
-    { symbol: 'BTC-USDT',  name: 'Bitcoin',    market: 'Crypto' },
-    { symbol: 'ETH-USDT',  name: 'Ethereum',   market: 'Crypto' },
-    { symbol: 'AAPL',      name: 'Apple Inc',  market: 'US' },
-    { symbol: 'TSLA',      name: 'Tesla Inc',  market: 'US' },
-    { symbol: '0700.HK',   name: '腾讯控股',    market: 'HK' },
-    { symbol: '600519',    name: '贵州茅台',    market: 'A股' },
+    { symbol: 'BTC-USDT',  name: 'Bitcoin',    market: 'crypto' },
+    { symbol: 'ETH-USDT',  name: 'Ethereum',   market: 'crypto' },
+    { symbol: 'AAPL',      name: 'Apple Inc',  market: 'us' },
+    { symbol: 'TSLA',      name: 'Tesla Inc',  market: 'us' },
+    { symbol: '0700.HK',   name: '腾讯控股',    market: 'hk' },
+    { symbol: '600519',    name: '贵州茅台',    market: 'cn' },
   ];
 
   const MAX_PER_GROUP = 5;
+  let _inited = false;
 
   function init() {
+    if (_inited) return;
+    _inited = true;
     overlay = document.getElementById('search-modal');
     if (!overlay) return;
 
@@ -162,13 +166,19 @@ const Search = (() => {
         const el = document.createElement('div');
         el.className = 'search-result-item';
         el.dataset.symbol = item.symbol;
-        el.innerHTML = `
-          <div>
-            <span class="sr-symbol">${item.symbol}</span>
-            <span class="sr-name">${item.name || ''}</span>
-          </div>
-          <span class="sr-market">${market}</span>
-        `;
+        // v11.6: XSS 修复 — 用 textContent 而非 innerHTML 拼接（symbol/name 可能含 < > &）
+        const wrap = document.createElement('div');
+        const symEl = document.createElement('span');
+        symEl.className = 'sr-symbol';
+        symEl.textContent = item.symbol;
+        const nameEl = document.createElement('span');
+        nameEl.className = 'sr-name';
+        nameEl.textContent = item.name || '';
+        wrap.append(symEl, ' ', nameEl);
+        const mktEl = document.createElement('span');
+        mktEl.className = 'sr-market';
+        mktEl.textContent = market;
+        el.append(wrap, mktEl);
         el.addEventListener('click', () => selectSymbol(item.symbol, item.market));
         el.addEventListener('mouseenter', () => {
           highlightIndex = flatResults.indexOf(el);

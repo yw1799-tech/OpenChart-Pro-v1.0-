@@ -61,8 +61,14 @@ class OKXFetcher(DataFetcher):
         self._subscriptions: Dict[str, Dict[str, Any]] = {}  # key = "instId:channel"
         self._running = False
 
-        # 限频控制
+        # 限频控制：用锁串行化，防止并发协程同时通过 throttle
         self._last_request_ts: float = 0.0
+        self._rate_lock: Optional[asyncio.Lock] = None
+
+    def _get_lock(self) -> asyncio.Lock:
+        if self._rate_lock is None:
+            self._rate_lock = asyncio.Lock()
+        return self._rate_lock
 
     # ------------------------------------------------------------------ #
     #                          HTTP 基础方法                               #
@@ -74,23 +80,44 @@ class OKXFetcher(DataFetcher):
         return self._session
 
     async def _throttle(self) -> None:
-        """简易限频：确保两次请求间隔 >= _RATE_LIMIT_INTERVAL。"""
-        now = time.monotonic()
-        delta = _RATE_LIMIT_INTERVAL - (now - self._last_request_ts)
-        if delta > 0:
-            await asyncio.sleep(delta)
-        self._last_request_ts = time.monotonic()
+        """串行限频：持锁后确保间隔 >= _RATE_LIMIT_INTERVAL，防止并发击穿。"""
+        async with self._get_lock():
+            now = time.monotonic()
+            delta = _RATE_LIMIT_INTERVAL - (now - self._last_request_ts)
+            if delta > 0:
+                await asyncio.sleep(delta)
+            self._last_request_ts = time.monotonic()
 
     async def _get(self, path: str, params: Optional[Dict] = None) -> Any:
-        """发起 GET 请求并返回 JSON data 字段。"""
-        await self._throttle()
+        """发起 GET 请求，自动重试 429 限速（指数退避最多 3 次）。"""
         session = await self._ensure_session()
         url = f"{self._base_url}{path}"
-        async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-            body = await resp.json()
-            if body.get("code") != "0":
-                raise RuntimeError(f"OKX API error: {body.get('msg', body)}")
-            return body.get("data", [])
+        backoff = 2.0
+        for attempt in range(4):
+            await self._throttle()
+            try:
+                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    body = await resp.json()
+                    code = body.get("code")
+                    if code == "0":
+                        return body.get("data", [])
+                    msg = body.get("msg", str(body))
+                    # OKX 限速码：50011 = Too Many Requests
+                    if code == "50011" or "Too Many Requests" in msg:
+                        if attempt < 3:
+                            logger.warning(f"OKX 限速，{backoff:.0f}s 后重试 (attempt={attempt+1}): {path}")
+                            await asyncio.sleep(backoff)
+                            backoff = min(backoff * 2, 30.0)
+                            continue
+                    raise RuntimeError(f"OKX API error: {msg}")
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                if attempt < 3:
+                    logger.warning(f"OKX 请求异常 {e}，{backoff:.0f}s 后重试")
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, 30.0)
+                    continue
+                raise
+        raise RuntimeError(f"OKX API 重试耗尽: {path}")
 
     # ------------------------------------------------------------------ #
     #                     DataFetcher 抽象方法实现                          #

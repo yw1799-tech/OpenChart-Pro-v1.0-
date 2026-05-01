@@ -168,7 +168,7 @@ class TencentCNFetcher:
                         high=float(h),
                         low=float(l),
                         volume=float(v) if v else 0.0,
-                        turnover=0.0,
+                        turnover=float(row[8]) * 10000 if len(row) > 8 and row[8] else 0.0,
                     )
                 )
             except Exception as e:

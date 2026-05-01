@@ -93,16 +93,20 @@ class CNAggregatorFetcher(DataFetcher):
 
     async def get_symbols(self, query: str = "") -> List[Symbol]:
         """
-        品种搜索只用东方财富（接口稳定且完整）。
-        若东财失败则返回空列表，不降级到其他源（避免语义差异）。
+        品种搜索只用东方财富（唯一有搜索接口的源）。
+        失败时计入健康度冷却，避免在冷却期内持续重试。
         """
+        em_health = self._sources[0][1]
+        if not em_health.is_available():
+            logger.debug("[cn-agg] get_symbols: eastmoney 冷却中，返回空")
+            return []
         try:
             result = await self._eastmoney.get_symbols(query=query)
-            self._sources[0][1].record_success()
+            em_health.record_success()
             return result
         except Exception as e:
             logger.warning(f"[cn-agg] get_symbols 失败: {e}")
-            self._sources[0][1].record_failure()
+            em_health.record_failure()
             return []
 
     async def get_klines(

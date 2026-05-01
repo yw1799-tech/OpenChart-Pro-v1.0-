@@ -45,7 +45,10 @@ const Settings = (() => {
     ollama:    { label: 'Ollama (本地)',    fields: ['ollamaModel', 'ollamaBaseUrl'] },
   };
 
+  let _inited = false;
   function init() {
+    if (_inited) return;
+    _inited = true;
     overlay = document.getElementById('settings-modal');
     if (!overlay) return;
 

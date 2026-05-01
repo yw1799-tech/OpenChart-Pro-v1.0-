@@ -1,0 +1,35 @@
+# OpenChart Pro Caddy 反代 + 自动 HTTPS
+# 仅当您有自定义域名时使用：
+#   1) 把域名 A 记录指到服务器 IP 43.165.185.243
+#   2) 装 Caddy: sudo apt install caddy -y
+#   3) 把这个文件复制到 /etc/caddy/Caddyfile
+#   4) 改下面的 your-domain.com 为真实域名
+#   5) sudo systemctl restart caddy
+#
+# Caddy 会自动申请 + 续期 Let's Encrypt 证书
+# 不用域名直接 http://43.165.185.243:8000 也能访问
+
+your-domain.com {
+    encode gzip zstd
+    reverse_proxy localhost:8000 {
+        # WebSocket 透传（前端 /ws 需要）
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+    # 安全头
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+    # 日志
+    log {
+        output file /var/log/caddy/openchart-access.log {
+            roll_size 50mb
+            roll_keep 5
+        }
+    }
+}

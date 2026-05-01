@@ -31,4 +31,7 @@ beautifulsoup4>=4.12.0
 simhash>=2.1.2
 
 # LLM (Phase 3B)
-openai>=1.0.0
+openai>=1.12.0  # v12.10: extra_body 在 1.6+ 才稳定透传给 chat.completions.create；锁高版本防 thinking flag 静默丢失
+
+# 交易所日历（节假日判定）
+exchange_calendars>=4.5.0

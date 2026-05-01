@@ -23,14 +23,18 @@ const Watchlist = (() => {
       { symbol: '0700.HK', name: '腾讯控股' },
       { symbol: '9988.HK', name: '阿里巴巴' },
     ],
-    a: [
+    // v11.5: 旧 'a' key 改成 'cn' 与全局 currentMarket 一致（之前 A 股 watchlist 默认空）
+    cn: [
       { symbol: '600519', name: '贵州茅台' },
       { symbol: '000858', name: '五粮液' },
       { symbol: '300750', name: '宁德时代' },
     ],
   };
 
+  let _inited = false;
   function init() {
+    if (_inited) { console.warn('[Watchlist] 已初始化，跳过重复 init'); return; }
+    _inited = true;
     load();
     render();
 
@@ -39,9 +43,15 @@ const Watchlist = (() => {
       if (typeof Search !== 'undefined') Search.open();
     });
 
-    // 定时刷新价格（使用K线API获取最新价）
-    setInterval(refreshPrices, 10000);
-    setTimeout(refreshPrices, 2000);
+    // 定时刷新价格（90s 一次，进一步减压）
+    let _wlTimer = setInterval(refreshPrices, 90000);
+    setTimeout(refreshPrices, 5000);
+    if (window.__visibilityHandlers) {
+      window.__visibilityHandlers.push(({ hidden }) => {
+        if (hidden && _wlTimer) { clearInterval(_wlTimer); _wlTimer = null; }
+        else if (!hidden && !_wlTimer) { refreshPrices(); _wlTimer = setInterval(refreshPrices, 90000); }
+      });
+    }
   }
 
   function load() {
@@ -151,24 +161,26 @@ const Watchlist = (() => {
     const market = window.currentMarket || 'crypto';
     const apiMarket = market === 'a' ? 'cn' : market;
 
-    for (const item of items) {
-      try {
-        const resp = await fetch(`/api/klines?symbol=${encodeURIComponent(item.symbol)}&interval=1D&limit=2&market=${apiMarket}`);
-        if (!resp.ok) continue;
-        const data = await resp.json();
-        const candles = data.candles || [];
-        if (candles.length > 0) {
-          const last = candles[candles.length - 1];
-          const prev = candles.length > 1 ? candles[candles.length - 2] : last;
-          const price = last.close;
-          const changeAmt = last.close - prev.close;
-          const changePct = prev.close !== 0 ? ((last.close - prev.close) / prev.close * 100) : 0;
-          priceCache[item.symbol] = { price, changeAmt, changePct };
-        }
-      } catch {
-        // 静默
-      }
-    }
+    // 并行请求（Promise.allSettled），不串行，减少总耗时
+    const promises = items.map(item =>
+      fetch(`/api/klines?symbol=${encodeURIComponent(item.symbol)}&interval=1D&limit=2&market=${apiMarket}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (!data) return;
+          const candles = data.candles || [];
+          if (candles.length > 0) {
+            const last = candles[candles.length - 1];
+            const prev = candles.length > 1 ? candles[candles.length - 2] : last;
+            priceCache[item.symbol] = {
+              price: last.close,
+              changeAmt: last.close - prev.close,
+              changePct: prev.close !== 0 ? ((last.close - prev.close) / prev.close * 100) : 0,
+            };
+          }
+        })
+        .catch(() => {})
+    );
+    await Promise.allSettled(promises);
     render();
   }
 

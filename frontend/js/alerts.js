@@ -5,8 +5,11 @@
 const Alerts = (() => {
   let overlay = null;
   let alertList = [];
+  let _inited = false;
 
   function init() {
+    if (_inited) return;
+    _inited = true;
     overlay = document.getElementById('alert-modal');
     if (!overlay) return;
 
@@ -87,6 +90,11 @@ const Alerts = (() => {
     }
   }
 
+  function _esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
   function renderAlertList() {
     const container = document.querySelector('.alert-log-content');
     if (!container) return;
@@ -97,16 +105,28 @@ const Alerts = (() => {
     let html = `<table class="alert-log-table">
       <thead><tr><th>品种</th><th>条件</th><th>价格</th><th>状态</th><th>操作</th></tr></thead><tbody>`;
     for (const a of alertList) {
+      const status = a.triggered
+        ? '<span style="color:var(--color-warning);">已触发</span>'
+        : '<span style="color:var(--color-up);">等待中</span>';
       html += `<tr>
-        <td>${a.symbol}</td>
-        <td>${a.condition || '穿越'}</td>
-        <td class="mono">${a.price}</td>
-        <td>${a.triggered ? '已触发' : '等待中'}</td>
-        <td><button class="btn btn-sm btn-danger" onclick="Alerts.remove('${a.id}')">删除</button></td>
+        <td>${_esc(a.symbol)}</td>
+        <td>${_esc(a.condition || '穿越')}</td>
+        <td class="mono">${_esc(a.price)}</td>
+        <td>${status}</td>
+        <td><button class="btn btn-sm btn-danger" data-action="remove-alert" data-id="${_esc(a.id)}">删除</button></td>
       </tr>`;
     }
     html += '</tbody></table>';
     container.innerHTML = html;
+    if (!container._delegated) {
+      container._delegated = true;
+      container.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-action="remove-alert"]');
+        if (!btn) return;
+        if (!confirm('确认删除此警报？')) return;
+        remove(btn.dataset.id);
+      });
+    }
   }
 
   function renderInfoPanelAlerts() {
