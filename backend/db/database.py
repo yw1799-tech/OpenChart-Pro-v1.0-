@@ -291,7 +291,7 @@ class DatabaseManager:
         # 查当前 schema 版本
         cur = await conn.execute("PRAGMA user_version")
         current_version = (await cur.fetchone())[0]
-        TARGET_VERSION = 17  # v17 (v12.19.1): signals 加 revalidation_count 字段（防 AI 重验无限循环）
+        TARGET_VERSION = 18  # v18 (v12.19.6): position_state 加 breakeven_armed 字段（动态 SL 闭环）
         if current_version < TARGET_VERSION:
             # v12.11: 用 BEGIN/COMMIT 包整个迁移；任何步骤抛错则 ROLLBACK + 不前进 user_version
             migration_ok = True
@@ -356,6 +356,8 @@ class DatabaseManager:
                 "ALTER TABLE signals ADD COLUMN original_ai_confidence INTEGER DEFAULT 0",
                 # v17 (v12.19.1) AI 重验失败次数 — 防 LLM 持续故障导致的无限循环
                 "ALTER TABLE signals ADD COLUMN revalidation_count INTEGER DEFAULT 0",
+                # v18 (v12.19.6) 动态 SL 闭环 — break-even 阶段标记
+                "ALTER TABLE position_state ADD COLUMN breakeven_armed INTEGER DEFAULT 0",
             ]:
                 try:
                     await conn.execute(alter)

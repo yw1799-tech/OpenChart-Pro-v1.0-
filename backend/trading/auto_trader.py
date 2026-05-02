@@ -86,7 +86,10 @@ DEFAULT_CONFIG = {
     "tp_partial_t1_reduce": 0.30,
     "tp_partial_t2_pct": 0.80,              # T2 = avg + (TP-avg) × 0.80 → 再减 30%
     "tp_partial_t2_reduce": 0.30,
-    "trailing_arm_pnl_pct": 15.0,           # 浮盈达到 15% 后激活跟踪止损
+    # v12.19.6 动态 SL 闭环 — 4 阶段递进锁利
+    "breakeven_arm_pnl_pct": 1.5,           # 浮盈到 1.5% 即激活 break-even (锁保本)
+    "breakeven_lock_pct": 0.5,              # SL 上移到 avg×(1+0.5%) — 给小回撤 0.5% 缓冲
+    "trailing_arm_pnl_pct": 3.0,            # v12.19.6: 15.0→3.0 (实战美股最大盈才 2.9%, 旧门槛 trailing 永不触发)
     "trailing_keep_ratio": 0.60,            # 跟踪线 = avg + 0.60 × (peak - avg)，吐出 40% 峰值利润触发
     # v11.1: 无 AI SL/TP 持仓的机械兜底（手动持仓/旧持仓的下行保护）
     "default_stop_loss_pct": 5.0,           # v12.13: 8%→5% 股票（COIN -8.20% 一刀切教训）
@@ -1769,6 +1772,20 @@ class AutoTrader:
         except Exception as e:
             logger.debug(f"[ps] save 失败 pid={position_id}: {e}")
 
+    async def _update_position_sl(self, position_id: str, new_sl: float):
+        """v12.19.6 动态更新持仓 SL (break-even / trailing 上移用)
+        被 _check_position_targets 调用，让下一轮巡检直接用新 SL 触发命中流程
+        """
+        try:
+            async with self.db.acquire() as conn:
+                await conn.execute(
+                    "UPDATE positions SET ai_stop_loss=? WHERE id=?",
+                    (new_sl, position_id),
+                )
+                await conn.commit()
+        except Exception as e:
+            logger.debug(f"[update-sl] pid={position_id} 失败: {e}")
+
     async def _tp_sl_monitor_loop(self):
         """
         TP/SL 巡检循环（每 60s 跑一次）：
@@ -1999,12 +2016,42 @@ class AutoTrader:
                     tp = avg * (1 + d_tp_pct / 100.0) if side == "long" else avg * (1 - d_tp_pct / 100.0)
                     tp_is_default = True
 
+            # ─ v12.19.6: 阶段 1.5 — Break-even SL 上移 (浮盈 +1.5% 锁保本)
+            # 必须在 SL 命中检查之前，让本轮就用新 SL 判断（不等下一轮）
+            be_arm_pct = self._config.get("breakeven_arm_pnl_pct", 1.5)
+            be_lock_pct = self._config.get("breakeven_lock_pct", 0.5)
+            be_armed = int(st.get("breakeven_armed") or 0) == 1
+            if not be_armed and pnl_pct >= be_arm_pct:
+                # 计算 break-even SL (锁定 +0.5% 保本)
+                if side == "long":
+                    be_sl = avg * (1 + be_lock_pct / 100.0)
+                    if not sl or be_sl > sl:
+                        sl = be_sl
+                        sl_is_default = False  # 已升级为动态 SL
+                        updates["breakeven_armed"] = 1
+                        await self._update_position_sl(p["id"], be_sl)
+                        logger.info(
+                            f"[break-even] {symbol}({market}) 浮盈 {pnl_pct:+.1f}% ≥ {be_arm_pct}% "
+                            f"→ SL 上移到 {be_sl:.4f} (从 {avg:.4f} 锁定 {be_lock_pct}%)"
+                        )
+                else:
+                    be_sl = avg * (1 - be_lock_pct / 100.0)
+                    if not sl or be_sl < sl:
+                        sl = be_sl
+                        sl_is_default = False
+                        updates["breakeven_armed"] = 1
+                        await self._update_position_sl(p["id"], be_sl)
+                        logger.info(
+                            f"[break-even] {symbol}({market}) SHORT 浮盈 {pnl_pct:+.1f}% ≥ {be_arm_pct}% "
+                            f"→ SL 下移到 {be_sl:.4f}"
+                        )
+
             # ─ 1. SL 命中（最高优先级）
             if sl and sl > 0:
                 hit_sl = (side == "long" and price <= sl) or (side == "short" and price >= sl)
                 if hit_sl:
                     await self._save_position_state(p["id"], **updates)
-                    src = "默认兜底" if sl_is_default else "AI"
+                    src = "默认兜底" if sl_is_default else "AI/动态"
                     await self._execute_close(p, symbol, market, "sl_hit",
                         f"🛑 触发{src}止损 SL={sl:.4f}（现价 {price:.4f}, 浮盈 {pnl_pct:+.1f}%）")
                     return
@@ -2048,24 +2095,47 @@ class AutoTrader:
                         f"📊 T1 止盈 减 {ratio*100:.0f}% (T1={t1_price:.4f}/现价 {price:.4f}, 浮盈 {pnl_pct:+.1f}%)")
                     return
 
-            # ─ 4. 跟踪止损：浮盈 ≥ trailing_arm_pnl_pct 后激活
-            arm_pct = self._config.get("trailing_arm_pnl_pct", 15.0)
+            # ─ v12.19.6 阶段 4: 跟踪止损 — 改为动态上移 SL (而非直接平仓)
+            # 浮盈 ≥ trailing_arm_pnl_pct (现降到 3%) 激活后, 持续把 SL 上移到 trail_price
+            # 下一轮巡检若价格跌破 → 走统一 SL 命中流程 (见阶段 1)
+            # 优势: 整个体系所有平仓走同一 sl_hit 路径, 复盘统计一致
+            # 双保险: 若本轮就跌到 trail_price, 立即触发统一 sl_hit (避免等下一轮的延迟)
+            arm_pct = self._config.get("trailing_arm_pnl_pct", 3.0)
             keep = self._config.get("trailing_keep_ratio", 0.60)
             armed = int(st.get("trailing_armed") or 0) == 1 or new_peak_pnl >= arm_pct
             if armed and avg > 0:
                 if side == "long":
                     trail_price = avg + keep * (new_peak - avg)
-                    hit_trail = price <= trail_price and trail_price > avg  # 只在已锁定盈利时触发
-                else:
-                    trail_price = avg - keep * (avg - new_peak)
-                    hit_trail = price >= trail_price and trail_price < avg
-                if hit_trail:
-                    if not int(st.get("trailing_armed") or 0):
+                    # 动态上移 SL (只升不降)
+                    if trail_price > avg and (not sl or trail_price > sl):
+                        sl = trail_price
                         updates["trailing_armed"] = 1
-                    await self._save_position_state(p["id"], **updates)
-                    await self._execute_close(p, symbol, market, "trailing_stop",
-                        f"📉 跟踪止损 触发线={trail_price:.4f} (峰值 {new_peak:.4f}, 现价 {price:.4f}, 峰值浮盈 {new_peak_pnl:+.1f}% → 当前 {pnl_pct:+.1f}%)")
-                    return
+                        await self._update_position_sl(p["id"], trail_price)
+                        logger.info(
+                            f"[trailing] {symbol}({market}) 峰值浮盈 {new_peak_pnl:+.1f}% (现 {pnl_pct:+.1f}%) "
+                            f"→ SL 跟踪上移到 {trail_price:.4f} (峰 {new_peak:.4f} × keep {keep})"
+                        )
+                    # 双保险: 本轮就跌破 trail → 立即平仓 (避免等下一轮)
+                    if price <= trail_price and trail_price > avg:
+                        await self._save_position_state(p["id"], **updates)
+                        await self._execute_close(p, symbol, market, "trailing_stop",
+                            f"📉 跟踪止损 触发线={trail_price:.4f} (峰值 {new_peak:.4f}, 现价 {price:.4f}, 峰值浮盈 {new_peak_pnl:+.1f}% → 当前 {pnl_pct:+.1f}%)")
+                        return
+                else:  # short
+                    trail_price = avg - keep * (avg - new_peak)
+                    if trail_price < avg and (not sl or trail_price < sl):
+                        sl = trail_price
+                        updates["trailing_armed"] = 1
+                        await self._update_position_sl(p["id"], trail_price)
+                        logger.info(
+                            f"[trailing] {symbol}({market}) SHORT 峰值浮盈 {new_peak_pnl:+.1f}% "
+                            f"→ SL 跟踪下移到 {trail_price:.4f}"
+                        )
+                    if price >= trail_price and trail_price < avg:
+                        await self._save_position_state(p["id"], **updates)
+                        await self._execute_close(p, symbol, market, "trailing_stop",
+                            f"📈 SHORT 跟踪止损 触发线={trail_price:.4f}")
+                        return
                 if not int(st.get("trailing_armed") or 0):
                     updates["trailing_armed"] = 1
 
