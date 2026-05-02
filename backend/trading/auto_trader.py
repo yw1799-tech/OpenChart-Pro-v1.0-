@@ -603,15 +603,21 @@ class AutoTrader:
     # ───────── 风控检查 ─────────
 
     async def _check_cooldown(self, symbol: str, market: str) -> bool:
-        """同股冷却检查。True = 可下单；False = 冷却中。只计 executed 记录。
-        v12.14: 按市场分档，美/港股 1h（避免 30min 内反复进出同一标的）"""
+        """同股冷却检查。True = 可下单；False = 冷却中。
+        v12.14: 按市场分档，美/港股 1h（避免 30min 内反复进出同一标的）
+        v12.20.11: 同时计入 swap_pending (status='pending' + trigger_type='swap_pending'),
+        让 swap 限价 pending 期间也能拦截同币种新信号 (避免 60min 内反复挂单)
+        """
         per_market = self._config.get("cooldown_sec_per_market") or {}
         sec = int(per_market.get(market, self._config.get("cooldown_sec", 900)))
         cutoff = int(time.time()) - sec
         async with self.db.acquire() as conn:
             cur = await conn.execute(
                 "SELECT MAX(traded_at) AS last FROM auto_trade_log "
-                "WHERE symbol=? AND market=? AND status='executed'",
+                "WHERE symbol=? AND market=? AND ("
+                " status='executed' "
+                " OR (status='pending' AND trigger_type='swap_pending')"
+                ")",
                 (symbol, market),
             )
             row = await cur.fetchone()
@@ -637,9 +643,13 @@ class AutoTrader:
         local_midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
         day_start = int(local_midnight.timestamp())
         async with self.db.acquire() as conn:
+            # v12.20.11: 同时计 swap_pending (与 _check_cooldown 一致),pending 也占额度防反复挂单
             cur = await conn.execute(
                 "SELECT COUNT(*) AS n FROM auto_trade_log "
-                "WHERE symbol=? AND market=? AND traded_at>=? AND status='executed'",
+                "WHERE symbol=? AND market=? AND traded_at>=? AND ("
+                " status='executed' "
+                " OR (status='pending' AND trigger_type='swap_pending')"
+                ")",
                 (symbol, market, day_start),
             )
             n = (await cur.fetchone())["n"]
@@ -1908,9 +1918,11 @@ class AutoTrader:
                     f"price={result.get('limit_price'):.4f} qty={result.get('qty'):.4f} "
                     f"lev={result.get('leverage')}x order={result.get('order_id','')[:8]}"
                 )
-                # P2 修复 (审计 #9): pending limit 期间冷却失效 — 镜像写一条 auto_trade_log (status='pending')
-                # 让后续同币种信号的 _check_cooldown / _check_daily_limit 能命中,避免 60min 内重复挂单
-                # 注: fill 时 _mark_filled 仍会写 status='executed' 的正式记录,两者不冲突
+                # P2 修复 (审计 #9): pending limit 期间冷却失效 — 镜像写一条 auto_trade_log
+                # v12.20.11 回归修复: status 改为 'pending' (语义正确,前端不会误显示成"已成交")
+                #   _check_cooldown / _check_daily_limit 已同步加 swap_pending 兼容查询
+                # v12.20.11 回归修复 F: market 从 sig 取,不再硬编码 'crypto' (虽然信号一定是 crypto,
+                #   但用变量更安全)
                 if result.get("status") == "pending":
                     try:
                         async with self.db.acquire() as conn:
@@ -1918,9 +1930,10 @@ class AutoTrader:
                                 """INSERT INTO auto_trade_log (symbol, market, action, quantity, price,
                                    amount_usd, fx_rate, trigger_type, trigger_detail, reason,
                                    status, position_id, traded_at)
-                                   VALUES (?, 'crypto', 'open', ?, ?, ?, 1.0, 'swap_pending', ?, ?,
-                                           'executed', NULL, ?)""",
-                                (symbol, result.get("qty") or 0, result.get("limit_price") or 0,
+                                   VALUES (?, ?, 'open', ?, ?, ?, 1.0, 'swap_pending', ?, ?,
+                                           'pending', NULL, ?)""",
+                                (symbol, market,
+                                 result.get("qty") or 0, result.get("limit_price") or 0,
                                  (result.get("qty") or 0) * (result.get("limit_price") or 0) * 0.01,
                                  json.dumps({"pos_side": pos_side, "leverage": result.get("leverage"),
                                              "swap_order_id": result.get("order_id"), "pending": True},
@@ -1982,6 +1995,12 @@ class AutoTrader:
         if not positions:
             return
         from backend.signals.monitor import is_market_executable
+        # v12.20.11 回归修复 (#23 内存泄漏): 每轮扫描开头清理 dict 中已不存在持仓的 lock
+        # 长期运行时 close 后 lock 一直留 dict 里, 上千笔 close 后会缓慢吃内存
+        live_pids = {p["id"] for p in positions}
+        stale_keys = [k for k in self._position_locks.keys() if k not in live_pids]
+        for k in stale_keys:
+            self._position_locks.pop(k, None)
         for pos in positions:
             if not is_market_executable(pos["market"]):
                 continue
@@ -2872,10 +2891,12 @@ class AutoTrader:
         # P2 修复 (审计 #16): 减仓后剩余 qty < 最小手数 → 自动全平,避免僵尸仓位
         # 例: 0700.HK 持仓 200 股, reduce 30% → new_qty=140 (合法 1 手 100); reduce 50% → 100 (合法);
         # 但若 reduce 60% → 80 < 100 (1 手) → 应直接全平
+        # v12.20.11 回归修复: 加密 market 不参与该检查 (BTC 0.05 个 < 1 会被误升全平)
+        # 加密最小单位由交易所决定 (如 0.001 BTC), 非整数手数, 已由 _normalize_qty 在开仓时保证
         if not is_fully_closed:
-            LOT = {"cn": 100, "hk": 100, "us": 1}
-            min_lot = LOT.get(market, 1)
-            if 0 < new_qty < min_lot:
+            LOT = {"cn": 100, "hk": 100, "us": 1}  # crypto 不在表内 → 跳过升级
+            min_lot = LOT.get(market)
+            if min_lot is not None and 0 < new_qty < min_lot:
                 logger.info(f"[reduce-zombie] {symbol}({market}) 减仓后 new_qty={new_qty} < 最小 {min_lot} 手 → 升级为全平")
                 qty_to_close = pos["quantity"]
                 new_qty = 0
