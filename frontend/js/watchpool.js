@@ -444,7 +444,25 @@ const Watchpool = (function () {
       const statusEl = document.querySelector('.bottom-pane[data-pane="watchpool"] #pool-status');
       if (statusEl) {
         const label = _viewMode === 'archived' ? '已淘汰' : '在池中';
-        statusEl.textContent = `${label} ${_items.length} 只 · ${new Date().toLocaleTimeString()}`;
+        // v12.20.13: 按市场分别显示,不再显示无意义的总量 (单市场会占绝大多数)
+        // 上限按市场差异化: 美 650 / A 600 / 港 200
+        const CAPS = { us: 650, cn: 600, hk: 200 };
+        const NAMES = { us: '🇺🇸美', cn: '🇨🇳A', hk: '🇭🇰港' };
+        const byMarket = _items.reduce((acc, it) => {
+          const m = it.market || 'unknown';
+          acc[m] = (acc[m] || 0) + 1;
+          return acc;
+        }, {});
+        const parts = ['us', 'cn', 'hk'].map(m => {
+          const n = byMarket[m] || 0;
+          const cap = CAPS[m];
+          // 占用率高于 80% 标黄,90% 标红
+          const ratio = n / cap;
+          const color = ratio >= 0.9 ? 'var(--color-down)' : ratio >= 0.8 ? 'var(--color-warning)' : '';
+          const colorStr = color ? `color:${color};` : '';
+          return `<span style="${colorStr}">${NAMES[m]} ${n}/${cap}</span>`;
+        }).join(' · ');
+        statusEl.innerHTML = `${label}: ${parts} · ${new Date().toLocaleTimeString()}`;
       }
     } catch (e) {
       console.warn('[WatchPool] 刷新失败:', e);
