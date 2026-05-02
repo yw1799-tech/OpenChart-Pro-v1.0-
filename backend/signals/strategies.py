@@ -195,14 +195,20 @@ class Strategy(ABC):
         last_close: float,
         candles: List[Candle],
         atr_period: int = 14,
-        sl_atr: float = 1.5,
-        tp_atr: float = 3.0,
+        sl_atr: float = 2.0,        # v12.19.5: 1.5 → 2.0 让止损更宽，给波动留空间
+        tp_atr: float = 3.5,        # v12.19.5: 3.0 → 3.5 截短利润病根，赢家奔跑更长
+        sl_floor_pct: float = 1.5,  # v12.19.5 NEW: 止损最少 1.5% 空间（低波动股噪音地板）
+        tp_floor_pct: float = 2.5,  # v12.19.5 NEW: 止盈最少 2.5% 空间
     ):
         """
         基于 ATR + 最近关键位计算 SL/TP（统一算法，所有策略可用）：
-          - SL = max(入场价 - 1.5×ATR, 最近 20 根低点)（BUY）/ min（SELL）
-          - TP = 入场价 ± 3×ATR（默认 1:2 风险回报比）
-        如果数据不足返回 (None, None)。
+          - SL = max(入场价 - 2.0×ATR, 最近 20 根低点, 入场价×(1-1.5%))（BUY）
+          - TP = max(入场价 + 3.5×ATR, 入场价×(1+2.5%))（最少 1:1.67 风险回报）
+          - SL_FLOOR / TP_FLOOR: 防止低波动股 (如 QS) 被 0.4% 噪音扫损 / 低 TP 截短利润
+
+        v12.19.5 实战教训:
+          QCOM/MU/QS 多次因 SL 太紧被噪音扫出 (1710/1605/3236 等 5 条 ATR 类教训)
+          盈亏比 0.75 (平均赢 1.42% < 平均亏 1.90%) — 经典 "小赢大亏"
         """
         n = len(candles)
         if n < max(atr_period + 1, 20):
@@ -224,10 +230,17 @@ class Strategy(ABC):
         recent20 = candles[-20:]
         lo20 = min(c.low for c in recent20)
         hi20 = max(c.high for c in recent20)
+        # v12.19.5 floor 阈值
+        sl_floor = last_close * (sl_floor_pct / 100.0)   # 例: 1.5% of 100 = 1.5
+        tp_floor = last_close * (tp_floor_pct / 100.0)
         if action == "buy":
             sl_atr_price = last_close - sl_atr * atr
             stop_loss = max(sl_atr_price, lo20 * 0.998)  # 取近的（更紧的止损）
+            # v12.19.5: 加 SL floor — 防低波动股 ATR 过小导致止损过紧
+            stop_loss = min(stop_loss, last_close - sl_floor)
             take_profit = last_close + tp_atr * atr
+            # v12.19.5: 加 TP floor — 让赢家至少跑到 2.5%
+            take_profit = max(take_profit, last_close + tp_floor)
             # sanity：止损必须低于入场价；止盈必须高于入场价（防暴跌反弹场景 lo20 高于现价）
             if stop_loss >= last_close:
                 stop_loss = last_close * 0.97   # 退化到固定 3% 止损
@@ -236,7 +249,10 @@ class Strategy(ABC):
         else:  # sell
             sl_atr_price = last_close + sl_atr * atr
             stop_loss = min(sl_atr_price, hi20 * 1.002)
+            # v12.19.5: SELL 侧同样加 floor
+            stop_loss = max(stop_loss, last_close + sl_floor)
             take_profit = last_close - tp_atr * atr
+            take_profit = min(take_profit, last_close - tp_floor)
             if stop_loss <= last_close:
                 stop_loss = last_close * 1.03
             if take_profit >= last_close:
