@@ -76,9 +76,14 @@ class MockSwapEngine:
         logger.info("[swap-engine] 启动 — 3 个后台 loop 已运行")
 
     async def stop(self):
+        # v12.20.5 Bug 5 修复: cancel 后 await 等待 loop 真停 (避免重启时野任务残留)
         self._running = False
         if self._loops_task:
             self._loops_task.cancel()
+            try:
+                await self._loops_task
+            except (asyncio.CancelledError, Exception):
+                pass
 
     # ─────────────────────── 账户 ───────────────────────
 
@@ -261,9 +266,34 @@ class MockSwapEngine:
         # 市价单立即 fill
         if order_type == "market":
             return await self._fill_market_order(order_id)
-        # 限价单 → 等 limit_order_loop 扫
+        # v12.20.5 Bug 8 修复: 限价单"下单时已可立即成交" → 立即 taker fill
+        # BUY limit ≥ 当前 ask / SELL limit ≤ 当前 bid → 主动吃单 = taker
+        bid = float(ticker.get("bidPx") or current_price)
+        ask = float(ticker.get("askPx") or current_price)
+        immediate_fill = (
+            (side == "buy" and limit_price is not None and limit_price >= ask) or
+            (side == "sell" and limit_price is not None and limit_price <= bid)
+        )
+        if immediate_fill:
+            return await self._fill_limit_immediate(order_id, ask if side == "buy" else bid)
+        # 否则限价单 → 等 limit_order_loop 扫 (passive maker fill)
         return {"ok": True, "order_id": order_id, "status": "pending",
                 "limit_price": limit_price, "qty": qty, "leverage": leverage}
+
+    async def _fill_limit_immediate(self, order_id: str, market_px: float) -> Dict[str, Any]:
+        """v12.20.5 Bug 8: 限价单下单时若已可立即成交 → taker fill (类似 market)"""
+        async with self.db.acquire() as conn:
+            cur = await conn.execute("SELECT * FROM swap_orders WHERE id=?", (order_id,))
+            row = await cur.fetchone()
+        if not row:
+            return {"ok": False, "reason": "订单不存在"}
+        order = dict(row)
+        # 立即成交的限价单 = 吃单方, 用当前对手价 (BUY 用 ask, SELL 用 bid)
+        # 不需要再加滑点 (限价已经定了价格)
+        fill_price = market_px
+        nominal = order["qty"] * fill_price * (await self._get_specs(order["symbol"]) or {}).get("ctVal", 0.01)
+        fee = nominal * config.SWAP_TAKER_FEE_RATE
+        return await self._mark_filled(order, fill_price, 0.0, fee, is_maker=False)
 
     # ─────────────────────── 市价单立即成交 ───────────────────────
 
@@ -334,26 +364,26 @@ class MockSwapEngine:
                     # 判断是否穿过限价
                     side = o["side"]
                     limit = o["price"]
-                    # BUY 限价单：当 best_ask <= limit 时可成交
-                    # SELL 限价单：当 best_bid >= limit 时可成交
+                    # v12.20.5 Bug 1 修复:
+                    # 这里能扫到的 pending 限价单 = 下单 60s+ 之前已存在 = 一直在订单簿等待
+                    # 现在 ask <= limit (BUY) / bid >= limit (SELL) → 价格主动来吃挂单 = MAKER
+                    # 注: place_order 已加路径 (Bug 8) 处理"下单时已可立即成交"为 taker
                     if side == "buy" and ask <= limit:
-                        # 判断是 maker 还是 taker
-                        # 如果下单时 limit >= 当前 ask 即时成交 → taker
-                        # 否则等待成交 → maker (本次成交是被动)
-                        # 这里粗略判定：bid_now > limit 一定是 taker
-                        is_maker = limit < ask  # 实际是 limit < ask 才能挂单等
-                        fill_price = limit  # 限价单成交在限价
-                        fee_rate = config.SWAP_MAKER_FEE_RATE if is_maker else config.SWAP_TAKER_FEE_RATE
-                    elif side == "sell" and bid >= limit:
-                        is_maker = limit > bid
+                        is_maker = True   # passive fill, 价格回到限价被动 fill
                         fill_price = limit
-                        fee_rate = config.SWAP_MAKER_FEE_RATE if is_maker else config.SWAP_TAKER_FEE_RATE
+                    elif side == "sell" and bid >= limit:
+                        is_maker = True
+                        fill_price = limit
                     else:
                         continue  # 价格未穿过, 继续等
+                    fee_rate = config.SWAP_MAKER_FEE_RATE
                     # fill
                     nominal = o["qty"] * fill_price * (await self._get_specs(o["symbol"]) or {}).get("ctVal", 0.01)
                     fee = nominal * fee_rate
-                    await self._mark_filled(o, fill_price, 0.0, fee, is_maker)
+                    # v12.20.5 Bug 13 修复: _mark_filled 必须在 _lock 内
+                    # 避免与 place_order(已在 lock)/force_liquidate(已在 lock) 竞态写同一持仓
+                    async with self._lock:
+                        await self._mark_filled(o, fill_price, 0.0, fee, is_maker)
             except Exception as e:
                 logger.warning(f"[swap-engine] limit loop err: {e}")
             await asyncio.sleep(interval_sec)
@@ -436,11 +466,16 @@ class MockSwapEngine:
                         new_qty = pos["qty"] + order["qty"]
                         new_avg = (pos["avg_open_price"] * pos["qty"] + fill_price * order["qty"]) / new_qty
                         new_margin = pos["margin_usd"] + order["margin_usd"]
-                        new_liq = self.calc_liq_price(pos["pos_side"], new_avg, pos["leverage"])
+                        # v12.20.5 Bug 3 修复: 加仓后实际杠杆 = 总 nominal / 总 margin
+                        # 不再用旧 pos.leverage (会导致 liq_price 与 margin 实际杠杆不匹配)
+                        new_nominal = new_qty * ct_val * new_avg
+                        effective_leverage = new_nominal / new_margin if new_margin > 0 else pos["leverage"]
+                        new_lev_int = max(1, min(config.SWAP_MAX_LEVERAGE, int(round(effective_leverage))))
+                        new_liq = self.calc_liq_price(pos["pos_side"], new_avg, effective_leverage)
                         await conn.execute(
                             """UPDATE swap_positions SET qty=?, avg_open_price=?, margin_usd=?,
-                               liq_price=?, total_fee_usd=total_fee_usd+? WHERE id=?""",
-                            (new_qty, new_avg, new_margin, new_liq, fee, pos["id"]),
+                               leverage=?, liq_price=?, total_fee_usd=total_fee_usd+? WHERE id=?""",
+                            (new_qty, new_avg, new_margin, new_lev_int, new_liq, fee, pos["id"]),
                         )
                         await conn.execute(
                             "UPDATE swap_account SET balance_usd=balance_usd-?-?, total_margin_usd=total_margin_usd+?, updated_at=? WHERE id=1",
@@ -449,7 +484,7 @@ class MockSwapEngine:
                         pos_id_use = pos["id"]
                         logger.info(
                             f"[swap-fill] ADD {pos['pos_side']} {order['symbol']} +{order['qty']:.4f}@{fill_price:.4f} "
-                            f"new_avg={new_avg:.4f} new_qty={new_qty:.4f} fee=${fee:.2f}"
+                            f"new_avg={new_avg:.4f} new_qty={new_qty:.4f} eff_lev={effective_leverage:.2f}x liq={new_liq:.4f} fee=${fee:.2f}"
                         )
                     # 反方向 → 减仓 / 平仓
                     else:
@@ -554,12 +589,20 @@ class MockSwapEngine:
             await asyncio.sleep(interval_sec)
 
     async def _force_liquidate(self, pos: Dict, mark: float):
-        """强平: 持仓清零, 保证金归 0, status='liquidated'"""
+        """强平: 持仓清零, 保证金归 0, status='liquidated'
+        v12.20.5 Bug 4 修复: 加 self._lock 防与 _mark_filled 写表竞态
+        """
         now = int(time.time())
         try:
-            async with self.db.acquire() as conn:
+            async with self._lock:
+              async with self.db.acquire() as conn:
+                # v12.20.5 加 lock 后再读一次最新状态 (避免重复强平)
+                cur = await conn.execute("SELECT status, qty, margin_usd FROM swap_positions WHERE id=?", (pos["id"],))
+                latest = await cur.fetchone()
+                if not latest or latest["status"] != "open" or (latest["qty"] or 0) <= 0:
+                    return  # 已被其他路径关闭
                 # 实现 PnL = -保证金 (强平亏完保证金)
-                realized = -pos["margin_usd"]
+                realized = -float(latest["margin_usd"] or pos["margin_usd"])
                 await conn.execute(
                     """UPDATE swap_positions SET qty=0, status='liquidated',
                        realized_pnl_usd=realized_pnl_usd+?, margin_usd=0, closed_at=? WHERE id=?""",

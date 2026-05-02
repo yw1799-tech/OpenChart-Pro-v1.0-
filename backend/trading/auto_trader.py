@@ -1795,19 +1795,33 @@ class AutoTrader:
             symbol = sig["symbol"]
             action = sig["action"]
             ai_conf = int(sig.get("ai_confidence") or 60)
-            # 推断 ATR%（用于动态杠杆 + 限价偏移）
-            atr_pct = 2.0  # 默认中等波动
+
+            # v12.20.5 Bug 6 修复: ATR 现场从 1H K 线算 (不依赖 triggered_by 字段)
+            # 之前 triggered_by 99% 没 atr_value, 动态杠杆永远走默认 1% ATR 退化版
+            atr_pct = 2.0
             atr_value = None
             try:
-                trig = sig.get("triggered_by") or {}
-                if isinstance(trig, str):
-                    trig = json.loads(trig)
-                if trig.get("atr_pct"):
-                    atr_pct = float(trig["atr_pct"])
-                if trig.get("atr_value"):
-                    atr_value = float(trig["atr_value"])
-            except Exception:
-                pass
+                from backend.data.cache import cached_get_klines
+                from backend.data.models import Market, Interval
+                candles = await cached_get_klines(
+                    db=self.db, market=Market.CRYPTO, symbol=symbol,
+                    interval=Interval("1H"), limit=20,
+                )
+                if candles and len(candles) >= 14:
+                    # 简易 ATR(14): mean(high-low) of last 14 bars
+                    trs = []
+                    for i in range(len(candles) - 14, len(candles)):
+                        if i == 0:
+                            trs.append(candles[i].high - candles[i].low)
+                            continue
+                        c, p = candles[i], candles[i - 1]
+                        trs.append(max(c.high - c.low, abs(c.high - p.close), abs(c.low - p.close)))
+                    atr_value = sum(trs) / len(trs)
+                    last_close = candles[-1].close
+                    if last_close > 0:
+                        atr_pct = atr_value / last_close * 100
+            except Exception as e:
+                logger.debug(f"[swap-route] {symbol} ATR 计算失败 (用默认 2%): {e}")
 
             sig_payload = {
                 "id": sig.get("id"),

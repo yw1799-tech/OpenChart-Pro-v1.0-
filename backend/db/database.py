@@ -404,10 +404,12 @@ class DatabaseManager:
                     last_funding_at INTEGER DEFAULT 0,   -- 上次结算 funding 时间
                     opened_at INTEGER NOT NULL,
                     closed_at INTEGER DEFAULT 0,
-                    status TEXT DEFAULT 'open',          -- open/closed/liquidated
-                    UNIQUE(symbol, pos_side)             -- 同币种同方向只一仓位 (加仓更新本行)
+                    status TEXT DEFAULT 'open'           -- open/closed/liquidated
+                    -- v12.20.5 Bug 14: 不能用 UNIQUE(symbol, pos_side) — 平仓后再开同向会撞
+                    -- 改为 partial unique index 只约束 status='open' 的仓位 (见下方)
                 )""",
                 "CREATE INDEX IF NOT EXISTS idx_swap_positions_open ON swap_positions(status, symbol)",
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_swap_positions_unique_open ON swap_positions(symbol, pos_side) WHERE status='open'",
                 """CREATE TABLE IF NOT EXISTS swap_account (
                     id INTEGER PRIMARY KEY,
                     balance_usd REAL NOT NULL,           -- 可用余额

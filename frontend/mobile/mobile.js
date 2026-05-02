@@ -855,7 +855,8 @@
         </div>`;
       }
       $('#positions-list').innerHTML = groupHtml + swapGroupHtml;
-      $$('#positions-list .row').forEach(r => {
+      // v12.20.5 Bug 2: 仅给现货 row (有 data-id) 绑 click; swap row (data-swap-id) 不可点
+      $$('#positions-list .row[data-id]').forEach(r => {
         r.addEventListener('click', () => openPositionDetail(r.dataset.id));
       });
     } catch (e) {
