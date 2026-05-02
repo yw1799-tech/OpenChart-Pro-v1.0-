@@ -305,6 +305,59 @@ class OKXFetcher(DataFetcher):
             "ts": int(r.get("ts", 0)),
         }
 
+    async def get_order_book(self, symbol: str, depth: int = 5) -> Dict[str, Any]:
+        """v12.20 获取订单簿 (用于精确滑点估算)。
+        返回 {bids: [[price, size, ...], ...], asks: [...]}
+        symbol 永续合约用 BTC-USDT-SWAP。
+        """
+        data = await self._get(
+            "/api/v5/market/books", {"instId": symbol, "sz": str(min(depth, 400))}
+        )
+        if not data:
+            return {"bids": [], "asks": []}
+        d = data[0]
+        return {
+            "bids": [[float(b[0]), float(b[1])] for b in (d.get("bids") or [])],
+            "asks": [[float(a[0]), float(a[1])] for a in (d.get("asks") or [])],
+            "ts": int(d.get("ts", 0)),
+        }
+
+    async def get_mark_price(self, symbol: str) -> Optional[float]:
+        """v12.20 永续合约标记价 (用于强平价计算)。"""
+        try:
+            data = await self._get(
+                "/api/v5/public/mark-price", {"instId": symbol}
+            )
+            if data and data[0].get("markPx"):
+                return float(data[0]["markPx"])
+        except Exception as e:
+            logger.debug(f"[okx] mark_price {symbol} failed: {e}")
+        return None
+
+    async def get_contract_specs(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """v12.20 永续合约规格 (面值, 最小张数等)。
+        e.g. BTC-USDT-SWAP 1 张 = 0.01 BTC (ctVal=0.01)
+        """
+        try:
+            data = await self._get(
+                "/api/v5/public/instruments", {"instType": "SWAP", "instId": symbol}
+            )
+            if data:
+                d = data[0]
+                return {
+                    "instId": d["instId"],
+                    "ctVal": float(d.get("ctVal", 0)),       # 合约面值 (e.g. 0.01)
+                    "ctValCcy": d.get("ctValCcy", ""),        # 面值币种
+                    "minSz": float(d.get("minSz", 1)),        # 最小张数
+                    "lotSz": float(d.get("lotSz", 1)),        # 张数步长
+                    "maxLmtSz": float(d.get("maxLmtSz", 0)),
+                    "maxMktSz": float(d.get("maxMktSz", 0)),
+                    "settleCcy": d.get("settleCcy", "USDT"),
+                }
+        except Exception as e:
+            logger.debug(f"[okx] contract_specs {symbol} failed: {e}")
+        return None
+
     async def get_recent_trades(self, symbol: str, limit: int = 100) -> List[Dict[str, Any]]:
         """v12.17 获取最近成交记录（用于巨鲸大单识别）。
         返回 [{ts, side, sz, px, sizeUsd}]

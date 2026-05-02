@@ -68,6 +68,27 @@ CRYPTO_SYMBOLS = [
 # 加密交易所选择："okx" | "binance"
 CRYPTO_EXCHANGE = "okx"
 
+# v12.20.0: 加密交易模式
+#   "spot_mock"  — 现货模拟（v11 ~ v12.19，positions 表）— 默认，向后兼容
+#   "swap_mock"  — 永续合约模拟（真 OKX 数据 + 模拟资金 + 杠杆 + 强平 + funding）
+#                  数据走 swap_orders / swap_positions 表，与现货完全独立
+CRYPTO_TRADING_MODE = os.getenv("CRYPTO_TRADING_MODE", "spot_mock")
+
+# 永续合约模拟参数（仅 swap_mock 生效）
+SWAP_INITIAL_BALANCE_USD = float(os.getenv("SWAP_INITIAL_BALANCE_USD", "10000"))
+SWAP_DEFAULT_LEVERAGE = 5
+SWAP_MAX_LEVERAGE = 20                # 用户偏好上限
+SWAP_MAINTENANCE_MARGIN_RATE = 0.005  # 维持保证金率 0.5% (OKX 主流币标准)
+SWAP_MAKER_FEE_RATE = 0.0002          # 0.02% 挂单成交
+SWAP_TAKER_FEE_RATE = 0.0005          # 0.05% 吃单 / 市价单
+SWAP_LIMIT_ORDER_TIMEOUT_SEC = 3600   # 60min 未成交自动撤单
+SWAP_LIMIT_ATR_OFFSET = 0.15          # 限价 = 当前价 ± 0.15 × ATR (买等回踩, 卖等反弹)
+SWAP_SLIPPAGE_BASE_PCT = 0.05         # 市价单基础滑点 0.05%
+SWAP_SLIPPAGE_PER_1K_PCT = 0.01       # 每 $1000 单加 0.01% 冲击
+SWAP_PRE_LIQ_REDUCE_THRESHOLD_PCT = 3.0  # 距强平 < 3% 自动减仓 50%
+SWAP_PRE_LIQ_REDUCE_RATIO = 0.5
+SWAP_FUNDING_INTERVAL_SEC = 8 * 3600  # 8h 结算 funding
+
 # OKX API（公开数据无需 Key，交易需要，Phase 7）
 OKX_BASE_URL = "https://www.okx.com"
 OKX_WS_PUBLIC = "wss://ws.okx.com:8443/ws/v5/public"

@@ -291,7 +291,7 @@ class DatabaseManager:
         # 查当前 schema 版本
         cur = await conn.execute("PRAGMA user_version")
         current_version = (await cur.fetchone())[0]
-        TARGET_VERSION = 18  # v18 (v12.19.6): position_state 加 breakeven_armed 字段（动态 SL 闭环）
+        TARGET_VERSION = 19  # v19 (v12.20.0): swap_orders + swap_positions 加密合约模拟交易表
         if current_version < TARGET_VERSION:
             # v12.11: 用 BEGIN/COMMIT 包整个迁移；任何步骤抛错则 ROLLBACK + 不前进 user_version
             migration_ok = True
@@ -358,6 +358,64 @@ class DatabaseManager:
                 "ALTER TABLE signals ADD COLUMN revalidation_count INTEGER DEFAULT 0",
                 # v18 (v12.19.6) 动态 SL 闭环 — break-even 阶段标记
                 "ALTER TABLE position_state ADD COLUMN breakeven_armed INTEGER DEFAULT 0",
+                # v19 (v12.20.0) 加密合约模拟引擎 — 真 OKX 数据 + 模拟资金下单
+                # 完全独立于现货 mock (positions 表), 用 config.CRYPTO_TRADING_MODE 切换
+                """CREATE TABLE IF NOT EXISTS swap_orders (
+                    id TEXT PRIMARY KEY,
+                    symbol TEXT NOT NULL,                -- BTC-USDT-SWAP
+                    side TEXT NOT NULL,                  -- buy / sell (开仓/平仓方向)
+                    pos_side TEXT NOT NULL,              -- long / short (双向持仓)
+                    order_type TEXT NOT NULL,            -- limit / market
+                    price REAL,                          -- 限价单价格 (NULL for market)
+                    qty REAL NOT NULL,                   -- 张数
+                    leverage INTEGER NOT NULL,
+                    margin_usd REAL NOT NULL,            -- 占用的逐仓保证金
+                    status TEXT DEFAULT 'pending',       -- pending/filled/partial/cancelled/rejected
+                    fill_price REAL DEFAULT 0,
+                    fill_qty REAL DEFAULT 0,
+                    fee_usd REAL DEFAULT 0,              -- 实际手续费
+                    is_maker INTEGER DEFAULT 0,          -- 1=maker(0.02%) 0=taker(0.05%)
+                    slippage_pct REAL DEFAULT 0,         -- 实际滑点 (市价单)
+                    reject_reason TEXT DEFAULT '',
+                    signal_id TEXT,                      -- 关联触发的信号
+                    position_id TEXT,                    -- 关联的 swap_positions.id
+                    intent TEXT DEFAULT 'open',          -- open/close/reduce/add (语义标签)
+                    created_at INTEGER NOT NULL,
+                    filled_at INTEGER DEFAULT 0,
+                    expire_at INTEGER NOT NULL           -- 限价单 60min 超时
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_swap_orders_status ON swap_orders(status, created_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_swap_orders_pos ON swap_orders(position_id, created_at DESC)",
+                """CREATE TABLE IF NOT EXISTS swap_positions (
+                    id TEXT PRIMARY KEY,
+                    symbol TEXT NOT NULL,
+                    pos_side TEXT NOT NULL,              -- long / short
+                    qty REAL NOT NULL,                   -- 当前持仓张数 (减仓后会减小)
+                    avg_open_price REAL NOT NULL,        -- 加仓后的加权均价
+                    leverage INTEGER NOT NULL,
+                    margin_usd REAL NOT NULL,            -- 当前占用保证金
+                    liq_price REAL,                      -- 强平价 (实时计算)
+                    contract_size REAL NOT NULL,         -- 合约面值 (e.g. 0.01)
+                    unrealized_pnl_usd REAL DEFAULT 0,   -- 未实现 PnL (mark_to_market)
+                    realized_pnl_usd REAL DEFAULT 0,     -- 已实现 PnL (减仓累积)
+                    funding_fee_total_usd REAL DEFAULT 0, -- 累积资金费率扣费
+                    total_fee_usd REAL DEFAULT 0,        -- 累积手续费
+                    pre_liq_armed INTEGER DEFAULT 0,     -- 距强平 < 3% 减仓 50% 已触发标记
+                    last_funding_at INTEGER DEFAULT 0,   -- 上次结算 funding 时间
+                    opened_at INTEGER NOT NULL,
+                    closed_at INTEGER DEFAULT 0,
+                    status TEXT DEFAULT 'open',          -- open/closed/liquidated
+                    UNIQUE(symbol, pos_side)             -- 同币种同方向只一仓位 (加仓更新本行)
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_swap_positions_open ON swap_positions(status, symbol)",
+                """CREATE TABLE IF NOT EXISTS swap_account (
+                    id INTEGER PRIMARY KEY,
+                    balance_usd REAL NOT NULL,           -- 可用余额
+                    initial_balance_usd REAL NOT NULL,   -- 初始资金
+                    total_margin_usd REAL DEFAULT 0,     -- 占用保证金合计
+                    total_pnl_usd REAL DEFAULT 0,        -- 累计已实现盈亏
+                    updated_at INTEGER NOT NULL
+                )""",
             ]:
                 try:
                     await conn.execute(alter)
