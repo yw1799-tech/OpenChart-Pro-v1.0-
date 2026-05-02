@@ -1831,8 +1831,31 @@ class AutoTrader:
             }
             # pos_side: BUY → long, SELL → short (永续双向)
             pos_side = "long" if action == "buy" else "short"
-            # 检查同币种是否已有反向持仓 (UNIQUE 约束允许两个方向共存)
-            # 这里直接 open，不预先平反向 — 让用户允许双向对冲
+            opposite_side = "short" if pos_side == "long" else "long"
+            # v12.20.6: 反向信号若有反向持仓 → 先平再开 (避免对冲死锁)
+            # 例: BUY 信号 + 已有 short 持仓 → 先平 short → 再开 long
+            try:
+                from backend.data.fetcher import get_fetcher
+                from backend.data.models import Market
+                # 直接查 swap_positions 表是否有反向持仓
+                async with self.db.acquire() as conn:
+                    cur = await conn.execute(
+                        "SELECT * FROM swap_positions WHERE symbol=? AND pos_side=? AND status='open' AND qty > 0",
+                        (symbol + "-SWAP", opposite_side),
+                    )
+                    opp_pos = await cur.fetchone()
+                if opp_pos:
+                    opp_dict = dict(opp_pos)
+                    close_side = "sell" if opposite_side == "long" else "buy"
+                    logger.info(f"[swap-route] {symbol} 反向信号检测到反向 {opposite_side} 持仓 → 先平 {opp_dict['qty']:.4f} 张")
+                    await engine.place_order(
+                        symbol=symbol, side=close_side, pos_side=opposite_side,
+                        order_type="market", qty=opp_dict["qty"],
+                        leverage=opp_dict["leverage"], intent="close",
+                    )
+            except Exception as e:
+                logger.debug(f"[swap-route] {symbol} 反向持仓检查异常: {e}")
+
             # 用初始资金 5% 做单笔保证金 (动态杠杆放大成实际仓位)
             acct = await engine.get_account()
             margin_per_trade = acct["balance_usd"] * 0.05

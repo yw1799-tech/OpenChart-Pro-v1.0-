@@ -89,6 +89,19 @@ SWAP_PRE_LIQ_REDUCE_THRESHOLD_PCT = 3.0  # 距强平 < 3% 自动减仓 50%
 SWAP_PRE_LIQ_REDUCE_RATIO = 0.5
 SWAP_FUNDING_INTERVAL_SEC = 8 * 3600  # 8h 结算 funding
 
+# v12.20.6: 动态止盈止损 5 阶段闭环 (杠杆放大风险, 必须有主动 SL/TP)
+SWAP_INITIAL_SL_ATR_MULT = 2.0           # 初始 SL = 2×ATR
+SWAP_INITIAL_TP_ATR_MULT = 4.0           # 初始 TP = 4×ATR (1:2 风险回报)
+SWAP_INITIAL_SL_FLOOR_PCT = 1.5          # SL 距入场价至少 1.5% (防低波动噪音)
+SWAP_INITIAL_TP_FLOOR_PCT = 2.5          # TP 距入场价至少 2.5%
+SWAP_BREAKEVEN_ARM_PNL_PCT = 1.5         # 浮盈到 +1.5% 触发 break-even
+SWAP_BREAKEVEN_LOCK_PCT = 0.5            # SL 上移到 avg±0.5% 锁保本
+SWAP_TRAILING_ARM_PNL_PCT = 3.0          # 浮盈到 +3% 触发 trailing
+SWAP_TRAILING_KEEP_RATIO = 0.6           # SL = avg + 0.6×(peak-avg) 跟踪上移
+SWAP_TP_PARTIAL_T1_RATIO = 0.5           # TP 路径 50% 处分批减
+SWAP_TP_PARTIAL_T2_RATIO = 0.8           # TP 路径 80% 处再减
+SWAP_TP_PARTIAL_REDUCE_RATIO = 0.30      # 每次减 30%
+
 # OKX API（公开数据无需 Key，交易需要，Phase 7）
 OKX_BASE_URL = "https://www.okx.com"
 OKX_WS_PUBLIC = "wss://ws.okx.com:8443/ws/v5/public"

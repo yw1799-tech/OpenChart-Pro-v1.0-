@@ -164,6 +164,45 @@ class MockSwapEngine:
         impact = config.SWAP_SLIPPAGE_PER_1K_PCT * (order_usd / 1000.0)
         return base + impact
 
+    async def calc_initial_sltp(self, swap_inst: str, pos_side: str,
+                                 fill_price: float) -> Tuple[Optional[float], Optional[float]]:
+        """v12.20.6 算开仓初始 SL/TP (基于 ATR + floor 阈值)
+        - SL 距入场: max(2×ATR, 1.5% floor) — 防低波动股噪音
+        - TP 距入场: max(4×ATR, 2.5% floor) — 1:2 风险回报
+        """
+        try:
+            from backend.data.cache import cached_get_klines
+            from backend.data.models import Market, Interval
+            candles = await cached_get_klines(
+                db=self.db, market=Market.CRYPTO, symbol=swap_inst,
+                interval=Interval("1H"), limit=20,
+            )
+            atr_value = None
+            if candles and len(candles) >= 14:
+                trs = []
+                for i in range(len(candles) - 14, len(candles)):
+                    if i == 0:
+                        trs.append(candles[i].high - candles[i].low)
+                        continue
+                    c, p = candles[i], candles[i - 1]
+                    trs.append(max(c.high - c.low, abs(c.high - p.close), abs(c.low - p.close)))
+                atr_value = sum(trs) / len(trs)
+        except Exception as e:
+            logger.debug(f"[swap-sltp] {swap_inst} ATR 计算失败: {e}")
+            atr_value = None
+
+        sl_floor = fill_price * (config.SWAP_INITIAL_SL_FLOOR_PCT / 100.0)
+        tp_floor = fill_price * (config.SWAP_INITIAL_TP_FLOOR_PCT / 100.0)
+        if atr_value:
+            sl_dist = max(config.SWAP_INITIAL_SL_ATR_MULT * atr_value, sl_floor)
+            tp_dist = max(config.SWAP_INITIAL_TP_ATR_MULT * atr_value, tp_floor)
+        else:
+            sl_dist = sl_floor
+            tp_dist = tp_floor
+        if pos_side == "long":
+            return (fill_price - sl_dist, fill_price + tp_dist)
+        return (fill_price + sl_dist, fill_price - tp_dist)
+
     @staticmethod
     def calc_liq_price(pos_side: str, avg_price: float, leverage: int) -> float:
         """OKX isolated 强平价公式
@@ -441,13 +480,17 @@ class MockSwapEngine:
                     pos_id = str(uuid.uuid4())
                     margin = order["margin_usd"]
                     liq_price = self.calc_liq_price(order["pos_side"], fill_price, order["leverage"])
+                    # v12.20.6: 算初始 SL/TP + 初始化 peak_price = fill_price
+                    sl, tp = await self.calc_initial_sltp(order["symbol"], order["pos_side"], fill_price)
                     await conn.execute(
                         """INSERT INTO swap_positions
                            (id, symbol, pos_side, qty, avg_open_price, leverage, margin_usd,
-                            liq_price, contract_size, total_fee_usd, opened_at, last_funding_at)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            liq_price, contract_size, total_fee_usd, opened_at, last_funding_at,
+                            stop_loss, take_profit, peak_price, peak_pnl_pct)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?, ?,?,?,?)""",
                         (pos_id, order["symbol"], order["pos_side"], order["qty"], fill_price,
-                         order["leverage"], margin, liq_price, ct_val, fee, now, now),
+                         order["leverage"], margin, liq_price, ct_val, fee, now, now,
+                         sl, tp, fill_price, 0.0),
                     )
                     # 扣保证金 + 手续费
                     await conn.execute(
@@ -539,9 +582,14 @@ class MockSwapEngine:
     # ─────────────────────── 强平监控 ───────────────────────
 
     async def _liquidation_loop(self, interval_sec: int = 30):
-        """每 30s 检查所有 open 持仓的 mark price vs liq_price
-        - mark <= liq (long) → 强平 (qty=0, status='liquidated', balance 减 margin)
-        - 距强平 < SWAP_PRE_LIQ_REDUCE_THRESHOLD_PCT % → 自动减仓 50% 并标 pre_liq_armed
+        """v12.20.6: 5 阶段动态止盈止损闭环
+        每 30s 扫所有 open 持仓:
+          阶段 1   SL 命中     → close
+          阶段 1.5 break-even (浮盈≥1.5% → SL 上移到保本线)
+          阶段 2   TP 命中     → close
+          阶段 3   分批 T1/T2  (TP 路径 50%/80% 各减 30%)
+          阶段 4   trailing    (浮盈≥3% → SL 跟踪上移到 avg+0.6×(peak-avg))
+          阶段 5   强平兜底    + pre_liq_reduce (距强平<3% 减 50%)
         """
         await asyncio.sleep(90)
         while self._running:
@@ -559,39 +607,203 @@ class MockSwapEngine:
                         mark = await okx.get_mark_price(p["symbol"])
                         if not mark:
                             continue
-                        # 更新 unrealized PnL + mark
-                        if p["pos_side"] == "long":
-                            upnl = (mark - p["avg_open_price"]) * p["qty"] * p["contract_size"]
-                            dist_to_liq = (mark - p["liq_price"]) / mark * 100 if mark > 0 else 0
-                            should_liq = mark <= p["liq_price"]
-                        else:
-                            upnl = (p["avg_open_price"] - mark) * p["qty"] * p["contract_size"]
-                            dist_to_liq = (p["liq_price"] - mark) / mark * 100 if mark > 0 else 0
-                            should_liq = mark >= p["liq_price"]
-                        async with self.db.acquire() as conn:
-                            await conn.execute(
-                                "UPDATE swap_positions SET unrealized_pnl_usd=? WHERE id=?",
-                                (upnl, p["id"]),
-                            )
-                            await conn.commit()
-                        # 强平
-                        if should_liq:
-                            await self._force_liquidate(p, mark)
-                            continue
-                        # 距强平 < 阈值 → 减仓 50%
-                        thr = config.SWAP_PRE_LIQ_REDUCE_THRESHOLD_PCT
-                        if (not p["pre_liq_armed"]) and 0 < dist_to_liq < thr:
-                            await self._pre_liq_reduce(p, mark)
+                        await self._check_position_dynamic_targets(p, mark, okx)
                     except Exception as e:
                         logger.debug(f"[swap-engine] liq check {p.get('symbol')}: {e}")
             except Exception as e:
                 logger.warning(f"[swap-engine] liq loop err: {e}")
             await asyncio.sleep(interval_sec)
 
+    async def _check_position_dynamic_targets(self, pos: Dict, mark: float, okx):
+        """v12.20.6 单笔持仓 5 阶段检查 (从 _liquidation_loop 调)"""
+        side = pos["pos_side"]
+        avg = pos["avg_open_price"]
+        # 算 PnL + 距强平 + 更新 peak
+        if side == "long":
+            upnl = (mark - avg) * pos["qty"] * pos["contract_size"]
+            pnl_pct = (mark - avg) / avg * 100 if avg > 0 else 0
+            dist_to_liq = (mark - pos["liq_price"]) / mark * 100 if (mark > 0 and pos.get("liq_price")) else 999
+            should_liq = pos.get("liq_price") and mark <= pos["liq_price"]
+            new_peak = max(pos.get("peak_price") or avg, mark)
+            new_peak_pnl = max(pos.get("peak_pnl_pct") or 0, pnl_pct)
+        else:  # short
+            upnl = (avg - mark) * pos["qty"] * pos["contract_size"]
+            pnl_pct = (avg - mark) / avg * 100 if avg > 0 else 0
+            dist_to_liq = (pos["liq_price"] - mark) / mark * 100 if (mark > 0 and pos.get("liq_price")) else 999
+            should_liq = pos.get("liq_price") and mark >= pos["liq_price"]
+            new_peak = min(pos.get("peak_price") or avg, mark)
+            new_peak_pnl = max(pos.get("peak_pnl_pct") or 0, pnl_pct)
+
+        # 持续更新 unrealized + peak (单字段, 不需 lock)
+        async with self.db.acquire() as conn:
+            updates = {"unrealized_pnl_usd": upnl, "peak_price": new_peak, "peak_pnl_pct": new_peak_pnl}
+            cols = ", ".join(f"{k}=?" for k in updates)
+            await conn.execute(
+                f"UPDATE swap_positions SET {cols} WHERE id=?",
+                list(updates.values()) + [pos["id"]],
+            )
+            await conn.commit()
+
+        sl = pos.get("stop_loss")
+        tp = pos.get("take_profit")
+
+        # ─ 阶段 1: SL 命中 → close (反向市价)
+        if sl and ((side == "long" and mark <= sl) or (side == "short" and mark >= sl)):
+            await self._close_position(pos, "sl_hit", f"SL 命中 sl={sl:.4f} mark={mark:.4f} pnl={pnl_pct:+.2f}%")
+            return
+
+        # ─ 阶段 1.5: Break-even (浮盈 >= 1.5% 锁保本)
+        be_arm = config.SWAP_BREAKEVEN_ARM_PNL_PCT
+        be_lock = config.SWAP_BREAKEVEN_LOCK_PCT
+        if (not pos.get("breakeven_armed")) and pnl_pct >= be_arm:
+            if side == "long":
+                new_sl = avg * (1 + be_lock / 100)
+                if not sl or new_sl > sl:
+                    await self._update_pos_sl(pos["id"], new_sl, breakeven_armed=1)
+                    sl = new_sl
+                    logger.info(f"[swap-BE] {side} {pos['symbol']} 浮盈 {pnl_pct:+.1f}% → SL 上移到 {new_sl:.4f} 锁保本")
+            else:
+                new_sl = avg * (1 - be_lock / 100)
+                if not sl or new_sl < sl:
+                    await self._update_pos_sl(pos["id"], new_sl, breakeven_armed=1)
+                    sl = new_sl
+                    logger.info(f"[swap-BE] short {pos['symbol']} 浮盈 {pnl_pct:+.1f}% → SL 下移到 {new_sl:.4f}")
+
+        # ─ 阶段 2: TP 命中 → 全平
+        if tp and ((side == "long" and mark >= tp) or (side == "short" and mark <= tp)):
+            await self._close_position(pos, "tp_hit", f"TP 命中 tp={tp:.4f} mark={mark:.4f} pnl={pnl_pct:+.2f}%")
+            return
+
+        # ─ 阶段 3: 分批 T1/T2
+        if tp and avg:
+            t1_ratio = config.SWAP_TP_PARTIAL_T1_RATIO
+            t2_ratio = config.SWAP_TP_PARTIAL_T2_RATIO
+            reduce_ratio = config.SWAP_TP_PARTIAL_REDUCE_RATIO
+            if side == "long":
+                t1_price = avg + (tp - avg) * t1_ratio
+                t2_price = avg + (tp - avg) * t2_ratio
+                hit_t1 = mark >= t1_price
+                hit_t2 = mark >= t2_price
+            else:
+                t1_price = avg - (avg - tp) * t1_ratio
+                t2_price = avg - (avg - tp) * t2_ratio
+                hit_t1 = mark <= t1_price
+                hit_t2 = mark <= t2_price
+            # T2 优先 (已过 T2 必已过 T1)
+            if hit_t2 and not pos.get("tp2_hit"):
+                await self._partial_reduce(pos, reduce_ratio, "tp_partial_t2",
+                    f"T2 减 {reduce_ratio*100:.0f}% (T2={t2_price:.4f}, mark={mark:.4f}, pnl={pnl_pct:+.1f}%)",
+                    set_flag="tp2_hit")
+                return
+            if hit_t1 and not pos.get("tp1_hit"):
+                await self._partial_reduce(pos, reduce_ratio, "tp_partial_t1",
+                    f"T1 减 {reduce_ratio*100:.0f}% (T1={t1_price:.4f}, mark={mark:.4f}, pnl={pnl_pct:+.1f}%)",
+                    set_flag="tp1_hit")
+                return
+
+        # ─ 阶段 4: Trailing (peak 浮盈 >= 3% 启动 → SL 跟踪上移)
+        tr_arm = config.SWAP_TRAILING_ARM_PNL_PCT
+        tr_keep = config.SWAP_TRAILING_KEEP_RATIO
+        if pos.get("trailing_armed") or new_peak_pnl >= tr_arm:
+            if side == "long":
+                new_trail = avg + tr_keep * (new_peak - avg)
+                if new_trail > avg and (not sl or new_trail > sl):
+                    await self._update_pos_sl(pos["id"], new_trail, trailing_armed=1)
+                    logger.info(f"[swap-TRAIL] long {pos['symbol']} peak_pnl {new_peak_pnl:+.1f}% → SL 跟踪 {new_trail:.4f}")
+            else:
+                new_trail = avg - tr_keep * (avg - new_peak)
+                if new_trail < avg and (not sl or new_trail < sl):
+                    await self._update_pos_sl(pos["id"], new_trail, trailing_armed=1)
+                    logger.info(f"[swap-TRAIL] short {pos['symbol']} peak_pnl {new_peak_pnl:+.1f}% → SL 跟踪 {new_trail:.4f}")
+
+        # ─ 阶段 5: 强平兜底 + pre_liq_reduce
+        if should_liq:
+            await self._force_liquidate(pos, mark)
+            return
+        thr = config.SWAP_PRE_LIQ_REDUCE_THRESHOLD_PCT
+        if (not pos.get("pre_liq_armed")) and 0 < dist_to_liq < thr:
+            await self._pre_liq_reduce(pos, mark)
+
+    async def _update_pos_sl(self, pos_id: str, new_sl: float, **flags):
+        """v12.20.6 动态更新 SL + 状态标记 (break-even / trailing 上移用)"""
+        try:
+            async with self._lock:
+                async with self.db.acquire() as conn:
+                    set_clauses = ["stop_loss=?"]
+                    vals: list = [new_sl]
+                    for k, v in flags.items():
+                        set_clauses.append(f"{k}=?")
+                        vals.append(v)
+                    vals.append(pos_id)
+                    await conn.execute(
+                        f"UPDATE swap_positions SET {', '.join(set_clauses)} WHERE id=?", vals,
+                    )
+                    await conn.commit()
+        except Exception as e:
+            logger.debug(f"[update-pos-sl] {pos_id} 失败: {e}")
+
+    async def _close_position(self, pos: Dict, reason_tag: str, reason_text: str):
+        """v12.20.6 主动平仓 (SL/TP 命中) — 反向市价单
+        走 place_order(intent='close') → _mark_filled close 分支 (统一路径)
+        """
+        side = "sell" if pos["pos_side"] == "long" else "buy"
+        # 取消该 symbol+pos_side 的 pending 限价单 (避免再开同向)
+        await self._cancel_pending_for_position(pos["symbol"], pos["pos_side"])
+        result = await self.place_order(
+            symbol=pos["symbol"].replace("-SWAP", ""),
+            side=side, pos_side=pos["pos_side"],
+            order_type="market", qty=pos["qty"],
+            leverage=pos["leverage"], intent="close",
+        )
+        if result.get("ok"):
+            logger.warning(f"[swap-{reason_tag}] {pos['pos_side']} {pos['symbol']} → 平仓 ({reason_text})")
+        else:
+            logger.warning(f"[swap-{reason_tag}] {pos['pos_side']} {pos['symbol']} 平仓失败: {result.get('reason')}")
+
+    async def _partial_reduce(self, pos: Dict, ratio: float, reason_tag: str,
+                               reason_text: str, set_flag: str):
+        """v12.20.6 分批减仓 (T1/T2 触发) — 减 ratio% qty + 标记 set_flag=1"""
+        reduce_qty = pos["qty"] * ratio
+        side = "sell" if pos["pos_side"] == "long" else "buy"
+        result = await self.place_order(
+            symbol=pos["symbol"].replace("-SWAP", ""),
+            side=side, pos_side=pos["pos_side"],
+            order_type="market", qty=reduce_qty,
+            leverage=pos["leverage"], intent="reduce",
+        )
+        # 标 flag (避免重复)
+        try:
+            async with self._lock:
+                async with self.db.acquire() as conn:
+                    await conn.execute(
+                        f"UPDATE swap_positions SET {set_flag}=1 WHERE id=?", (pos["id"],),
+                    )
+                    await conn.commit()
+        except Exception:
+            pass
+        logger.info(f"[swap-{reason_tag}] {pos['pos_side']} {pos['symbol']} → 减 {ratio*100:.0f}% ({reason_text})")
+
+    async def _cancel_pending_for_position(self, symbol: str, pos_side: str):
+        """v12.20.6 平仓前取消该 symbol+pos_side 所有 pending 限价单 (避免回头又开同向)"""
+        try:
+            async with self.db.acquire() as conn:
+                cur = await conn.execute(
+                    "SELECT id FROM swap_orders WHERE symbol=? AND pos_side=? AND status='pending' AND intent IN ('open','add')",
+                    (symbol, pos_side),
+                )
+                ids = [r["id"] for r in await cur.fetchall()]
+            for oid in ids:
+                await self._cancel_order(oid, "持仓平仓时同步撤单")
+        except Exception as e:
+            logger.debug(f"[cancel-pending] {symbol} 失败: {e}")
+
     async def _force_liquidate(self, pos: Dict, mark: float):
         """强平: 持仓清零, 保证金归 0, status='liquidated'
         v12.20.5 Bug 4 修复: 加 self._lock 防与 _mark_filled 写表竞态
+        v12.20.6: 强平后取消该 symbol+pos_side 所有 pending 限价单
         """
+        # v12.20.6: 平仓前先取消 pending (在 lock 外, 不会冲突)
+        await self._cancel_pending_for_position(pos["symbol"], pos["pos_side"])
         now = int(time.time())
         try:
             async with self._lock:
