@@ -668,6 +668,10 @@ class MockSwapEngine:
                     await self._update_pos_sl(pos["id"], new_sl, breakeven_armed=1)
                     sl = new_sl
                     logger.info(f"[swap-BE] short {pos['symbol']} 浮盈 {pnl_pct:+.1f}% → SL 下移到 {new_sl:.4f}")
+            # v12.20.7 Bug F: BE 上移 SL 后回头检查是否立即 SL 命中 (避免 30s 延迟)
+            if sl and ((side == "long" and mark <= sl) or (side == "short" and mark >= sl)):
+                await self._close_position(pos, "sl_hit", f"BE 后立即 SL 命中 sl={sl:.4f} mark={mark:.4f}")
+                return
 
         # ─ 阶段 2: TP 命中 → 全平
         if tp and ((side == "long" and mark >= tp) or (side == "short" and mark <= tp)):
@@ -709,12 +713,18 @@ class MockSwapEngine:
                 new_trail = avg + tr_keep * (new_peak - avg)
                 if new_trail > avg and (not sl or new_trail > sl):
                     await self._update_pos_sl(pos["id"], new_trail, trailing_armed=1)
+                    sl = new_trail
                     logger.info(f"[swap-TRAIL] long {pos['symbol']} peak_pnl {new_peak_pnl:+.1f}% → SL 跟踪 {new_trail:.4f}")
             else:
                 new_trail = avg - tr_keep * (avg - new_peak)
                 if new_trail < avg and (not sl or new_trail < sl):
                     await self._update_pos_sl(pos["id"], new_trail, trailing_armed=1)
+                    sl = new_trail
                     logger.info(f"[swap-TRAIL] short {pos['symbol']} peak_pnl {new_peak_pnl:+.1f}% → SL 跟踪 {new_trail:.4f}")
+            # v12.20.7 Bug F: trailing 上移 SL 后回头立即检查 SL 命中
+            if sl and ((side == "long" and mark <= sl) or (side == "short" and mark >= sl)):
+                await self._close_position(pos, "sl_hit", f"trailing 后立即 SL 命中 sl={sl:.4f} mark={mark:.4f}")
+                return
 
         # ─ 阶段 5: 强平兜底 + pre_liq_reduce
         if should_liq:
