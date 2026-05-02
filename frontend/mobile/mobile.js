@@ -742,10 +742,34 @@
   // ═══════════════════════════════════════════════════════════
   // 5. 持仓管理
   // ═══════════════════════════════════════════════════════════
+  // v12.20.3: 加载 swap 持仓 (合约模式独立)
+  async function loadSwapAccount() {
+    try {
+      const r = await fetchJSON('/api/swap/account');
+      return r;
+    } catch (e) { return null; }
+  }
+  async function loadSwapPositions() {
+    try {
+      const r = await fetchJSON('/api/swap/positions?status=open');
+      return r.items || [];
+    } catch (e) { return []; }
+  }
+  async function loadSwapOrders(status) {
+    try {
+      const r = await fetchJSON('/api/swap/orders' + (status ? '?status=' + status : ''));
+      return r.items || [];
+    } catch (e) { return []; }
+  }
+
   // v12.19.0: 持仓页 = 顶部汇总条 + 按市场分组 + 各持仓 row
+  // v12.20.3: 若 swap_mock 模式 → 同时显示 swap_positions
   async function renderPositions() {
     try {
-      const [items, advices] = await Promise.all([loadPositions(), loadAdvices()]);
+      const [items, advices, swapAcct, swapPositions] = await Promise.all([
+        loadPositions(), loadAdvices(), loadSwapAccount(), loadSwapPositions(),
+      ]);
+      const swapMode = swapAcct && swapAcct.mode === 'swap_mock';
       // ─ 顶部汇总条 ─
       let totalUSD = 0, pnlUSD = 0, winN = 0, loseN = 0;
       for (const p of items) {
@@ -755,9 +779,28 @@
         pnlUSD += (p.pnl_usd || 0);
       }
       const summaryCls = pnlUSD >= 0 ? 'up' : 'down';
-      $('#positions-summary').innerHTML = items.length ? `
+      // v12.20.3: swap 汇总（如果启用）
+      let swapSummaryHtml = '';
+      if (swapMode) {
+        const sBalance = swapAcct.balance_usd || 0;
+        const sMargin = swapAcct.total_margin_usd || 0;
+        const sPnl = swapAcct.total_pnl_usd || 0;
+        const sCls = sPnl >= 0 ? 'up' : 'down';
+        let sUpnl = 0;
+        for (const p of swapPositions) sUpnl += (p.unrealized_pnl_usd || 0);
+        const upnlCls = sUpnl >= 0 ? 'up' : 'down';
+        swapSummaryHtml = `
+          <div class="card section" style="background:linear-gradient(135deg,#1c2128,#1a1f26);">
+            <div class="section-title">⚡ 加密合约 (swap mock) — ${swapPositions.length} 持仓</div>
+            <div class="summary-row"><span class="summary-k">余额</span><span class="summary-v">${fmtMoney(sBalance)}</span></div>
+            <div class="summary-row"><span class="summary-k">占用保证金</span><span class="summary-v">${fmtMoney(sMargin)}</span></div>
+            <div class="summary-row"><span class="summary-k">浮动 PnL</span><span class="summary-v ${upnlCls}">${fmtPnl(sUpnl)}</span></div>
+            <div class="summary-row"><span class="summary-k">累计已实现 PnL</span><span class="summary-v ${sCls}">${fmtPnl(sPnl)}</span></div>
+          </div>`;
+      }
+      $('#positions-summary').innerHTML = (items.length ? `
         <div class="summary-row">
-          <span class="summary-k">共 ${items.length} 笔</span>
+          <span class="summary-k">现货持仓 ${items.length} 笔</span>
           <span class="summary-k">浮盈 ${winN} / 浮亏 ${loseN}</span>
         </div>
         <div class="summary-row">
@@ -768,9 +811,9 @@
           <span class="summary-k">浮动盈亏</span>
           <span class="summary-v ${summaryCls}">${fmtPnl(pnlUSD)}</span>
         </div>
-      ` : '';
+      ` : '') + swapSummaryHtml;
 
-      if (!items.length) {
+      if (!items.length && !swapPositions.length) {
         $('#positions-list').innerHTML = `<div class="empty">
           <div class="empty-icon">📭</div>
           <div>暂无持仓</div>
@@ -799,7 +842,19 @@
           ${g.map(p => renderPositionRow(p, adviceMap[p.id])).join('')}
         </div>`;
       }).join('');
-      $('#positions-list').innerHTML = groupHtml;
+      // v12.20.3: swap 持仓单独分组显示 (与现货分开)
+      let swapGroupHtml = '';
+      if (swapMode && swapPositions.length) {
+        const sumUpnl = swapPositions.reduce((s,p)=>s+(p.unrealized_pnl_usd||0),0);
+        swapGroupHtml = `<div class="pos-group">
+          <div class="pos-group-hdr">
+            <span class="pos-group-name">⚡ 加密合约</span>
+            <span class="pos-group-meta">${swapPositions.length} 笔 · 浮盈 ${fmtPnl(sumUpnl)}</span>
+          </div>
+          ${swapPositions.map(renderSwapPositionRow).join('')}
+        </div>`;
+      }
+      $('#positions-list').innerHTML = groupHtml + swapGroupHtml;
       $$('#positions-list .row').forEach(r => {
         r.addEventListener('click', () => openPositionDetail(r.dataset.id));
       });
@@ -807,6 +862,32 @@
       console.error(e);
       $('#positions-list').innerHTML = '<div class="empty">加载失败</div>';
     }
+  }
+
+  // v12.20.3: swap 持仓行 (含杠杆/强平/funding)
+  function renderSwapPositionRow(p) {
+    const pnl = p.unrealized_pnl_usd || 0;
+    const cls = pnl >= 0 ? 'up' : 'down';
+    const sideCn = p.pos_side === 'long' ? '多 🟢' : '空 🔴';
+    const dispSym = (p.symbol || '').replace('-SWAP', '');
+    const liqDist = p.liq_price && p.avg_open_price
+      ? ((p.pos_side === 'long' ? (1 - p.liq_price/p.avg_open_price) : (p.liq_price/p.avg_open_price - 1)) * 100).toFixed(1)
+      : '?';
+    return `<div class="row ${cls}" data-swap-id="${escape(p.id)}" style="cursor:default;">
+      <div class="row-title">
+        <div class="row-symbol">${escape(dispSym)} <span class="small muted">${sideCn} · ${p.leverage}x</span></div>
+        <div class="row-pnl ${cls}">${fmtPnl(pnl)}</div>
+      </div>
+      <div class="row-meta">
+        ${(p.qty||0).toFixed(4)} 张 @ ${(p.avg_open_price||0).toFixed(4)} · 保证金 ${fmtMoney(p.margin_usd||0)}
+      </div>
+      <div class="row-meta small">
+        🛑 强平 ${(p.liq_price||0).toFixed(4)} (距 ${liqDist}%) ${p.pre_liq_armed ? '⚠️ 已减仓' : ''}
+      </div>
+      <div class="row-meta small">
+        💰 funding ${fmtPnl(p.funding_fee_total_usd||0)} · 手续费 -${fmtMoney(p.total_fee_usd||0)}
+      </div>
+    </div>`;
   }
 
   // v12.19.0: 拒单子页 — 显示自动交易日志中 status='rejected' 的记录

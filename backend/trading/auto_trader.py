@@ -1005,6 +1005,14 @@ class AutoTrader:
             logger.debug(f"[signal-storm-dedup] {symbol}/{action} 30s 内已处理过，跳过 {signal_id[:8]}")
             return
         self._signal_dedup_cache[dedup_key] = now
+
+        # v12.20: crypto + swap_mock 模式 → 走 mock_swap_engine (永续合约)
+        # 不影响现货 mock (其他市场 / spot_mock 模式) 流程
+        if market == "crypto":
+            from backend import config
+            if getattr(config, "CRYPTO_TRADING_MODE", "spot_mock") == "swap_mock":
+                await self._route_to_swap_engine(sig)
+                return
         # 简单清理：cache > 200 项时清掉 1h 前的
         if len(self._signal_dedup_cache) > 200:
             cutoff = now - 3600
@@ -1771,6 +1779,68 @@ class AutoTrader:
                 await conn.commit()
         except Exception as e:
             logger.debug(f"[ps] save 失败 pid={position_id}: {e}")
+
+    async def _route_to_swap_engine(self, sig: Dict):
+        """v12.20: 把 crypto 信号路由到 mock_swap_engine (永续合约模拟引擎)
+        action='buy' → open long / SELL → open short (双向)
+        若已有反向持仓 → 先平再开 (避免对冲死锁)
+        """
+        try:
+            from backend import config as _cfg
+            from backend.trading import mock_swap_engine as _se
+            engine = _se.swap_engine
+            if engine is None:
+                logger.warning(f"[swap-route] swap_engine 未初始化, 跳过 {sig['symbol']}")
+                return
+            symbol = sig["symbol"]
+            action = sig["action"]
+            ai_conf = int(sig.get("ai_confidence") or 60)
+            # 推断 ATR%（用于动态杠杆 + 限价偏移）
+            atr_pct = 2.0  # 默认中等波动
+            atr_value = None
+            try:
+                trig = sig.get("triggered_by") or {}
+                if isinstance(trig, str):
+                    trig = json.loads(trig)
+                if trig.get("atr_pct"):
+                    atr_pct = float(trig["atr_pct"])
+                if trig.get("atr_value"):
+                    atr_value = float(trig["atr_value"])
+            except Exception:
+                pass
+
+            sig_payload = {
+                "id": sig.get("id"),
+                "ai_confidence": ai_conf,
+                "atr_pct": atr_pct,
+                "atr_value": atr_value,
+            }
+            # pos_side: BUY → long, SELL → short (永续双向)
+            pos_side = "long" if action == "buy" else "short"
+            # 检查同币种是否已有反向持仓 (UNIQUE 约束允许两个方向共存)
+            # 这里直接 open，不预先平反向 — 让用户允许双向对冲
+            # 用初始资金 5% 做单笔保证金 (动态杠杆放大成实际仓位)
+            acct = await engine.get_account()
+            margin_per_trade = acct["balance_usd"] * 0.05
+            if margin_per_trade < 10:
+                logger.info(f"[swap-route] {symbol} 余额不足开仓 (${acct['balance_usd']:.2f})")
+                return
+            # 默认走限价单 (等回踩) — maker 费率
+            result = await engine.place_order(
+                symbol=symbol, side=action, pos_side=pos_side,
+                order_type="limit", margin_usd=margin_per_trade,
+                signal=sig_payload, intent="open",
+            )
+            if result.get("ok"):
+                logger.info(
+                    f"[swap-route] {symbol} {action} ({pos_side}) → 限价单 "
+                    f"price={result.get('limit_price'):.4f} qty={result.get('qty'):.4f} "
+                    f"lev={result.get('leverage')}x order={result.get('order_id','')[:8]}"
+                )
+            else:
+                logger.info(f"[swap-route] {symbol} {action} 拒单: {result.get('reason')}")
+        except Exception as e:
+            logger.warning(f"[swap-route] {sig.get('symbol')} 异常: {e}")
 
     async def _update_position_sl(self, position_id: str, new_sl: float):
         """v12.19.6 动态更新持仓 SL (break-even / trailing 上移用)

@@ -104,6 +104,9 @@ trade_reviewer = None
 ai_analyzer: Optional[NewsAIAnalyzer] = None
 auto_trader: Any = None   # 自动交易引擎（initialized in lifespan）
 
+# v12.20: 加密合约模拟交易引擎 (initialized in lifespan)
+swap_engine: Any = None
+
 
 # ═══════════════════════════════════════════════════════════════════
 # 辅助函数
@@ -1710,6 +1713,20 @@ async def lifespan(app: FastAPI):
         logger.info("[reviewer] TradeReviewer 已启动 — 每 4h 单笔复盘 + 每天周报 + 每 6h 教训聚合")
     except Exception as e:
         logger.warning(f"TradeReviewer 启动失败: {e}")
+
+    # v12.20: MockSwapEngine 启动 (仅当 CRYPTO_TRADING_MODE='swap_mock' 时启动后台 loop)
+    global swap_engine
+    try:
+        from backend.trading import mock_swap_engine as _se
+        _se.swap_engine = _se.MockSwapEngine(db=db, ws_hub=hub)
+        swap_engine = _se.swap_engine
+        if getattr(config, "CRYPTO_TRADING_MODE", "spot_mock") == "swap_mock":
+            await swap_engine.start()
+            logger.info("[swap-engine] CRYPTO_TRADING_MODE=swap_mock — 加密合约模拟交易启动")
+        else:
+            logger.info("[swap-engine] CRYPTO_TRADING_MODE=spot_mock — 合约引擎已加载但不启用 (不订单/loop)")
+    except Exception as e:
+        logger.warning(f"MockSwapEngine 启动失败: {e}")
     logger.info("MonitorEngine started + 加密多周期 + 股票候选池自动绑定")
 
     # v11.6: 接真实 news_provider（之前永远空列表，advisor 新闻分支死代码）
@@ -4556,6 +4573,126 @@ async def backtest_list():
         return {"reports": []}
 
 app.include_router(backtest_router)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# v12.20: 加密合约模拟交易 REST API (/api/swap/*)
+# ═══════════════════════════════════════════════════════════════════
+
+swap_router = APIRouter(prefix="/api/swap", tags=["加密合约模拟"])
+
+
+@swap_router.get("/account")
+async def get_swap_account():
+    """模拟账户余额 + 占用保证金 + 累计 PnL"""
+    if swap_engine is None:
+        raise HTTPException(status_code=503, detail="swap_engine 未启动")
+    acct = await swap_engine.get_account()
+    # 加 mode 字段方便前端判断
+    acct["mode"] = getattr(config, "CRYPTO_TRADING_MODE", "spot_mock")
+    return acct
+
+
+@swap_router.get("/positions")
+async def list_swap_positions(status: str = Query("open", regex="^(open|closed|liquidated|all)$")):
+    """合约持仓列表 (默认 open)"""
+    if swap_engine is None:
+        raise HTTPException(status_code=503, detail="swap_engine 未启动")
+    if status == "all":
+        # 拼三种
+        items = []
+        for s in ("open", "closed", "liquidated"):
+            items.extend(await swap_engine.list_positions(status=s))
+        items.sort(key=lambda x: x.get("opened_at", 0), reverse=True)
+        return {"items": items, "count": len(items)}
+    items = await swap_engine.list_positions(status=status)
+    return {"items": items, "count": len(items)}
+
+
+@swap_router.get("/orders")
+async def list_swap_orders(
+    status: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """合约订单列表 (含 pending/filled/cancelled)"""
+    if swap_engine is None:
+        raise HTTPException(status_code=503, detail="swap_engine 未启动")
+    items = await swap_engine.list_orders(status=status, limit=limit)
+    return {"items": items, "count": len(items)}
+
+
+@swap_router.post("/place")
+async def place_swap_order(body: Dict[str, Any]):
+    """手动下单 (调试 / 用户手动建仓用)
+    body: {symbol, side, pos_side, order_type, qty?/margin_usd?, leverage?}
+    """
+    if swap_engine is None:
+        raise HTTPException(status_code=503, detail="swap_engine 未启动")
+    symbol = body.get("symbol")
+    side = body.get("side")
+    pos_side = body.get("pos_side")
+    if not symbol or side not in ("buy", "sell") or pos_side not in ("long", "short"):
+        raise HTTPException(status_code=400, detail="symbol/side(buy|sell)/pos_side(long|short) 必填")
+    result = await swap_engine.place_order(
+        symbol=symbol,
+        side=side,
+        pos_side=pos_side,
+        order_type=body.get("order_type", "limit"),
+        qty=body.get("qty"),
+        margin_usd=body.get("margin_usd"),
+        leverage=body.get("leverage"),
+        intent=body.get("intent", "open"),
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("reason", "下单失败"))
+    return result
+
+
+@swap_router.post("/close/{position_id}")
+async def close_swap_position(position_id: str):
+    """手动平仓 (反向市价单)"""
+    if swap_engine is None:
+        raise HTTPException(status_code=503, detail="swap_engine 未启动")
+    async with db.acquire() as conn:
+        cur = await conn.execute("SELECT * FROM swap_positions WHERE id=?", (position_id,))
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="持仓不存在")
+    pos = dict(row)
+    if pos["status"] != "open" or pos["qty"] <= 0:
+        raise HTTPException(status_code=400, detail=f"持仓状态={pos['status']}, qty={pos['qty']}")
+    side = "sell" if pos["pos_side"] == "long" else "buy"
+    result = await swap_engine.place_order(
+        symbol=pos["symbol"].replace("-SWAP", ""),
+        side=side, pos_side=pos["pos_side"],
+        order_type="market", qty=pos["qty"],
+        leverage=pos["leverage"], intent="close",
+    )
+    return result
+
+
+@swap_router.post("/cancel/{order_id}")
+async def cancel_swap_order(order_id: str):
+    """手动撤限价单"""
+    if swap_engine is None:
+        raise HTTPException(status_code=503, detail="swap_engine 未启动")
+    await swap_engine._cancel_order(order_id, "用户手动撤单")
+    return {"ok": True}
+
+
+@swap_router.post("/mode")
+async def switch_trading_mode(body: Dict[str, str]):
+    """运行时切换 spot_mock <-> swap_mock (重启服务后由 config 决定)"""
+    mode = body.get("mode")
+    if mode not in ("spot_mock", "swap_mock"):
+        raise HTTPException(status_code=400, detail="mode 必须是 spot_mock 或 swap_mock")
+    config.CRYPTO_TRADING_MODE = mode
+    if mode == "swap_mock" and swap_engine and not swap_engine._running:
+        await swap_engine.start()
+    return {"ok": True, "mode": mode, "note": "重启服务可永久切换 (此 API 仅本进程生效)"}
+
+
+app.include_router(swap_router)
 
 
 # 注册路由（必须在 StaticFiles 挂载之前）
