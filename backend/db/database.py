@@ -291,7 +291,7 @@ class DatabaseManager:
         # 查当前 schema 版本
         cur = await conn.execute("PRAGMA user_version")
         current_version = (await cur.fetchone())[0]
-        TARGET_VERSION = 20  # v20 (v12.20.6): swap_positions 加 SL/TP/break-even/trailing 字段（合约动态止盈止损）
+        TARGET_VERSION = 21  # v21 (v12.20.9): trade_review 加 is_swap 字段（合约复盘闭环）
         if current_version < TARGET_VERSION:
             # v12.11: 用 BEGIN/COMMIT 包整个迁移；任何步骤抛错则 ROLLBACK + 不前进 user_version
             migration_ok = True
@@ -427,6 +427,13 @@ class DatabaseManager:
                 "ALTER TABLE swap_positions ADD COLUMN peak_pnl_pct REAL DEFAULT 0",
                 "ALTER TABLE swap_positions ADD COLUMN tp1_hit INTEGER DEFAULT 0",
                 "ALTER TABLE swap_positions ADD COLUMN tp2_hit INTEGER DEFAULT 0",
+                # v21 (v12.20.9) trade_review 加 is_swap 标记区分现货/合约复盘
+                "ALTER TABLE trade_review ADD COLUMN is_swap INTEGER DEFAULT 0",
+                "ALTER TABLE trade_review ADD COLUMN swap_pos_side TEXT DEFAULT ''",   # long/short
+                "ALTER TABLE trade_review ADD COLUMN swap_leverage INTEGER DEFAULT 0",
+                "ALTER TABLE trade_review ADD COLUMN swap_funding_total REAL DEFAULT 0",
+                "ALTER TABLE trade_review ADD COLUMN swap_total_fee REAL DEFAULT 0",
+                "ALTER TABLE trade_review ADD COLUMN swap_liquidated INTEGER DEFAULT 0",
             ]:
                 try:
                     await conn.execute(alter)

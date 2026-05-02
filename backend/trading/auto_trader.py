@@ -1784,7 +1784,22 @@ class AutoTrader:
         """v12.20: 把 crypto 信号路由到 mock_swap_engine (永续合约模拟引擎)
         action='buy' → open long / SELL → open short (双向)
         若已有反向持仓 → 先平再开 (避免对冲死锁)
+
+        v12.20.9: 复用现货风控前置 (同股冷却 + 日操作上限)
+        让合约也有信号风暴防护 (避免 60min 内同币反复下单)
         """
+        symbol = sig["symbol"]
+        market = sig["market"]
+        # v12.20.9: 同股冷却 (现货同样的逻辑, cooldown_sec 默认 300)
+        if not await self._check_cooldown(symbol, market):
+            await self._log_rejected(sig, "open",
+                f"swap 同股冷却期内 ({self._config['cooldown_sec']}s), 跳过本次信号")
+            return
+        # v12.20.9: 单日同股操作上限
+        if not await self._check_daily_limit(symbol, market):
+            await self._log_rejected(sig, "open",
+                f"swap 本币种当日操作已达上限 {self._config['max_daily_ops_per_symbol']} 次")
+            return
         try:
             from backend import config as _cfg
             from backend.trading import mock_swap_engine as _se

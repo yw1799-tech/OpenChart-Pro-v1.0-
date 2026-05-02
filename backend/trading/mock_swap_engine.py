@@ -550,6 +550,8 @@ class MockSwapEngine:
                                    margin_usd=0, closed_at=? WHERE id=?""",
                                 (realized, fee, now, pos["id"]),
                             )
+                            # v12.20.9: 全平后 spawn 复盘 (与现货 _execute_close 行为一致)
+                            self._spawn_review(pos["id"])
                         else:
                             await conn.execute(
                                 """UPDATE swap_positions SET qty=?, margin_usd=?,
@@ -572,6 +574,29 @@ class MockSwapEngine:
                     "UPDATE swap_orders SET position_id=? WHERE id=?",
                     (pos_id_use, order["id"]),
                 )
+                # v12.20.9: 同步写 auto_trade_log (让 _check_cooldown/_check_daily_limit 自动生效)
+                # trigger_type='swap_fill' 区分现货
+                try:
+                    sym_short = order["symbol"].replace("-SWAP", "")
+                    intent_to_action = {"open": "open", "add": "add", "reduce": "reduce", "close": "close"}
+                    log_action = intent_to_action.get(order.get("intent", "open"), "open")
+                    await conn.execute(
+                        """INSERT INTO auto_trade_log (symbol, market, action, quantity, price,
+                           amount_usd, fx_rate, trigger_type, trigger_detail, reason,
+                           status, position_id, traded_at)
+                           VALUES (?, 'crypto', ?, ?, ?, ?, 1.0, 'swap_fill', ?, ?,
+                                   'executed', ?, ?)""",
+                        (sym_short, log_action, order["qty"], fill_price,
+                         order["qty"] * fill_price * ct_val,
+                         json.dumps({
+                             "pos_side": order["pos_side"], "leverage": order["leverage"],
+                             "is_maker": is_maker, "fee_usd": fee, "swap_order_id": order["id"],
+                         }, ensure_ascii=False),
+                         f"swap {order['pos_side']} {log_action} {fill_price:.4f}",
+                         pos_id_use, now),
+                    )
+                except Exception as e:
+                    logger.debug(f"[swap-fill] auto_trade_log 写入失败: {e}")
                 await conn.commit()
             return {"ok": True, "order_id": order["id"], "status": "filled",
                     "fill_price": fill_price, "fee_usd": fee, "is_maker": is_maker}
@@ -807,10 +832,21 @@ class MockSwapEngine:
         except Exception as e:
             logger.debug(f"[cancel-pending] {symbol} 失败: {e}")
 
+    def _spawn_review(self, swap_pos_id: str):
+        """v12.20.9 spawn 复盘任务 (避免阻塞 fill/liq 主流程)"""
+        try:
+            from backend.main import trade_reviewer
+            if trade_reviewer is None:
+                return
+            asyncio.create_task(trade_reviewer.review_swap_position(swap_pos_id, force=False))
+        except Exception as e:
+            logger.debug(f"[swap-review-spawn] {swap_pos_id[:8]} 失败: {e}")
+
     async def _force_liquidate(self, pos: Dict, mark: float):
         """强平: 持仓清零, 保证金归 0, status='liquidated'
         v12.20.5 Bug 4 修复: 加 self._lock 防与 _mark_filled 写表竞态
         v12.20.6: 强平后取消该 symbol+pos_side 所有 pending 限价单
+        v12.20.9: 强平也触发复盘 (要让 LLM 学习强平教训)
         """
         # v12.20.6: 平仓前先取消 pending (在 lock 外, 不会冲突)
         await self._cancel_pending_for_position(pos["symbol"], pos["pos_side"])
@@ -841,6 +877,8 @@ class MockSwapEngine:
                 f"[swap-LIQ] {pos['pos_side']} {pos['symbol']} mark={mark:.4f} <= liq={pos['liq_price']:.4f} "
                 f"→ 强平 损失 ${pos['margin_usd']:.2f}"
             )
+            # v12.20.9: 强平也要复盘 (学习强平教训)
+            self._spawn_review(pos["id"])
         except Exception as e:
             logger.warning(f"[swap-engine] force_liquidate err: {e}")
 

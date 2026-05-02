@@ -1056,17 +1056,28 @@
     const pnlPct = r.realized_pnl_pct || 0;
     const cls = pnl >= 0 ? 'up' : 'down';
     const lessonsArr = Array.isArray(r.lessons) ? r.lessons : [];
+    // v12.20.9: swap 复盘加 ⚡ 徽章 + 杠杆/funding/强平标记
+    const isSwap = r.is_swap == 1 || r.is_swap === true;
+    let swapBadges = '';
+    if (isSwap) {
+      const sideTxt = r.swap_pos_side === 'long' ? '🟢多' : (r.swap_pos_side === 'short' ? '🔴空' : '');
+      const lev = r.swap_leverage ? `${r.swap_leverage}x` : '';
+      const liqBadge = r.swap_liquidated ? '<span style="background:rgba(248,81,73,0.18);color:var(--color-down);padding:1px 5px;border-radius:6px;font-size:10px;">💀强平</span>' : '';
+      swapBadges = `<span style="background:rgba(188,140,255,0.18);color:var(--purple);padding:1px 6px;border-radius:8px;font-size:10px;">⚡合约 ${sideTxt} ${lev}</span> ${liqBadge}`;
+    }
     return `<div class="row ${cls}" data-pid="${escape(r.position_id)}" style="cursor:pointer;">
       <div class="row-title">
         <div class="row-symbol">
           <span class="grade-pill ${grade}">${grade || '?'}</span>
           ${escape(r.symbol)}
           <span class="small muted">${MARKET_LABEL[r.market]||r.market}</span>
+          ${swapBadges}
         </div>
         <div class="row-pnl ${cls}">${fmtPnl(pnl)} (${fmtPct(pnlPct)})</div>
       </div>
       <div class="row-meta">
         持仓 ${Math.round((r.holding_seconds||0)/3600)} h · ${fmtTime(r.close_at)}
+        ${isSwap && r.swap_funding_total ? ' · funding ' + fmtPnl(r.swap_funding_total) : ''}
       </div>
       ${lessonsArr.length ? `<div class="row-reason">📌 ${escape(lessonsArr.slice(0,2).join(' / '))}</div>` : ''}
     </div>`;

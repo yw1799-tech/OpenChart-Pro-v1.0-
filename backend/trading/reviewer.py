@@ -178,6 +178,298 @@ class TradeReviewer:
 
     # ──────────────────── 单笔深度复盘 ────────────────────
 
+    # ──────────────────── v12.20.9 合约复盘 ────────────────────
+
+    async def review_swap_position(self, swap_pos_id: str, force: bool = False) -> Optional[Dict]:
+        """v12.20.9 加密合约平仓后深度复盘 — 适配 swap_positions/swap_orders 表
+        与 review_position (现货) 等价但读 swap_* 表 + prompt 加合约特征 (杠杆/funding/强平)
+        """
+        if not force:
+            async with self.db.acquire() as conn:
+                cur = await conn.execute(
+                    "SELECT id FROM trade_review WHERE position_id=? AND is_swap=1", (swap_pos_id,),
+                )
+                if await cur.fetchone():
+                    return None
+
+        async with self._inflight_lock:
+            if swap_pos_id in self._inflight_pids:
+                logger.info(f"[swap-review] {swap_pos_id[:8]} 复盘中 跳过")
+                return None
+            self._inflight_pids.add(swap_pos_id)
+        try:
+            try:
+                return await self._do_review_swap_position(swap_pos_id, force)
+            except Exception as e:
+                logger.warning(
+                    f"[swap-review] {swap_pos_id[:8]} 异常 (4h batch 重试): "
+                    f"{type(e).__name__}: {e}",
+                    exc_info=True,
+                )
+                return None
+        finally:
+            async with self._inflight_lock:
+                self._inflight_pids.discard(swap_pos_id)
+
+    async def _do_review_swap_position(self, swap_pos_id: str, force: bool) -> Optional[Dict]:
+        """v12.20.9 合约持仓复盘核心 — 读 swap_*, 调 LLM, 写 trade_review"""
+        async with self.db.acquire() as conn:
+            cur = await conn.execute(
+                "SELECT * FROM swap_positions WHERE id=?", (swap_pos_id,),
+            )
+            row = await cur.fetchone()
+        if not row:
+            return None
+        pos = dict(row)
+        if pos["status"] == "open" or pos["qty"] > 0:
+            logger.debug(f"[swap-review] {swap_pos_id[:8]} 持仓未平 跳过")
+            return None
+        # 拉所有 leg (open/add/reduce/close)
+        async with self.db.acquire() as conn:
+            cur = await conn.execute(
+                "SELECT * FROM swap_orders WHERE position_id=? AND status='filled' ORDER BY filled_at ASC",
+                (swap_pos_id,),
+            )
+            legs = [dict(r) for r in await cur.fetchall()]
+        if not legs:
+            logger.debug(f"[swap-review] {swap_pos_id[:8]} 无 fill leg 跳过")
+            return None
+
+        symbol = pos["symbol"].replace("-SWAP", "")
+        market = "crypto"
+        side_cn = "做多" if pos["pos_side"] == "long" else "做空"
+        opened_at = pos["opened_at"]
+        closed_at = pos["closed_at"] or int(time.time())
+        hold_hours = (closed_at - opened_at) / 3600.0
+        avg_open = pos["avg_open_price"]
+        # 计算最后 close 的均价 (近似)
+        close_legs = [l for l in legs if l.get("intent") == "close"]
+        avg_close = (
+            sum(l["fill_price"] * l["fill_qty"] for l in close_legs) / sum(l["fill_qty"] for l in close_legs)
+            if close_legs else avg_open
+        )
+        realized_pnl = pos["realized_pnl_usd"] or 0
+        funding_total = pos["funding_fee_total_usd"] or 0
+        total_fee = pos["total_fee_usd"] or 0
+        leverage = pos["leverage"]
+        liquidated = pos["status"] == "liquidated"
+        # PnL 百分比 (相对保证金)
+        # 算原始 margin: 用第一个 open leg 的 margin
+        first_open = next((l for l in legs if l.get("intent") in ("open", "add")), None)
+        initial_margin = first_open["margin_usd"] if first_open else 1
+        # net_pnl = realized + funding (扣手续费已在 fee 字段, 不重复)
+        net_pnl = realized_pnl + funding_total
+        pnl_pct = (net_pnl / initial_margin * 100) if initial_margin > 0 else 0
+
+        # K 线区间 (开仓到平仓的 1H K)
+        try:
+            from backend.data.cache import cached_get_klines
+            from backend.data.models import Market, Interval
+            klines_raw = await cached_get_klines(
+                db=self.db, market=Market.CRYPTO, symbol=pos["symbol"],
+                interval=Interval("1H"), limit=200,
+            )
+            klines = [
+                {"timestamp": c.timestamp, "open": c.open, "high": c.high,
+                 "low": c.low, "close": c.close, "volume": c.volume}
+                for c in (klines_raw or [])
+                if opened_at * 1000 <= c.timestamp <= closed_at * 1000
+            ]
+        except Exception:
+            klines = []
+
+        # 期间最高/最低 (用 K 线)
+        if klines:
+            period_high = max(k["high"] for k in klines)
+            period_low = min(k["low"] for k in klines)
+        else:
+            period_high = max(avg_open, avg_close)
+            period_low = min(avg_open, avg_close)
+
+        # 拉新闻 + 同股历史
+        news_count, news_summary = await self._fetch_news_summary(symbol, opened_at, closed_at)
+        history_summary = await self._fetch_history_summary(symbol, market, swap_pos_id)
+
+        # 触发的 signal
+        signal_id = legs[0].get("signal_id") if legs else None
+        sig_link = "(无关联 signal)"
+        if signal_id:
+            try:
+                async with self.db.acquire() as conn:
+                    cur = await conn.execute("SELECT * FROM signals WHERE id=?", (signal_id,))
+                    s = await cur.fetchone()
+                if s:
+                    s = dict(s)
+                    sig_link = (
+                        f"策略: {s.get('strategy_name')} 周期: {s.get('interval')} "
+                        f"动作: {s.get('action')} 系统置信度: {s.get('confidence')} "
+                        f"AI验证: {s.get('ai_verdict')}/{s.get('ai_confidence')}"
+                    )
+            except Exception:
+                pass
+
+        # 平仓触发原因 (从最后一个 close leg)
+        close_trigger = "manual_close"
+        if close_legs:
+            last_close = close_legs[-1]
+            # close 触发可能是 sl_hit/tp_hit/trailing_stop/liquidation/pre_liq_reduce/manual
+            # swap_orders 没存 trigger, 但可以从 reject_reason 字段 (实际 fill 单不写 reason)
+            close_trigger = "sl/tp/trailing/manual"  # 简化
+        if liquidated:
+            close_trigger = "liquidation 强平"
+
+        # snapshot
+        snapshot_text = json.dumps({
+            "symbol": symbol, "market": market, "side": pos["pos_side"],
+            "leverage": leverage, "is_swap": 1,
+            "open_price": avg_open, "close_price": avg_close,
+            "klines_count": len(klines), "news_count": news_count,
+            "leg_count": len(legs),
+            "realized_pnl_usd": realized_pnl,
+            "funding_total_usd": funding_total,
+            "total_fee_usd": total_fee,
+            "liquidated": liquidated,
+            "entry_strategy": (s.get("strategy_name") if signal_id and s else ""),
+            "exit_reason": close_trigger,
+        }, ensure_ascii=False)
+
+        # 调 LLM
+        result = await self._llm_swap_deep_review(
+            symbol=symbol, side_cn=side_cn, leverage=leverage,
+            open_price=avg_open, close_price=avg_close,
+            open_at_str=self._fmt_ts(opened_at), close_at_str=self._fmt_ts(closed_at),
+            hold_hours=hold_hours, pnl_pct=pnl_pct, realized=realized_pnl,
+            funding=funding_total, fee=total_fee, liquidated=liquidated,
+            initial_margin=initial_margin,
+            period_high=period_high, period_low=period_low,
+            news_count=news_count, news_summary=news_summary,
+            history_summary=history_summary,
+            sig_link=sig_link, leg_count=len(legs),
+            close_trigger=close_trigger,
+        )
+        if not result or not isinstance(result, dict):
+            logger.warning(f"[swap-review] {symbol}({swap_pos_id[:8]}) LLM 失败 不写半成品")
+            return None
+        if not result.get("grade") or result.get("score") is None:
+            logger.warning(f"[swap-review] {symbol}({swap_pos_id[:8]}) LLM 缺 score/grade 不写")
+            return None
+
+        # 落库 trade_review (is_swap=1)
+        pool_id = "crypto"
+        try:
+            async with self.db.acquire() as conn:
+                await conn.execute("""
+                    INSERT OR REPLACE INTO trade_review
+                    (position_id, symbol, market, pool_id, side,
+                     open_price, close_price, open_at, close_at, hold_hours,
+                     realized_pnl_local, realized_pnl_pct,
+                     period_high, period_low, best_exit_price, missed_profit_pct,
+                     score, grade, decision_score, outcome_score, pros, cons,
+                     entry_analysis, mid_analysis, exit_analysis,
+                     turning_points, improvements, lessons,
+                     primary_lesson, what_if_better,
+                     snapshot_json, llm_model, llm_tokens, reviewed_at,
+                     is_swap, swap_pos_side, swap_leverage, swap_funding_total, swap_total_fee, swap_liquidated)
+                    VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?, ?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?, ?,?, ?,?,?,?,
+                            1, ?, ?, ?, ?, ?)
+                """, (
+                    swap_pos_id, symbol, market, pool_id, pos["pos_side"],
+                    avg_open, avg_close, opened_at, closed_at, hold_hours,
+                    realized_pnl, pnl_pct,
+                    period_high, period_low,
+                    period_high if pos["pos_side"] == "long" else period_low,  # best_exit
+                    0.0,  # missed_pct (简化)
+                    result["score"], result["grade"],
+                    result.get("decision_score"), result.get("outcome_score"),
+                    json.dumps(result.get("pros", []), ensure_ascii=False),
+                    json.dumps(result.get("cons", []), ensure_ascii=False),
+                    result.get("entry_analysis", ""), result.get("mid_analysis", ""), result.get("exit_analysis", ""),
+                    json.dumps(result.get("turning_points", []), ensure_ascii=False),
+                    result.get("improvements", ""),
+                    json.dumps(result.get("lessons", []), ensure_ascii=False),
+                    result.get("primary_lesson", ""), result.get("what_if_better", ""),
+                    snapshot_text, "deepseek-v4-pro", 0, int(time.time()),
+                    pos["pos_side"], leverage, funding_total, total_fee, 1 if liquidated else 0,
+                ))
+                await conn.commit()
+            logger.info(
+                f"[swap-review] ✓ {symbol}({pos['pos_side']}) {leverage}x "
+                f"PnL={realized_pnl:+.2f} ({pnl_pct:+.1f}%) grade={result.get('grade')}"
+            )
+            return result
+        except Exception as e:
+            logger.warning(f"[swap-review] {symbol} 落库失败: {e}", exc_info=True)
+            return None
+
+    async def _llm_swap_deep_review(self, **kw) -> Optional[Dict]:
+        """v12.20.9 合约 LLM 复盘 prompt — 加杠杆/funding/强平特征"""
+        if not self.ai_analyzer:
+            return None
+        liq_label = "💀 强平" if kw["liquidated"] else "正常平仓"
+        prompt = f"""你是加密永续合约量化复盘分析专家。这笔单已闭环, 请做深度复盘。
+
+【交易概况】
+品种: {kw['symbol']} 方向: {kw['side_cn']} 杠杆: {kw['leverage']}x
+开仓: {kw['open_at_str']} @ {kw['open_price']:.4f}
+平仓: {kw['close_at_str']} @ {kw['close_price']:.4f} ({liq_label})
+平仓触发: {kw.get('close_trigger', '?')}
+持仓: {kw['hold_hours']:.1f}h, 操作 {kw['leg_count']} leg
+
+【损益核算】
+初始保证金: ${kw['initial_margin']:.2f}
+已实现 PnL: ${kw['realized']:+.2f}
+funding 累积: ${kw['funding']:+.4f} (8h × N 期)
+手续费累积: -${kw['fee']:.4f}
+**净 PnL %**: {kw['pnl_pct']:+.2f}% (相对保证金)
+
+【期间价格】
+最高: {kw['period_high']:.4f}
+最低: {kw['period_low']:.4f}
+
+【入场信号】
+{kw['sig_link']}
+
+【期间新闻】
+共 {kw['news_count']} 条
+{kw['news_summary'][:1500]}
+
+【同币历史】
+{kw['history_summary'][:800]}
+
+请给出严格 JSON 复盘:
+{{
+  "score": 0-100 综合分,
+  "grade": "A"|"B"|"C"|"D",
+  "decision_score": 0-100 仅看决策合理性,
+  "outcome_score": 0-100 仅看实际收益,
+  "pros": ["决策合理之处 1", "..."],
+  "cons": ["决策不合理之处 1", "..."],
+  "entry_analysis": "入场分析 (杠杆/时机/方向)",
+  "mid_analysis": "持仓中分析 (BE/trailing/funding 累积是否合理)",
+  "exit_analysis": "出场分析 (SL/TP 触发/强平 是否符合预期)",
+  "turning_points": [{{"time": "MM-DD HH:MM", "event": "...", "impact": "..."}}],
+  "improvements": "本次具体改进建议",
+  "lessons": ["可复用教训 1 (含数值阈值优先)", "..."],
+  "primary_lesson": "一句话核心教训",
+  "what_if_better": "若做对一件事, 净 PnL 改善多少 %"
+}}
+
+合约杠杆放大风险 — 评分时多关注:
+- 杠杆是否过高 (强平距离 < 5% 视为高风险)
+- SL 是否被噪音扫损 (浮亏 < 2% 即触 SL 视为过紧)
+- TP/trailing 是否过早锁利错过大行情
+- funding 长期持仓累积成本是否值得
+
+只输出 JSON 不输出其他。
+"""
+        try:
+            return await self.ai_analyzer._call_llm(prompt, max_tokens=4000, path="trade_review_swap")
+        except Exception as e:
+            logger.debug(f"[swap-review-llm] 失败: {e}")
+            return None
+
+    # ──────────────────── 现货复盘 (原有) ────────────────────
+
     async def review_position(self, position_id: str, force: bool = False) -> Optional[Dict]:
         if not force:
             async with self.db.acquire() as conn:
@@ -510,7 +802,48 @@ class TradeReviewer:
                 fail += 1
                 logger.debug(f"[reviewer] {pid[:8]} 失败: {e}")
             await asyncio.sleep(sleep_sec)
-        return {"processed": len(pids), "ok": ok, "fail": fail, "skipped_budget": skipped}
+
+        # v12.20.9: 兜底扫 swap_positions (close/liquidated 但无 trade_review)
+        try:
+            async with self.db.acquire() as conn:
+                cur = await conn.execute("""
+                    SELECT DISTINCT sp.id
+                    FROM swap_positions sp
+                    LEFT JOIN trade_review r ON r.position_id = sp.id AND r.is_swap = 1
+                    WHERE sp.status IN ('closed', 'liquidated')
+                      AND r.id IS NULL
+                    ORDER BY sp.closed_at DESC
+                    LIMIT ?
+                """, (limit,))
+                swap_pids = [r["id"] for r in await cur.fetchall()]
+        except Exception as e:
+            logger.debug(f"[reviewer] swap 扫库失败: {e}")
+            swap_pids = []
+
+        swap_ok = swap_fail = 0
+        for spid in swap_pids:
+            try:
+                if self.ai_analyzer and hasattr(self.ai_analyzer, "_can_call"):
+                    if not await self.ai_analyzer._can_call(hard_stop=False):
+                        break
+            except Exception:
+                pass
+            try:
+                r = await self.review_swap_position(spid, force=False)
+                if r: swap_ok += 1
+                else: swap_fail += 1
+            except Exception as e:
+                swap_fail += 1
+                logger.debug(f"[reviewer-swap] {spid[:8]} 失败: {e}")
+            await asyncio.sleep(sleep_sec)
+
+        return {
+            "processed": len(pids) + len(swap_pids),
+            "ok": ok + swap_ok, "fail": fail + swap_fail,
+            "skipped_budget": skipped,
+            "spot": {"processed": len(pids), "ok": ok, "fail": fail},
+            "swap": {"processed": len(swap_pids), "ok": swap_ok, "fail": swap_fail},
+        }
 
     # ──────────────────── 工具 ────────────────────
 
