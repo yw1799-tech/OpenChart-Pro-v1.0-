@@ -1669,6 +1669,16 @@ class DatabaseManager:
                 "UPDATE watch_pool SET last_news_mention_at=? WHERE symbol=? AND market=? AND status != 'archived'",
                 (ts, symbol, market),
             )
+            # P1 修复 (审计 #6): archived 股也刷新 last_news_mention_at
+            # 之前 archived 后 30 天被新闻提及也不会刷,会被 cron 永久清表 — 死数据
+            # 现在: archived 也刷 mention_at (但不唤醒,除非 importance>=3 走下面逻辑),
+            # 至少让 archived 股因有持续新闻而不被 30d 自动清理
+            await conn.execute(
+                "UPDATE watch_pool SET last_news_mention_at=? "
+                "WHERE symbol=? AND market=? AND status='archived' "
+                "AND (last_news_mention_at IS NULL OR last_news_mention_at < ?)",
+                (ts, symbol, market, ts),
+            )
             # 高分新闻（importance ≥ 3）触发归档股唤醒 + event_score boost
             if importance >= 3:
                 # 唤醒

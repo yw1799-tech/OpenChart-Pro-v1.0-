@@ -285,6 +285,20 @@ DEFAULT_SEEDS = [
         "params": {"market": "hk", "cooldown_sec": 3600},
         "description": "港股同股冷却 1h",
     },
+    # P2 修复 (审计 #26): crypto pool 之前缺默认 trend_block 种子,
+    # 加密 24/7 + 高波动比股票更需要趋势拒单 (例: 4h -5% 跌后 buy 信号常被噪音骗)
+    {
+        "rule_type": "trend_block",
+        "pool_id": "crypto",
+        "params": {"lookback_h": 4, "max_drop_pct": -5.0},
+        "description": "加密 4h 跌幅 ≥ 5% → 拒绝 buy 信号 (24/7 高波动需更高阈值, 防左侧追多)",
+    },
+    {
+        "rule_type": "cooldown_override",
+        "pool_id": "crypto",
+        "params": {"market": "crypto", "cooldown_sec": 1800},
+        "description": "加密同币种冷却 30min (24/7 不同于股票交易时段限制,30min 足够)",
+    },
 ]
 
 

@@ -292,15 +292,17 @@ async def _stock_auto_bind_loop():
     """
     每 5 分钟扫一次候选池自动绑定（news/manual 走即时绑定，这里是兜底）。
     原 30 分钟间隔导致新闻入池后有黑洞期，缩短到 5 分钟 + 入池即绑路径兜底。
+    P1 修复 (审计 #7): 启动后等待时间从 120s 缩到 30s,且兜底周期从 300s 缩到 120s
+    候选池入池后最坏 2min 内会被监控扫到 (vs 之前的 5min)
     """
-    await asyncio.sleep(120)
+    await asyncio.sleep(30)
     while True:
         try:
             if monitor_engine:
                 await monitor_engine.auto_bind_stock_pool()
         except Exception as e:
             logger.warning(f"股票自动绑定循环异常: {e}")
-        await asyncio.sleep(300)
+        await asyncio.sleep(120)
 
 
 async def _pool_pending_retry_loop():
@@ -4633,15 +4635,22 @@ async def place_swap_order(body: Dict[str, Any]):
     pos_side = body.get("pos_side")
     if not symbol or side not in ("buy", "sell") or pos_side not in ("long", "short"):
         raise HTTPException(status_code=400, detail="symbol/side(buy|sell)/pos_side(long|short) 必填")
+    intent = body.get("intent", "open")
+    order_type = body.get("order_type", "limit")
+    # P2 修复 (审计 #12): 禁止 close+limit 组合 — pending close limit 延迟 fill 时
+    # 持仓可能已被 SL/TP/手动平掉,fill 时 _mark_filled 会创建反向新仓 (虽 #4 已加保护拒单,但这里直接禁止更安全)
+    if intent in ("close", "reduce") and order_type == "limit":
+        raise HTTPException(status_code=400,
+            detail=f"intent={intent} 必须用 order_type='market' (限价 close/reduce 易因延迟 fill 创建错误新仓)")
     result = await swap_engine.place_order(
         symbol=symbol,
         side=side,
         pos_side=pos_side,
-        order_type=body.get("order_type", "limit"),
+        order_type=order_type,
         qty=body.get("qty"),
         margin_usd=body.get("margin_usd"),
         leverage=body.get("leverage"),
-        intent=body.get("intent", "open"),
+        intent=intent,
     )
     if not result.get("ok"):
         raise HTTPException(status_code=400, detail=result.get("reason", "下单失败"))
@@ -4650,7 +4659,9 @@ async def place_swap_order(body: Dict[str, Any]):
 
 @swap_router.post("/close/{position_id}")
 async def close_swap_position(position_id: str):
-    """手动平仓 (反向市价单)"""
+    """手动平仓 (反向市价单)
+    P1 修复 (审计 #3): 平仓前先取消同向 pending open/add 限价单,避免后续 fill 创建新仓
+    """
     if swap_engine is None:
         raise HTTPException(status_code=503, detail="swap_engine 未启动")
     async with db.acquire() as conn:
@@ -4661,6 +4672,8 @@ async def close_swap_position(position_id: str):
     pos = dict(row)
     if pos["status"] != "open" or pos["qty"] <= 0:
         raise HTTPException(status_code=400, detail=f"持仓状态={pos['status']}, qty={pos['qty']}")
+    # P1 修复 (审计 #3): 先取消同向 pending limit (open/add intent)
+    await swap_engine._cancel_pending_for_position(pos["symbol"], pos["pos_side"])
     side = "sell" if pos["pos_side"] == "long" else "buy"
     result = await swap_engine.place_order(
         symbol=pos["symbol"].replace("-SWAP", ""),

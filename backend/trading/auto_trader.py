@@ -133,6 +133,17 @@ class AutoTrader:
         self._config: Dict[str, Any] = dict(DEFAULT_CONFIG)
         self._lock = asyncio.Lock()             # 防并发决策
         self._bg_tasks: set = set()
+        # P3 修复 (审计 #23): position-level lock — 防 _check_position_targets 与
+        # _check_risk_rules_on_position 同时改同一持仓导致双重减仓
+        self._position_locks: Dict[str, asyncio.Lock] = {}
+
+    def _pos_lock(self, position_id: str) -> asyncio.Lock:
+        """按持仓 ID 获取/创建 lock,串行化同一持仓的所有操作"""
+        lock = self._position_locks.get(position_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._position_locks[position_id] = lock
+        return lock
 
     def _spawn_bg(self, coro):
         """Fire-and-forget 后台任务（用于按需诊断等），保留引用防 GC。"""
@@ -1378,6 +1389,9 @@ class AutoTrader:
         initial = account.get("initial_capital_usd", 10000)
         order_usd = initial * pct
         if order_usd < cfg["min_order_usd"]:
+            # P3 修复 (审计 #22): 之前静默 return,用户看不到为何被吞;改记 _log_rejected
+            await self._log_rejected(sig, "open",
+                f"单笔金额 ${order_usd:.2f} 低于最小下单 ${cfg['min_order_usd']:.2f}（pct={pct:.3f}）")
             return
 
         # 单股上限检查（v12.13 双层）
@@ -1429,10 +1443,13 @@ class AutoTrader:
             await self._log_rejected(sig, "open", f"汇率获取失败: {e}")
             return
         if fx <= 0:
+            # P1 修复 (审计 #8): 之前静默 return,用户看不到拒单
+            await self._log_rejected(sig, "open", f"汇率非法 fx={fx} ({currency})")
             return
         local_amount = order_usd / fx
         qty = local_amount / price
         if qty <= 0:
+            await self._log_rejected(sig, "open", f"换算后数量非法 qty={qty} (local={local_amount}, price={price})")
             return
         # 按市场最小手数规整
         qty = self._normalize_qty(market, symbol, qty)
@@ -1556,6 +1573,8 @@ class AutoTrader:
             await self._log_rejected(sig, "add", f"加仓汇率获取失败: {e}")
             return
         if fx <= 0:
+            # P1 修复 (审计 #8): 加仓路径之前静默 return,补 _log_rejected
+            await self._log_rejected(sig, "add", f"加仓汇率非法 fx={fx} ({currency})")
             return
         qty = (order_usd / fx) / price
         # 按市场最小手数规整加仓数量
@@ -1889,6 +1908,29 @@ class AutoTrader:
                     f"price={result.get('limit_price'):.4f} qty={result.get('qty'):.4f} "
                     f"lev={result.get('leverage')}x order={result.get('order_id','')[:8]}"
                 )
+                # P2 修复 (审计 #9): pending limit 期间冷却失效 — 镜像写一条 auto_trade_log (status='pending')
+                # 让后续同币种信号的 _check_cooldown / _check_daily_limit 能命中,避免 60min 内重复挂单
+                # 注: fill 时 _mark_filled 仍会写 status='executed' 的正式记录,两者不冲突
+                if result.get("status") == "pending":
+                    try:
+                        async with self.db.acquire() as conn:
+                            await conn.execute(
+                                """INSERT INTO auto_trade_log (symbol, market, action, quantity, price,
+                                   amount_usd, fx_rate, trigger_type, trigger_detail, reason,
+                                   status, position_id, traded_at)
+                                   VALUES (?, 'crypto', 'open', ?, ?, ?, 1.0, 'swap_pending', ?, ?,
+                                           'executed', NULL, ?)""",
+                                (symbol, result.get("qty") or 0, result.get("limit_price") or 0,
+                                 (result.get("qty") or 0) * (result.get("limit_price") or 0) * 0.01,
+                                 json.dumps({"pos_side": pos_side, "leverage": result.get("leverage"),
+                                             "swap_order_id": result.get("order_id"), "pending": True},
+                                            ensure_ascii=False),
+                                 f"swap pending limit {pos_side} @{result.get('limit_price'):.4f}",
+                                 int(time.time())),
+                            )
+                            await conn.commit()
+                    except Exception as e:
+                        logger.debug(f"[swap-route] pending log 写入失败: {e}")
             else:
                 logger.info(f"[swap-route] {symbol} {action} 拒单: {result.get('reason')}")
         except Exception as e:
@@ -1944,12 +1986,14 @@ class AutoTrader:
             if not is_market_executable(pos["market"]):
                 continue
             try:
-                # v12.15 教训规则巡检：drawdown_force_close 类规则优先于普通 TP/SL
-                # 命中即强平，跳过本根 K 线的常规检查
-                handled_by_risk_rule = await self._check_risk_rules_on_position(pos)
-                if handled_by_risk_rule:
-                    continue
-                await self._check_position_targets(pos)
+                # P3 修复 (审计 #23): position-level lock 防风险规则与 TP/SL 同时改同一持仓
+                async with self._pos_lock(pos["id"]):
+                    # v12.15 教训规则巡检：drawdown_force_close 类规则优先于普通 TP/SL
+                    # 命中即强平，跳过本根 K 线的常规检查
+                    handled_by_risk_rule = await self._check_risk_rules_on_position(pos)
+                    if handled_by_risk_rule:
+                        continue
+                    await self._check_position_targets(pos)
             except Exception as e:
                 logger.debug(f"[tp-sl] {pos['symbol']} 检查失败: {e}")
         # v12.14 (A3 修复): 同时扫 AI advice 表，把 reduce/close 建议落到实际动作
@@ -2825,6 +2869,25 @@ class AutoTrader:
         new_qty = pos["quantity"] - qty_to_close
         # 精度问题：接近 0 视为清零，并按"平仓"口径输出整单盈亏
         is_fully_closed = new_qty <= max(pos["quantity"] * 1e-6, 1e-9)
+        # P2 修复 (审计 #16): 减仓后剩余 qty < 最小手数 → 自动全平,避免僵尸仓位
+        # 例: 0700.HK 持仓 200 股, reduce 30% → new_qty=140 (合法 1 手 100); reduce 50% → 100 (合法);
+        # 但若 reduce 60% → 80 < 100 (1 手) → 应直接全平
+        if not is_fully_closed:
+            LOT = {"cn": 100, "hk": 100, "us": 1}
+            min_lot = LOT.get(market, 1)
+            if 0 < new_qty < min_lot:
+                logger.info(f"[reduce-zombie] {symbol}({market}) 减仓后 new_qty={new_qty} < 最小 {min_lot} 手 → 升级为全平")
+                qty_to_close = pos["quantity"]
+                new_qty = 0
+                is_fully_closed = True
+                # 重算 proceed_usd (按全部 qty)
+                if side == "long":
+                    proceed_usd = qty_to_close * price * fx
+                else:
+                    margin_release = pos.get("avg_cost", 0) * qty_to_close * fx
+                    pnl = (avg_cost - price) * qty_to_close * fx
+                    raw = margin_release + pnl
+                    proceed_usd = max(0.0, raw)
         async with self.db.acquire() as conn:
             if is_fully_closed:
                 await conn.execute("DELETE FROM positions WHERE id=?", (pos["id"],))

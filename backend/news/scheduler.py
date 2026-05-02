@@ -384,6 +384,7 @@ class NewsScheduler:
             if market not in ("us", "hk", "cn"):
                 continue  # 加密币种跳过 (DB CHECK 也会拒绝)
             # 质量硬筛选（严格）
+            # P2 修复 (审计 #17): is_eligible 模块崩溃时之前默认放行 → 改为异常时拒入
             try:
                 from backend.watchpool.quality_filter import is_eligible
                 ok, reason = await is_eligible(self.db, sym, market)
@@ -393,7 +394,8 @@ class NewsScheduler:
                         await self._enqueue_pending(sym, market, "news", score, news.get("title", "")[:80])
                     continue
             except Exception as e:
-                logger.debug(f"[news-filter] 调用异常 {sym}: {e}")
+                logger.warning(f"[news-filter] is_eligible 异常 {sym}: {e} → 拒入(保守策略)")
+                continue  # 异常时拒入,不放行
             try:
                 pool_id = await self.db.add_to_pool(
                     symbol=sym,
@@ -411,8 +413,12 @@ class NewsScheduler:
                     },
                 )
                 added += 1
-                # 新闻入池即绑策略（消除 30 分钟黑洞）：异步 fire-and-forget
-                self._spawn(self._bind_strategies_now(sym, market))
+                # P1 修复 (审计 #5): 之前 fire-and-forget 在池满时会被挤掉永不监控 → 改 await
+                # 同步等 bind 完成后再处理下一条新闻,30 分钟黑洞消除
+                try:
+                    await self._bind_strategies_now(sym, market)
+                except Exception as e:
+                    logger.warning(f"[news-bind] {sym}/{market} 绑定失败 (5min auto_bind 兜底): {e}")
             except ValueError:
                 pass
             except Exception as e:

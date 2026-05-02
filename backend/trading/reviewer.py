@@ -192,11 +192,13 @@ class TradeReviewer:
                 if await cur.fetchone():
                     return None
 
+        # P2 修复 (审计 #14): in-flight key 用 (is_swap, pid) 元组,避免 spot/swap UUID 撞集合
+        inflight_key = ("swap", swap_pos_id)
         async with self._inflight_lock:
-            if swap_pos_id in self._inflight_pids:
+            if inflight_key in self._inflight_pids:
                 logger.info(f"[swap-review] {swap_pos_id[:8]} 复盘中 跳过")
                 return None
-            self._inflight_pids.add(swap_pos_id)
+            self._inflight_pids.add(inflight_key)
         try:
             try:
                 return await self._do_review_swap_position(swap_pos_id, force)
@@ -209,7 +211,7 @@ class TradeReviewer:
                 return None
         finally:
             async with self._inflight_lock:
-                self._inflight_pids.discard(swap_pos_id)
+                self._inflight_pids.discard(inflight_key)
 
     async def _do_review_swap_position(self, swap_pos_id: str, force: bool) -> Optional[Dict]:
         """v12.20.9 合约持仓复盘核心 — 读 swap_*, 调 LLM, 写 trade_review"""
@@ -287,8 +289,10 @@ class TradeReviewer:
             period_low = min(avg_open, avg_close)
 
         # 拉新闻 + 同股历史
-        news_count, news_summary = await self._fetch_news_summary(symbol, opened_at, closed_at)
-        history_summary = await self._fetch_history_summary(symbol, market, swap_pos_id)
+        # P0/P1 修复 (审计 #1 #2): 之前误调不存在的 _fetch_news_summary 让所有 swap 复盘 100% 抛 AttributeError 失败;
+        # 第三参数也错传 UUID(应为时间戳)。修正为现货同名方法 + closed_at。
+        news_count, news_summary = await self._fetch_news_during(symbol, opened_at, closed_at)
+        history_summary = await self._fetch_history_summary(symbol, market, closed_at)
 
         # 触发的 signal
         signal_id = legs[0].get("signal_id") if legs else None
@@ -478,11 +482,13 @@ funding 累积: ${kw['funding']:+.4f} (8h × N 期)
                     return None
 
         # v12.11: in-flight lock 防并发同 pid 双跑（batch + manual + auto loop 同时触发会烧双倍 LLM）
+        # P2 修复 (审计 #14): 用 ("spot", pid) 元组,避免与 swap UUID 撞集合
+        inflight_key = ("spot", position_id)
         async with self._inflight_lock:
-            if position_id in self._inflight_pids:
+            if inflight_key in self._inflight_pids:
                 logger.info(f"[review] {position_id[:8]} 正在复盘中（in-flight），跳过本次")
                 return None
-            self._inflight_pids.add(position_id)
+            self._inflight_pids.add(inflight_key)
         try:
             # v12.19.1 (P3-B): 全局 try/except 兜底，避免任何 unhandled 异常
             # 让该次 review 永久失败（4h batch loop 下次还会重试）
@@ -497,7 +503,7 @@ funding 累积: ${kw['funding']:+.4f} (8h × N 期)
                 return None
         finally:
             async with self._inflight_lock:
-                self._inflight_pids.discard(position_id)
+                self._inflight_pids.discard(inflight_key)
 
     async def _do_review_position(self, position_id: str, force: bool) -> Optional[Dict]:
         """实际复盘逻辑（被 in-flight lock 包裹的内层）。"""
@@ -692,10 +698,13 @@ funding 累积: ${kw['funding']:+.4f} (8h × N 期)
         wins = sum(1 for r in reviews if (r["realized_pnl_pct"] or 0) > 0)
         losses = len(reviews) - wins
         win_rate = wins / len(reviews) if reviews else 0
-        # 折算 USD（简单：本币 × fx 估算）
+        # P2 修复 (审计 #15): 区分 spot vs swap 统计,因 swap 的 pnl 是 USD,spot 是本币需 fx 折算
+        spot_reviews = [r for r in reviews if not (r.get("is_swap") or 0)]
+        swap_reviews = [r for r in reviews if (r.get("is_swap") or 0)]
+        # 折算 USD（spot：本币 × fx；swap：本身就是 USD/USDT,fx_to_usd=1）
         from backend.trading.fx import get_rate
         total_pnl_usd = 0
-        for r in reviews:
+        for r in spot_reviews:
             mkt = r["market"]
             local = r["realized_pnl_local"] or 0
             try:
@@ -704,13 +713,16 @@ funding 累积: ${kw['funding']:+.4f} (8h × N 期)
             except Exception:
                 fx_to_usd = 1.0
             total_pnl_usd += local * fx_to_usd
+        for r in swap_reviews:
+            # swap 的 realized_pnl_local 字段实际就是 USD (USDT≈USD), 不需 fx
+            total_pnl_usd += r["realized_pnl_local"] or 0
         # 平均评级
         grade_score = {"A": 95, "B": 80, "C": 60, "D": 40}
         avg_score = sum(grade_score.get(r["grade"], 60) for r in reviews) / len(reviews)
         avg_grade = "A" if avg_score >= 90 else "B" if avg_score >= 70 else "C" if avg_score >= 50 else "D"
-        # 市场分布
+        # 市场分布 (swap 计入 crypto-swap 区分现货 crypto)
         from collections import Counter
-        mc = Counter(r["market"] for r in reviews)
+        mc = Counter(("crypto-swap" if (r.get("is_swap") or 0) else r["market"]) for r in reviews)
         market_dist = ", ".join(f"{m}={c}" for m,c in mc.most_common())
 
         top_wins = sorted(reviews, key=lambda r: r["realized_pnl_pct"] or 0, reverse=True)[:3]

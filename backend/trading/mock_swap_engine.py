@@ -283,9 +283,10 @@ class MockSwapEngine:
         margin = nominal_usd / leverage
 
         # 检查保证金充足
+        # P2 修复 (审计 #11): add 加仓也要检查保证金,避免 balance 负值
         acct = await self.get_account()
-        if intent == "open" and margin > acct["balance_usd"]:
-            return {"ok": False, "reason": f"保证金不足 (需 ${margin:.2f}, 余 ${acct['balance_usd']:.2f})"}
+        if intent in ("open", "add") and margin > acct["balance_usd"]:
+            return {"ok": False, "reason": f"保证金不足 (需 ${margin:.2f}, 余 ${acct['balance_usd']:.2f}, intent={intent})"}
 
         # 写订单
         order_id = str(uuid.uuid4())
@@ -475,6 +476,19 @@ class MockSwapEngine:
                 ct_val = (await self._get_specs(order["symbol"]) or {}).get("ctVal", 0.01)
                 # 判断: 加仓 / 减仓 / 开新 / 平仓
                 intent = order["intent"]
+                # P1 修复 (审计 #4): pos_row=None + intent=close/reduce → 拒单, 不能误开新仓
+                # 场景: pending close limit 单延迟 fill 时,持仓已被其它路径平掉 → 之前会创建一个反向新仓
+                if pos_row is None and intent not in ("open", "add"):
+                    await conn.execute(
+                        "UPDATE swap_orders SET status='rejected', reject_reason=? WHERE id=?",
+                        (f"intent={intent} 但目标持仓不存在 (已平/未开) — 拒单避免误开新仓", order["id"]),
+                    )
+                    await conn.commit()
+                    logger.warning(
+                        f"[swap-fill] REJECT {order['pos_side']} {order['symbol']} intent={intent} "
+                        f"order={order['id'][:8]}: 持仓不存在,拒绝创建新仓"
+                    )
+                    return {"ok": False, "reason": f"intent={intent} 但目标持仓不存在"}
                 if pos_row is None:
                     # 开新仓
                     pos_id = str(uuid.uuid4())
@@ -797,7 +811,9 @@ class MockSwapEngine:
 
     async def _partial_reduce(self, pos: Dict, ratio: float, reason_tag: str,
                                reason_text: str, set_flag: str):
-        """v12.20.6 分批减仓 (T1/T2 触发) — 减 ratio% qty + 标记 set_flag=1"""
+        """v12.20.6 分批减仓 (T1/T2 触发) — 减 ratio% qty + 标记 set_flag=1
+        P2 修复 (审计 #10): place_order 失败时不能设 flag,否则下次扫描不会重试,T1/T2 永远漏触发
+        """
         reduce_qty = pos["qty"] * ratio
         side = "sell" if pos["pos_side"] == "long" else "buy"
         result = await self.place_order(
@@ -806,7 +822,10 @@ class MockSwapEngine:
             order_type="market", qty=reduce_qty,
             leverage=pos["leverage"], intent="reduce",
         )
-        # 标 flag (避免重复)
+        # 仅在下单成功时才标 flag — 失败下次再扫还能重试
+        if not result or not result.get("ok"):
+            logger.warning(f"[swap-{reason_tag}] {pos['pos_side']} {pos['symbol']} 减仓失败 不设 flag,下轮重试: {result.get('reason') if result else 'no-result'}")
+            return
         try:
             async with self._lock:
                 async with self.db.acquire() as conn:
@@ -860,7 +879,9 @@ class MockSwapEngine:
                 if not latest or latest["status"] != "open" or (latest["qty"] or 0) <= 0:
                     return  # 已被其他路径关闭
                 # 实现 PnL = -保证金 (强平亏完保证金)
-                realized = -float(latest["margin_usd"] or pos["margin_usd"])
+                # P3 修复 (审计 #19): 用 latest.margin_usd (锁内最新值),log 也用同值,避免与 stale pos 副本不一致
+                latest_margin = float(latest["margin_usd"] or pos["margin_usd"])
+                realized = -latest_margin
                 await conn.execute(
                     """UPDATE swap_positions SET qty=0, status='liquidated',
                        realized_pnl_usd=realized_pnl_usd+?, margin_usd=0, closed_at=? WHERE id=?""",
@@ -870,12 +891,12 @@ class MockSwapEngine:
                 await conn.execute(
                     """UPDATE swap_account SET total_margin_usd=total_margin_usd-?,
                        total_pnl_usd=total_pnl_usd+?, updated_at=? WHERE id=1""",
-                    (pos["margin_usd"], realized, now),
+                    (latest_margin, realized, now),
                 )
                 await conn.commit()
             logger.warning(
                 f"[swap-LIQ] {pos['pos_side']} {pos['symbol']} mark={mark:.4f} <= liq={pos['liq_price']:.4f} "
-                f"→ 强平 损失 ${pos['margin_usd']:.2f}"
+                f"→ 强平 损失 ${latest_margin:.2f}"
             )
             # v12.20.9: 强平也要复盘 (学习强平教训)
             self._spawn_review(pos["id"])
@@ -940,12 +961,17 @@ class MockSwapEngine:
                         rate = float(f["fundingRate"])
                         mark = await okx.get_mark_price(p["symbol"]) or p["avg_open_price"]
                         nominal = p["qty"] * p["contract_size"] * mark
+                        # P3 修复 (审计 #20): 服务停 >16h 重启时,补齐多个 missed funding intervals
+                        # 例: 停了 24h → missed=3 期; 之前只补 1 期会少结算
+                        missed_periods = max(1, int((now - (p["last_funding_at"] or now)) / config.SWAP_FUNDING_INTERVAL_SEC))
                         # long: 付 funding 给 short; rate>0 时多付空收
-                        funding_fee = nominal * rate
+                        funding_fee = nominal * rate * missed_periods
                         if p["pos_side"] == "long":
                             net = -funding_fee  # 多头付 (rate>0 时为负)
                         else:
                             net = funding_fee   # 空头收
+                        if missed_periods > 1:
+                            logger.info(f"[swap-funding] {p['symbol']} 补齐 {missed_periods} 期 (服务中断/启动滞后)")
                         async with self.db.acquire() as conn:
                             await conn.execute(
                                 """UPDATE swap_positions SET funding_fee_total_usd=funding_fee_total_usd+?,
