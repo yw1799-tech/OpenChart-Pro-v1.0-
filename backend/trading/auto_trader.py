@@ -643,13 +643,13 @@ class AutoTrader:
         local_midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
         day_start = int(local_midnight.timestamp())
         async with self.db.acquire() as conn:
-            # v12.20.11: 同时计 swap_pending (与 _check_cooldown 一致),pending 也占额度防反复挂单
+            # v12.20.11 hotfix: daily_limit **只**计已 fill 的 (status='executed'),
+            # 不能加 swap_pending — 一笔 swap 订单 pending+fill 各 1 条 log,
+            # 加 pending 会让一笔订单消耗 2 次额度 (实际 5 笔成交就误判达 10 次上限)
+            # 冷却 (_check_cooldown) 仍算 pending — 防短期反复挂单, 但 daily limit 应只看真实成交
             cur = await conn.execute(
                 "SELECT COUNT(*) AS n FROM auto_trade_log "
-                "WHERE symbol=? AND market=? AND traded_at>=? AND ("
-                " status='executed' "
-                " OR (status='pending' AND trigger_type='swap_pending')"
-                ")",
+                "WHERE symbol=? AND market=? AND traded_at>=? AND status='executed'",
                 (symbol, market, day_start),
             )
             n = (await cur.fetchone())["n"]
