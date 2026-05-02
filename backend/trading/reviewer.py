@@ -275,11 +275,27 @@ class TradeReviewer:
         entry_news = await self._fetch_news_around(symbol, open_at, hours_window=24)
 
         # 8. 调 LLM 深度复盘
+        # v12.19.4 (P1): 补 entry_strategy + exit_reason 到 snapshot_json
+        # 之前空白导致复盘 SQL 无法按"策略"和"出场原因"归因
+        entry_strategy_name = ""
+        try:
+            td_open = json.loads(legs[0].get("trigger_detail") or "{}")
+            sid = td_open.get("signal_id")
+            if sid:
+                async with self.db.acquire() as conn:
+                    cur = await conn.execute("SELECT strategy_name FROM signals WHERE id=?", (sid,))
+                    r = await cur.fetchone()
+                    if r:
+                        entry_strategy_name = r["strategy_name"] or ""
+        except Exception:
+            pass
         snapshot_text = json.dumps({
             "symbol": symbol, "market": market, "side": side,
             "open_price": open_price, "close_price": close_price,
             "klines_count": len(klines), "news_count": news_count,
             "leg_count": len(legs), "advice_count": advice_history.count("\n"),
+            "entry_strategy": entry_strategy_name,
+            "exit_reason": close_trigger or "",
         }, ensure_ascii=False)
 
         result = await self._llm_deep_review(
@@ -1322,10 +1338,10 @@ class TradeReviewer:
 
     async def _auto_adopt_eligible_lessons(self) -> int:
         """v12.15 扫描所有 active 的 lesson，对满足 auto_adopt 条件的自动写入 risk_rules。
-        v12.15.1 多条件 OR — 单一阈值过严（昨晚 worst 仅 -3.58% 永远不到 -5）：
-          1) worst < -5% AND score >= 10 AND has_params  — 血亏单笔
-          2) score >= 15 AND avg_pnl < -2% AND has_params — 合并后高频证据
-          3) occurrences >= 8 AND avg_pnl < -1% AND has_params — 反复踩雷
+        v12.19.4 阈值放宽 (实战发现 QCOM 14.95/差 0.05, DOGE 9.68 等关键教训永远卡在边缘):
+          1) worst <= -3% AND score >= 10 AND has_params  — 单笔亏 3%+ 已严重 (原 -5%)
+          2) score >= 12 AND avg_pnl <= -2% AND has_params — 让 14.95 通过 (原 15)
+          3) occurrences >= 5 AND avg_pnl <= -1% AND has_params — 5 次反复踩雷可信 (原 8)
         三条件任一命中即自动采纳；翻译失败的（_heuristic_lesson_to_rule 返回 None）仍跳过。
         """
         now = int(time.time())
@@ -1338,9 +1354,9 @@ class TradeReviewer:
                        WHERE status='active' AND has_specific_params=1
                          AND id NOT IN (SELECT source_lesson_id FROM risk_rules WHERE source_lesson_id IS NOT NULL)
                          AND (
-                              (worst_pnl_pct <= -5.0 AND adoption_score >= 10)
-                           OR (adoption_score >= 15 AND avg_pnl_pct <= -2.0)
-                           OR (occurrences >= 8 AND avg_pnl_pct <= -1.0)
+                              (worst_pnl_pct <= -3.0 AND adoption_score >= 10)
+                           OR (adoption_score >= 12 AND avg_pnl_pct <= -2.0)
+                           OR (occurrences >= 5 AND avg_pnl_pct <= -1.0)
                          )
                        ORDER BY adoption_score DESC LIMIT 10"""
                 )
