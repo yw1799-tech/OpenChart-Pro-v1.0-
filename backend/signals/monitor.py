@@ -264,7 +264,10 @@ class MonitorEngine:
             → 弥补 yfinance 1D K 线只在闭市后更新的缺陷，盘中也能触发策略信号
         """
         try:
-            items = await self.db.get_pool_items(limit=500)
+            # v12.20.14: limit 500 → 2000 修复"低分股漏监控"bug
+            # 候选池实际 750+ 只活跃,500 截断会按 score 降序漏掉 ~250 只低分股
+            # 全市场上限 1450 (美 650+A 600+港 200), 2000 留 buffer
+            items = await self.db.get_pool_items(limit=2000)
         except Exception as e:
             logger.debug(f"auto_bind_stock_pool 拉取候选池失败: {e}")
             return 0

@@ -111,7 +111,8 @@ class SymbolRegistry:
 
             # 2. watch_pool
             try:
-                items = await db.get_pool_items(limit=500)
+                # v12.20.14: limit 500 → 2000 (符号注册覆盖全池, 新闻识别不漏低分股)
+                items = await db.get_pool_items(limit=2000)
                 for it in items:
                     sym = it["symbol"]
                     market = it["market"]

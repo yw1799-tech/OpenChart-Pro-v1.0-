@@ -339,7 +339,8 @@ async def rescore_pool_items(db) -> Dict[str, int]:
     import json as _json
     from backend.watchpool.quality_filter import _load_any
 
-    items = await db.get_pool_items(status='all', limit=500)
+    # v12.20.14: limit 500 → 2000 (评分重算覆盖全池,250 只低分股之前停滞导致排名失真)
+    items = await db.get_pool_items(status='all', limit=2000)
     items = [it for it in items if it.get('status') != 'archived']
     updated = failed = 0
     now_ms = int(time.time() * 1000)

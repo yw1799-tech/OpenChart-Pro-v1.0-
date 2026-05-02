@@ -433,9 +433,12 @@ const Watchpool = (function () {
 
   async function refresh() {
     try {
+      // v12.20.14: limit 300 → 1500
+      // 候选池实际规模 750+ (美 251 / A 361 / 港 138 等), 300 截断导致用户看到的不全
+      // 1500 容纳全市场上限 (650+600+200=1450 + buffer)
       const url = _viewMode === 'archived'
-        ? '/api/pool?limit=300&status=archived'
-        : '/api/pool?limit=300';
+        ? '/api/pool?limit=1500&status=archived'
+        : '/api/pool?limit=1500';
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const d = await resp.json();
