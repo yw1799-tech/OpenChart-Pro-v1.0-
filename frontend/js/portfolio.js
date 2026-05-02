@@ -71,7 +71,8 @@ const Portfolio = (function () {
           <button class="port-view-tab active" data-view="positions" style="padding:4px 12px;font-size:12px;border:1px solid var(--border-secondary);border-radius:4px 0 0 4px;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">💼 当前持仓</button>
           <button class="port-view-tab" data-view="history" style="padding:4px 12px;font-size:12px;border:1px solid var(--border-secondary);border-left:none;background:transparent;color:var(--text-secondary);cursor:pointer;" title="按单分组：每个 position 一张卡，包含从开到现在的所有 开/加/减/平 操作 + 盈亏">📊 按单历史</button>
           <button class="port-view-tab" data-view="fills" style="padding:4px 12px;font-size:12px;border:1px solid var(--border-secondary);border-left:none;background:transparent;color:var(--text-secondary);cursor:pointer;" title="成交流水：时间倒序显示所有已成交的 开/加/减/平 记录">📜 成交流水</button>
-          <button class="port-view-tab" data-view="rejects" style="padding:4px 12px;font-size:12px;border:1px solid var(--border-secondary);border-left:none;border-radius:0 4px 4px 0;background:transparent;color:var(--text-secondary);cursor:pointer;" title="被拒绝的下单尝试（如加仓阈值、冷却期、诊断缺失等）">⏸ 拒单</button>
+          <button class="port-view-tab" data-view="rejects" style="padding:4px 12px;font-size:12px;border:1px solid var(--border-secondary);border-left:none;background:transparent;color:var(--text-secondary);cursor:pointer;" title="被拒绝的下单尝试（如加仓阈值、冷却期、诊断缺失等）">⏸ 拒单</button>
+          <button class="port-view-tab" data-view="swap" style="padding:4px 12px;font-size:12px;border:1px solid var(--border-secondary);border-left:none;border-radius:0 4px 4px 0;background:transparent;color:var(--text-secondary);cursor:pointer;" title="加密永续合约模拟交易 (真 OKX 数据 + 模拟资金 + 杠杆 + 5 阶段动态 SL/TP)">⚡ 合约</button>
         </div>
         <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-left:10px;padding:3px 10px;background:var(--bg-tertiary);border-radius:14px;cursor:pointer;" title="开启后 AI confirm 信号 + rating=buy 会自动模拟下单">
           <input type="checkbox" id="auto-trade-toggle" style="margin:0;">
@@ -139,6 +140,7 @@ const Portfolio = (function () {
         if (mode === 'history') _renderAutoTradeLog();
         else if (mode === 'fills') _renderFills();
         else if (mode === 'rejects') _renderRejects();
+        else if (mode === 'swap') _renderSwap();
         else render();
       });
     });
@@ -643,6 +645,220 @@ const Portfolio = (function () {
           </thead>
           <tbody>${rows}</tbody>
         </table>`;
+    } catch (e) {
+      list.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-down);">加载失败: ${e.message}</div>`;
+    }
+  }
+
+  // v12.20.8: 加密合约持仓视图
+  async function _renderSwap() {
+    const list = document.querySelector('.bottom-pane[data-pane="portfolio"] .portfolio-list');
+    if (!list) return;
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-tertiary);">⏳ 加载合约数据...</div>';
+    try {
+      const [acctR, posR, ordR] = await Promise.all([
+        fetch('/api/swap/account').then(r => r.json()),
+        fetch('/api/swap/positions?status=open').then(r => r.json()),
+        fetch('/api/swap/orders?limit=20').then(r => r.json()),
+      ]);
+      const mode = acctR.mode || 'spot_mock';
+      const isSwap = mode === 'swap_mock';
+      const positions = posR.items || [];
+      const orders = ordR.items || [];
+
+      const fmt = (v, d=2) => v == null ? '—' : Number(v).toLocaleString(undefined,{maximumFractionDigits:d});
+      const fmtPnl = (v) => {
+        if (v == null) return '—';
+        const cls = v >= 0 ? 'color:var(--color-up)' : 'color:var(--color-down)';
+        return `<span style="${cls}">${v >= 0 ? '+' : ''}${fmt(v)}</span>`;
+      };
+
+      const modeBadge = isSwap
+        ? '<span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:10px;font-size:11px;">⚡ swap_mock 已启用</span>'
+        : '<span style="background:rgba(248,81,73,0.18);color:#f85149;padding:2px 8px;border-radius:10px;font-size:11px;">spot_mock 模式 — 合约引擎已加载但未启用</span>';
+
+      const sumUpnl = positions.reduce((s,p) => s + (p.unrealized_pnl_usd || 0), 0);
+      const sumFunding = positions.reduce((s,p) => s + (p.funding_fee_total_usd || 0), 0);
+      const sumFee = positions.reduce((s,p) => s + (p.total_fee_usd || 0), 0);
+
+      const accountHtml = `
+        <div style="padding:14px 16px;background:linear-gradient(180deg,var(--bg-secondary) 0%,var(--bg-primary) 100%);border-bottom:1px solid var(--border-secondary);">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+            <h3 style="margin:0;font-size:16px;">⚡ 加密合约模拟交易</h3>
+            ${modeBadge}
+            ${!isSwap ? '<span style="color:var(--text-tertiary);font-size:11px;">通过 .env CRYPTO_TRADING_MODE=swap_mock 启用</span>' : ''}
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;">
+            <div style="background:var(--bg-card);padding:10px 12px;border-radius:8px;">
+              <div style="font-size:11px;color:var(--text-tertiary);">余额</div>
+              <div style="font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;">$${fmt(acctR.balance_usd || 0)}</div>
+            </div>
+            <div style="background:var(--bg-card);padding:10px 12px;border-radius:8px;">
+              <div style="font-size:11px;color:var(--text-tertiary);">占用保证金</div>
+              <div style="font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;">$${fmt(acctR.total_margin_usd || 0)}</div>
+            </div>
+            <div style="background:var(--bg-card);padding:10px 12px;border-radius:8px;">
+              <div style="font-size:11px;color:var(--text-tertiary);">浮动 PnL</div>
+              <div style="font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;">${fmtPnl(sumUpnl)}</div>
+            </div>
+            <div style="background:var(--bg-card);padding:10px 12px;border-radius:8px;">
+              <div style="font-size:11px;color:var(--text-tertiary);">累计已实现</div>
+              <div style="font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;">${fmtPnl(acctR.total_pnl_usd || 0)}</div>
+            </div>
+            <div style="background:var(--bg-card);padding:10px 12px;border-radius:8px;">
+              <div style="font-size:11px;color:var(--text-tertiary);">funding 累积</div>
+              <div style="font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;">${fmtPnl(sumFunding)}</div>
+            </div>
+            <div style="background:var(--bg-card);padding:10px 12px;border-radius:8px;">
+              <div style="font-size:11px;color:var(--text-tertiary);">手续费累积</div>
+              <div style="font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;">-$${fmt(sumFee)}</div>
+            </div>
+          </div>
+        </div>`;
+
+      // 持仓表格
+      let posHtml = '';
+      if (positions.length) {
+        const rows = positions.map(p => {
+          const sym = (p.symbol || '').replace('-SWAP','');
+          const sideHtml = p.pos_side === 'long'
+            ? '<span style="color:var(--color-up);font-weight:600;">多 🟢</span>'
+            : '<span style="color:var(--color-down);font-weight:600;">空 🔴</span>';
+          const upnlPct = p.avg_open_price && p.qty ?
+            ((p.unrealized_pnl_usd||0) / (p.qty * p.contract_size * p.avg_open_price / p.leverage) * 100) : 0;
+          const upnlCls = (p.unrealized_pnl_usd||0) >= 0 ? 'color:var(--color-up)' : 'color:var(--color-down)';
+          const liqDist = (p.liq_price && p.avg_open_price)
+            ? ((p.pos_side==='long' ? (1 - p.liq_price/p.avg_open_price) : (p.liq_price/p.avg_open_price - 1)) * 100).toFixed(1)
+            : '?';
+          const flags = [];
+          if (p.breakeven_armed) flags.push('<span style="background:rgba(88,166,255,0.18);color:#58a6ff;padding:1px 6px;border-radius:8px;font-size:10px;">🟢 BE 锁保本</span>');
+          if (p.trailing_armed) flags.push('<span style="background:rgba(188,140,255,0.18);color:#bc8cff;padding:1px 6px;border-radius:8px;font-size:10px;">📈 trailing</span>');
+          if (p.tp1_hit) flags.push('<span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:8px;font-size:10px;">T1✓</span>');
+          if (p.tp2_hit) flags.push('<span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:8px;font-size:10px;">T2✓</span>');
+          if (p.pre_liq_armed) flags.push('<span style="background:rgba(248,81,73,0.18);color:#f85149;padding:1px 6px;border-radius:8px;font-size:10px;">⚠️ 距强平&lt;3%</span>');
+          return `<tr>
+            <td style="padding:8px;font-weight:600;">${sym}</td>
+            <td style="padding:8px;">${sideHtml}</td>
+            <td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;">${fmt(p.qty,4)} 张</td>
+            <td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;">${fmt(p.avg_open_price,4)}</td>
+            <td style="padding:8px;text-align:right;font-weight:600;">${p.leverage}x</td>
+            <td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;">$${fmt(p.margin_usd)}</td>
+            <td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;">${fmt(p.stop_loss,4)}</td>
+            <td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;">${fmt(p.take_profit,4)}</td>
+            <td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;">${fmt(p.liq_price,4)}<br><span style="font-size:10px;color:var(--text-tertiary);">距 ${liqDist}%</span></td>
+            <td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;${upnlCls}">${fmtPnl(p.unrealized_pnl_usd)}<br><span style="font-size:10px;">(${upnlPct >= 0 ? '+' : ''}${upnlPct.toFixed(1)}%)</span></td>
+            <td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;font-size:11px;">${fmtPnl(p.funding_fee_total_usd)}</td>
+            <td style="padding:8px;">${flags.join(' ')}</td>
+            <td style="padding:8px;text-align:center;">
+              <button class="btn btn-sm" data-swap-close="${p.id}" style="padding:3px 10px;font-size:11px;">平仓</button>
+            </td>
+          </tr>`;
+        }).join('');
+        posHtml = `
+          <div style="padding:10px 14px;font-size:13px;color:var(--text-secondary);">
+            📊 当前持仓 ${positions.length} 笔
+          </div>
+          <div style="overflow-x:auto;padding:0 14px;">
+            <table style="width:100%;border-collapse:collapse;font-size:12px;">
+              <thead style="background:var(--bg-tertiary);">
+                <tr>
+                  <th style="padding:8px;text-align:left;">币种</th>
+                  <th style="padding:8px;text-align:left;">方向</th>
+                  <th style="padding:8px;text-align:right;">数量</th>
+                  <th style="padding:8px;text-align:right;">均价</th>
+                  <th style="padding:8px;text-align:right;">杠杆</th>
+                  <th style="padding:8px;text-align:right;">保证金</th>
+                  <th style="padding:8px;text-align:right;">SL 🛑</th>
+                  <th style="padding:8px;text-align:right;">TP 🎯</th>
+                  <th style="padding:8px;text-align:right;">强平 ⚠️</th>
+                  <th style="padding:8px;text-align:right;">浮 PnL</th>
+                  <th style="padding:8px;text-align:right;">funding</th>
+                  <th style="padding:8px;text-align:left;">状态</th>
+                  <th style="padding:8px;text-align:center;">操作</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>`;
+      } else {
+        posHtml = `<div style="padding:40px;text-align:center;color:var(--text-tertiary);">
+          <div style="font-size:32px;margin-bottom:8px;opacity:0.5;">📭</div>
+          ${isSwap ? '暂无合约持仓 · 加密信号会自动触发' : '需开启 swap_mock 模式才会有合约持仓'}
+        </div>`;
+      }
+
+      // 订单表格
+      let ordHtml = '';
+      if (orders.length) {
+        const orows = orders.slice(0, 15).map(o => {
+          const sym = (o.symbol || '').replace('-SWAP','');
+          const statusColor = {
+            'pending': 'color:var(--color-warning);',
+            'filled': 'color:var(--color-up);',
+            'cancelled': 'color:var(--text-tertiary);',
+            'rejected': 'color:var(--color-down);',
+          }[o.status] || '';
+          const sideHtml = o.side === 'buy'
+            ? '<span style="color:var(--color-up);">买</span>'
+            : '<span style="color:var(--color-down);">卖</span>';
+          const t = new Date(o.created_at * 1000);
+          const tstr = `${(t.getMonth()+1).toString().padStart(2,'0')}-${t.getDate().toString().padStart(2,'0')} ${t.getHours().toString().padStart(2,'0')}:${t.getMinutes().toString().padStart(2,'0')}`;
+          return `<tr>
+            <td style="padding:6px;font-size:11px;color:var(--text-tertiary);">${tstr}</td>
+            <td style="padding:6px;font-weight:600;">${sym}</td>
+            <td style="padding:6px;">${sideHtml} ${o.pos_side}</td>
+            <td style="padding:6px;">${o.order_type === 'limit' ? '限价' : '市价'}</td>
+            <td style="padding:6px;text-align:right;">${fmt(o.price || o.fill_price, 4)}</td>
+            <td style="padding:6px;text-align:right;">${fmt(o.qty, 4)}</td>
+            <td style="padding:6px;text-align:right;">${o.leverage}x</td>
+            <td style="padding:6px;text-align:right;">${o.is_maker ? 'M 0.02%' : 'T 0.05%'}</td>
+            <td style="padding:6px;text-align:right;">$${fmt(o.fee_usd, 4)}</td>
+            <td style="padding:6px;${statusColor}">${o.status}${o.reject_reason ? ' — '+o.reject_reason.slice(0,30) : ''}</td>
+          </tr>`;
+        }).join('');
+        ordHtml = `
+          <div style="padding:14px 14px 4px;font-size:13px;color:var(--text-secondary);">
+            📜 最近 15 单
+          </div>
+          <div style="overflow-x:auto;padding:0 14px 14px;">
+            <table style="width:100%;border-collapse:collapse;font-size:11px;">
+              <thead style="background:var(--bg-tertiary);">
+                <tr>
+                  <th style="padding:6px;text-align:left;">时间</th>
+                  <th style="padding:6px;text-align:left;">币种</th>
+                  <th style="padding:6px;text-align:left;">方向</th>
+                  <th style="padding:6px;text-align:left;">类型</th>
+                  <th style="padding:6px;text-align:right;">价格</th>
+                  <th style="padding:6px;text-align:right;">数量</th>
+                  <th style="padding:6px;text-align:right;">杠杆</th>
+                  <th style="padding:6px;text-align:right;">M/T</th>
+                  <th style="padding:6px;text-align:right;">手续费</th>
+                  <th style="padding:6px;text-align:left;">状态</th>
+                </tr>
+              </thead>
+              <tbody>${orows}</tbody>
+            </table>
+          </div>`;
+      }
+
+      list.innerHTML = accountHtml + posHtml + ordHtml;
+
+      // 平仓按钮
+      list.querySelectorAll('[data-swap-close]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('确认平仓？将以市价单立即成交')) return;
+          btn.disabled = true; btn.textContent = '⏳';
+          try {
+            const r = await fetch('/api/swap/close/' + btn.dataset.swapClose, { method: 'POST' });
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            if (typeof showToast === 'function') showToast('✅ 平仓单已提交', 'info');
+            setTimeout(_renderSwap, 800);
+          } catch (e) {
+            if (typeof showToast === 'function') showToast(`平仓失败: ${e.message}`, 'error');
+            btn.disabled = false; btn.textContent = '平仓';
+          }
+        });
+      });
     } catch (e) {
       list.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-down);">加载失败: ${e.message}</div>`;
     }
