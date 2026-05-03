@@ -762,22 +762,31 @@
   // 5. 持仓管理
   // ═══════════════════════════════════════════════════════════
   // v12.20.3: 加载 swap 持仓 (合约模式独立)
+  // v12.21.4 PR1 回归修: 接入 _state.cache (之前每次都拉新, 30s refresh 浪费 3 个 API)
   async function loadSwapAccount() {
+    if (_state.cache.swapAcct) return _state.cache.swapAcct;
     try {
       const r = await fetchJSON('/api/swap/account');
+      _state.cache.swapAcct = r;
       return r;
     } catch (e) { return null; }
   }
   async function loadSwapPositions() {
+    if (_state.cache.swapPos) return _state.cache.swapPos;
     try {
       const r = await fetchJSON('/api/swap/positions?status=open');
-      return r.items || [];
+      _state.cache.swapPos = r.items || [];
+      return _state.cache.swapPos;
     } catch (e) { return []; }
   }
   async function loadSwapOrders(status) {
+    // 注: status 参数变化时 cache key 应变 — 当前调用方都不传 status (默认 all),共用 cache OK
+    if (_state.cache.swapOrders && !status) return _state.cache.swapOrders;
     try {
       const r = await fetchJSON('/api/swap/orders' + (status ? '?status=' + status : ''));
-      return r.items || [];
+      const items = r.items || [];
+      if (!status) _state.cache.swapOrders = items;
+      return items;
     } catch (e) { return []; }
   }
 
@@ -1085,7 +1094,7 @@
     if (isSwap) {
       const sideTxt = r.swap_pos_side === 'long' ? '🟢多' : (r.swap_pos_side === 'short' ? '🔴空' : '');
       const lev = r.swap_leverage ? `${r.swap_leverage}x` : '';
-      const liqBadge = r.swap_liquidated ? '<span style="background:rgba(248,81,73,0.18);color:var(--color-down);padding:1px 5px;border-radius:6px;font-size:10px;">💀强平</span>' : '';
+      const liqBadge = r.swap_liquidated ? '<span style="background:rgba(248,81,73,0.18);color:var(--down);padding:1px 5px;border-radius:6px;font-size:10px;">💀强平</span>' : '';
       swapBadges = `<span style="background:rgba(188,140,255,0.18);color:var(--purple);padding:1px 6px;border-radius:8px;font-size:10px;">⚡合约 ${sideTxt} ${lev}</span> ${liqBadge}`;
     }
     return `<div class="row ${cls}" data-pid="${escape(r.position_id)}" style="cursor:pointer;">
@@ -2022,10 +2031,13 @@
   }
 
   // ─── 订单流水 (合约 + 现货合并) ───
+  // v12.21.4: 接入 _state.cache.swapOrders (与 loadSwapOrders 共用 cache)
   async function loadSwapOrdersAll() {
+    if (_state.cache.swapOrders) return _state.cache.swapOrders;
     try {
       const r = await fetchJSON('/api/swap/orders?limit=100');
-      return r.items || [];
+      _state.cache.swapOrders = r.items || [];
+      return _state.cache.swapOrders;
     } catch { return []; }
   }
   async function renderOrderFlow() {
@@ -2104,7 +2116,7 @@
         ${o.fee ? ` · 手续费 ${fmtMoney(o.fee)}` : ''}
         · ${fmtRelTime(o.ts * 1000)}
       </div>
-      ${o.reason && o.status !== 'filled' && o.status !== 'executed' ? `<div class="order-meta small" style="color:var(--color-down);margin-top:4px;">${escape(o.reason).slice(0, 80)}</div>` : ''}
+      ${o.reason && o.status !== 'filled' && o.status !== 'executed' ? `<div class="order-meta small" style="color:var(--down);margin-top:4px;">${escape(o.reason).slice(0, 80)}</div>` : ''}
     </div>`;
   }
 
