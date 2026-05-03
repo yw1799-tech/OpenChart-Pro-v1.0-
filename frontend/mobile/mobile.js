@@ -286,7 +286,10 @@
   }
   async function loadPool() {
     if (_state.cache.pool) return _state.cache.pool;
-    _state.cache.pool = await fetchJSON('/api/pool?limit=200');
+    // v12.21.2 hotfix: limit 200 → 2000 (与桌面端 v12.20.14 修复对齐)
+    // 之前 200 截断导致手机看到的总数刚好 200 (美 31+A 108+港 61),漏 550 只低分股
+    // API 上限已在 v12.20.14 改 le=2000 (main.py:2336)
+    _state.cache.pool = await fetchJSON('/api/pool?limit=2000');
     return _state.cache.pool;
   }
   async function loadReviews() {
@@ -2169,6 +2172,7 @@
         acc[m] = (acc[m] || 0) + 1;
         return acc;
       }, {});
+      // v12.21.2: count 和 cap 同一行显示, 避免小字号下 "200" 被误读成 "20"
       const html = `<div class="pool-market-chips">${
         ['us', 'cn', 'hk'].map(m => {
           const n = byMarket[m] || 0;
@@ -2177,8 +2181,8 @@
           const cls = ratio >= 0.9 ? 'usage-high' : ratio >= 0.8 ? 'usage-mid' : 'usage-low';
           return `<div class="pool-market-chip ${cls}">
             <div class="pmc-name">${NAMES[m]}</div>
-            <div class="pmc-count">${n}</div>
-            <div class="pmc-cap">/ ${cap} (${(ratio*100).toFixed(0)}%)</div>
+            <div class="pmc-count">${n} <span class="pmc-cap-inline">/ ${cap}</span></div>
+            <div class="pmc-cap">${(ratio*100).toFixed(0)}% 已用</div>
           </div>`;
         }).join('')
       }</div>`;

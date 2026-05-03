@@ -735,8 +735,9 @@ button {
 .pool-market-chip.usage-mid  { border-left-color: var(--warn, #f59e0b); }
 .pool-market-chip.usage-high { border-left-color: var(--down, #ef4444); }
 .pool-market-chip .pmc-name { font-size: 11px; color: var(--text-2); }
-.pool-market-chip .pmc-count { font-size: 13px; font-weight: 700; margin-top: 2px; }
-.pool-market-chip .pmc-cap { font-size: 10px; color: var(--text-3); }
+.pool-market-chip .pmc-count { font-size: 16px; font-weight: 700; margin-top: 2px; letter-spacing: 0.5px; }
+.pool-market-chip .pmc-cap-inline { font-size: 12px; font-weight: 400; color: var(--text-3); margin-left: 2px; }
+.pool-market-chip .pmc-cap { font-size: 10px; color: var(--text-3); margin-top: 2px; }
 
 /* 自动控制 radio */
 .radio-list { display: flex; flex-direction: column; gap: 4px; }
