@@ -1174,8 +1174,12 @@ async def _get_cached_sentiment(key_type: str, symbol_or_coin: str):
         if now - ts < _SENTIMENT_TTL:
             return data
     try:
-        from backend.crypto_dashboard.sentiment import SentimentDataSource
-        s = SentimentDataSource()
+        # P0 修复 (v12.21.5): 实际类名是 SentimentData (不是 SentimentDataSource)
+        # 之前 ImportError 被 try/except 静默吞 → 4 个加密衍生品策略
+        # (funding_extreme/oi_breakout/long_short_ratio/fear_greed_reversal) 100% 哑火
+        # 加密合约模式最依赖的策略全部不工作 — 这是合约 confirm 信号几乎 0 的根本原因
+        from backend.crypto_dashboard.sentiment import SentimentData
+        s = SentimentData()
         if key_type == "funding":
             data = await s.get_funding_rate(symbol_or_coin)  # e.g. "BTC-USDT-SWAP"
         elif key_type == "oi":
