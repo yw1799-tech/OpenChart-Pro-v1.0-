@@ -1298,13 +1298,17 @@ class LongShortRatioStrategy(Strategy):
         data = await _get_cached_sentiment("lsr", coin)
         if not data:
             return None
-        # data 可能是 {history: [{ratio: ...}]} or current; 取最新
+        # 取最新 ratio
+        # v12.21.6 P1 修复: SentimentData.get_long_short_ratio 返回的 history
+        # 是 OKX 时间倒序 (最新在 [0], history[-1] 是 24h 前的旧值!)
+        # 之前用 history[-1] 在剧烈波动时会判断错误
+        # 优先 current (=history[0]),fallback history[0]
         ratio = None
         try:
-            if isinstance(data.get("history"), list) and data["history"]:
-                ratio = float(data["history"][-1].get("ratio", 0))
-            elif data.get("current"):
+            if data.get("current"):
                 ratio = float(data["current"].get("ratio", 0))
+            elif isinstance(data.get("history"), list) and data["history"]:
+                ratio = float(data["history"][0].get("ratio", 0))
         except (TypeError, ValueError):
             return None
         if not ratio:
