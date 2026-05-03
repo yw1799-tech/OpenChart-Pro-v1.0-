@@ -22,24 +22,31 @@
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => document.querySelectorAll(s);
 
-  // v12.19.0: 5-tab 结构 + 内部 sub-tab
+  // v12.21.0 PR1: 重新设计 5 tab 结构 (按业务流: 总览/行情/交易/学习/设置)
   const PAGE_TITLES = {
-    home: '主页', signals: '策略信号', positions: '持仓管理',
-    learn: '学习', more: '更多',
+    home: '总览', market: '行情', trade: '交易',
+    learn: '学习', settings: '设置',
   };
   const SUB_TITLES = {
-    'home/home':       '主页',
-    'signals/signals': '策略信号',
-    'signals/library': '策略库',
-    'signals/combos':  '共振组合',
-    'positions/current':  '当前持仓',
-    'positions/rejected': '拒单记录',
-    'positions/reviews':  '复盘记录',
-    'learn/lessons': '教训库',
-    'learn/rules':   '风控规则',
-    'more/news':     '新闻快讯',
-    'more/pool':     '候选池',
-    'more/settings': '设置',
+    'home/home':         '总览',
+    'market/news':       '新闻快讯',
+    'market/pool':       '候选池',
+    'market/signals':    '策略信号',
+    'market/library':    '策略库',
+    'market/combos':     '共振组合',
+    'trade/spot':        '现货持仓',
+    'trade/swap':        '⚡ 合约持仓',
+    'trade/orders':      '订单流水',
+    'trade/rejected':    '拒单记录',
+    'trade/control':     '自动交易控制',
+    'learn/reviews':     '复盘记录',
+    'learn/lessons':     '教训库',
+    'learn/rules':       '风控规则',
+    'learn/weekly':      '周报',
+    'settings/notify':   '通知',
+    'settings/sources':  '新闻源',
+    'settings/llm':      'LLM 配额',
+    'settings/system':   '系统状态',
   };
   const MARKET_LABEL = { crypto: '加密', us: '美股', hk: '港股', cn: 'A股', macro: '宏观' };
   const ACTION_ICON = { open: '📥', add: '➕', reduce: '➖', close: '🏁' };
@@ -59,28 +66,29 @@
   };
   const GRADE_LABEL = { A: '优', B: '良', C: '一般', D: '差' };
 
-  // v12.19.0: 5 main tab × N sub-tab 路由表
-  // 默认 sub: 切到 main tab 时若没指定 sub 用此
+  // v12.21.0 PR1: 5 main tab × N sub-tab 默认路由
   const TAB_DEFAULT_SUB = {
     home: 'home',
-    signals: 'signals',
-    positions: 'current',
-    learn: 'lessons',
-    more: 'news',
+    market: 'news',
+    trade: 'spot',
+    learn: 'reviews',
+    settings: 'notify',
   };
 
   let _state = {
     activeTab: 'home',
-    activeSub: 'home',         // 'home/home' / 'signals/signals' 等的右半
+    activeSub: 'home',         // 'home/home' / 'market/news' 等的右半
     signalFilter: 'all',
     newsFilter: 'all',
     poolFilter: 'all',
     rejectedFilter: 'all',
+    orderFilter: 'all',        // v12.21.0: 订单流水 filter (pending/filled/cancelled)
     cache: {
       status: null, positions: null, signals: null, history: null,
       news: null, pool: null, reviews: null, lessons: null,
       advices: null, llmCost: null, riskRules: null, strategies: null,
       rejectedTrades: null,
+      swapAcct: null, swapPos: null, swapOrders: null,  // v12.21.0: swap 缓存
     },
     lastUpdate: 0,
   };
@@ -162,6 +170,14 @@
       _state.rejectedFilter = chip.dataset.rjfilter;
       $$('.chip[data-rjfilter]').forEach(c => c.classList.toggle('active', c === chip));
       renderRejected();
+    });
+  });
+  // v12.21.0: 订单流水 filter
+  $$('.chip[data-ofilter]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      _state.orderFilter = chip.dataset.ofilter;
+      $$('.chip[data-ofilter]').forEach(c => c.classList.toggle('active', c === chip));
+      renderOrderFlow();
     });
   });
 
@@ -1592,21 +1608,649 @@
   // 注意：TAB_RENDERERS 必须在所有 render 函数定义后再赋值（见文件末尾）
   let TAB_RENDERERS = {};
 
-  // v12.19.0: TAB_RENDERERS 在所有 render 函数定义后赋值
+  // v12.21.0 PR1: 5 main × N sub 路由表 (新结构)
+  // 注:renderOverview / renderSwapDashboard / renderOrderFlow / renderTradeControl /
+  //    renderSettingsNotify / renderSettingsLLM / renderSettingsSystem 等新函数在文件末尾定义
   TAB_RENDERERS = {
-    'home/home':          renderHome,
-    'signals/signals':    renderSignals,
-    'signals/library':    renderStrategyLibrary,
-    'signals/combos':     renderCombos,
-    'positions/current':  renderPositions,
-    'positions/rejected': renderRejected,
-    'positions/reviews':  renderReviewList,
-    'learn/lessons':      renderLessons,
-    'learn/rules':        renderRulesOnly,
-    'more/news':          renderNews,
-    'more/pool':          renderPool,
-    'more/settings':      renderSettings,
+    // 总览 (单页)
+    'home/home':           renderOverview,
+    // 行情 (5 sub) — 复用旧 render
+    'market/news':         renderNews,
+    'market/pool':         renderPoolWithMarketSummary,  // v12.21.0: 包装旧 renderPool 加市场汇总条
+    'market/signals':      renderSignals,
+    'market/library':      renderStrategyLibrary,
+    'market/combos':       renderCombos,
+    // 交易 (5 sub) — 含全新 ⚡合约 + 订单流水 + 自动控制
+    'trade/spot':          renderPositions,             // 复用,但只显示现货
+    'trade/swap':          renderSwapDashboard,         // 全新,合约专属页
+    'trade/orders':        renderOrderFlow,             // 全新,合约+现货订单合并
+    'trade/rejected':      renderRejected,
+    'trade/control':       renderTradeControl,          // 全新,自动交易控制
+    // 学习 (4 sub) — reviews / weekly 占位
+    'learn/reviews':       renderReviewList,
+    'learn/lessons':       renderLessons,
+    'learn/rules':         renderRulesOnly,
+    'learn/weekly':        renderWeeklyPlaceholder,
+    // 设置 (4 sub) — 拆出 4 sub
+    'settings/notify':     renderSettingsNotify,
+    'settings/sources':    renderSourcesPlaceholder,
+    'settings/llm':        renderSettingsLLM,
+    'settings/system':     renderSettingsSystem,
   };
+
+  // ═══════════════════════════════════════════════════════════
+  // v12.21.0 PR1: 新增 render 函数 (总览 + 交易 5 sub + 设置 4 sub)
+  // ═══════════════════════════════════════════════════════════
+
+  // ─── 总览页 (升级版 — 加 ⚡合约池 + 实时告警) ───
+  async function renderOverview() {
+    try {
+      const [status, log, signals, positions, llmCost, swapAcct, swapPos] = await Promise.all([
+        loadStatus(), loadHistory(), loadSignals(), loadPositions(), loadLLMCost(),
+        loadSwapAccount(), loadSwapPositions(),
+      ]);
+
+      // ─ 顶部 enabled badge ─
+      const enabled = status.enabled;
+      const badge = $('#enabled-badge');
+      badge.textContent = enabled ? '自动交易 开' : '自动交易 关';
+      badge.className = 'badge ' + (enabled ? 'on' : 'off');
+
+      // ─ Hero: 总权益(含合约) ─
+      const pools = status.pools || [];
+      let totalEquityUSD = 0, totalPnlUSD = 0, totalInitialUSD = 0;
+      for (const p of pools) {
+        totalEquityUSD += p.equity_usd || 0;
+        totalPnlUSD += p.pnl_usd || 0;
+        const fx = p.fx_to_usd || 1;
+        totalInitialUSD += (p.initial_capital || 0) * fx;
+      }
+      // v12.21.0: 加合约账户到总权益
+      const swapMode = swapAcct && swapAcct.mode === 'swap_mock';
+      let swapEquity = 0, swapInitial = 0, swapPnl = 0, swapUpnl = 0;
+      if (swapAcct) {
+        swapEquity = (swapAcct.balance_usd || 0) + (swapAcct.total_margin_usd || 0);
+        swapInitial = swapAcct.initial_balance_usd || 0;
+        swapPnl = swapAcct.total_pnl_usd || 0;
+        swapUpnl = (swapPos || []).reduce((s, p) => s + (p.unrealized_pnl_usd || 0), 0);
+      }
+      const grandEquity = totalEquityUSD + swapEquity + swapUpnl;
+      const grandPnl = totalPnlUSD + swapPnl + swapUpnl;
+      const grandInitial = totalInitialUSD + swapInitial;
+      const grandPct = grandInitial > 0 ? (grandPnl / grandInitial * 100) : 0;
+      $('#ov-equity').textContent = fmtMoney(grandEquity);
+      $('#ov-pnl').innerHTML = `<span class="${grandPnl>=0?'up':'down'}">${fmtPnl(grandPnl)} (${fmtPct(grandPct)})</span>`;
+
+      // ─ Quick stats ─
+      const posCount = (positions || []).length + (swapPos || []).length;
+      const todayStart = (() => { const d = new Date(); d.setHours(0,0,0,0); return d.getTime(); })();
+      const todayTrades = (log.items || []).filter(t =>
+        t.status === 'executed' && (t.traded_at * 1000) >= todayStart
+      ).length;
+      const sigItems = signals.items || [];
+      const now = Date.now();
+      const pendingReval = sigItems.filter(s =>
+        s.ai_verdict === 'confirm'
+        && (s.revalidated_at == 0 || !s.revalidated_at)
+        && (s.status === 'active' || !s.status)
+        && (now - (s.generated_at || 0)) < 24 * 3600 * 1000
+      ).length;
+      const todayCost = (llmCost && llmCost.today_total_usd) || 0;
+      $('#home-stats').innerHTML = `
+        <div class="stat-card"><div class="stat-label">📊 总持仓</div><div class="stat-value">${posCount}</div></div>
+        <div class="stat-card"><div class="stat-label">📥 今日成交</div><div class="stat-value">${todayTrades}</div></div>
+        <div class="stat-card"><div class="stat-label">⏳ 待重验</div><div class="stat-value ${pendingReval>0?'warn':''}">${pendingReval}</div></div>
+        <div class="stat-card"><div class="stat-label">💰 今日 AI</div><div class="stat-value">$${todayCost.toFixed(3)}</div></div>
+      `;
+
+      // ─ 4 池横滑卡 (含 ⚡合约) ─
+      const stockCards = pools.sort((a,b)=> {
+        const ord = {us_hk:0, cn:1, crypto:2};
+        return (ord[a.pool_id]||9) - (ord[b.pool_id]||9);
+      }).map(p => {
+        const cls = (p.pnl||0) >= 0 ? 'up' : 'down';
+        const ccy = p.currency || 'USD';
+        return `<div class="pool-card ${cls}">
+          <div>
+            <div class="pool-name">${escape(p.name)} (${ccy})</div>
+            <div class="pool-equity">${fmtMoney(p.equity, ccy)}</div>
+            <div class="pool-pnl ${cls}">${fmtPnl(p.pnl, ccy)} (${fmtPct(p.pnl_pct)})</div>
+            <div class="pool-meta">现金 ${fmtMoney(p.cash, ccy)}</div>
+          </div>
+          <div class="pool-arrow">›</div>
+        </div>`;
+      }).join('');
+      // 合约池卡(独立样式)
+      let swapCard = '';
+      if (swapMode) {
+        const totalSwap = swapPnl + swapUpnl;
+        const swapCls = totalSwap >= 0 ? 'up' : 'down';
+        swapCard = `<div class="pool-card swap" data-go-tab="trade" data-go-sub="swap" style="cursor:pointer;">
+          <div>
+            <div class="pool-name">⚡ 加密合约 (USD)</div>
+            <div class="pool-equity">${fmtMoney(swapEquity + swapUpnl)}</div>
+            <div class="pool-pnl ${swapCls}">${fmtPnl(totalSwap)} · ${swapPos.length} 仓</div>
+            <div class="pool-meta">余额 ${fmtMoney(swapAcct.balance_usd||0)} · 浮 ${fmtPnl(swapUpnl)}</div>
+          </div>
+          <div class="pool-arrow">›</div>
+        </div>`;
+      }
+      $('#ov-pools').innerHTML = stockCards + swapCard || '<div class="empty">暂无池数据</div>';
+      // 合约池卡片点击 → 跳到合约页
+      $$('#ov-pools .pool-card[data-go-tab]').forEach(c => {
+        c.addEventListener('click', () => {
+          _state.activeSub = c.dataset.goSub;
+          switchTab(c.dataset.goTab);
+        });
+      });
+
+      // ─ 实时告警 (v12.21.0 新模块) ─
+      const alerts = computeAlerts({ positions, swapPos, signals: sigItems });
+      const alertCard = $('#ov-alerts-card');
+      if (alerts.length) {
+        alertCard.hidden = false;
+        $('#ov-alerts').innerHTML = alerts.map(a => `
+          <div class="alert-row severity-${a.severity}">
+            <div class="alert-icon">${a.icon}</div>
+            <div class="alert-body">
+              <div class="alert-title">${escape(a.title)}</div>
+              <div class="alert-desc">${escape(a.desc)}</div>
+            </div>
+          </div>
+        `).join('');
+      } else {
+        alertCard.hidden = true;
+      }
+
+      // ─ 24h 重点信号 ─
+      const sigs = sigItems.filter(s => ['confirm','warn'].includes(s.ai_verdict)).slice(0, 5);
+      $('#ov-recent-signals-list').innerHTML = sigs.length
+        ? sigs.map(renderSignalRow).join('')
+        : '<div class="empty small">暂无重点信号</div>';
+      $$('#ov-recent-signals-list .row').forEach(r => {
+        r.addEventListener('click', () => openSignalDetail(r.dataset.id));
+      });
+
+      // ─ 最近成交 ─
+      const trades = (log.items || []).filter(t => t.status === 'executed').slice(0, 5);
+      $('#ov-recent-trades-list').innerHTML = trades.length
+        ? trades.map(renderTradeRow).join('')
+        : '<div class="empty small">暂无成交</div>';
+
+    } catch (e) {
+      console.error('[overview]', e);
+      $('#ov-equity').textContent = '加载失败';
+    }
+  }
+
+  // ─── 实时告警计算逻辑 ───
+  function computeAlerts({ positions, swapPos, signals }) {
+    const alerts = [];
+    // 1. 合约距强平 < 5%
+    for (const p of (swapPos || [])) {
+      if (!p.liq_price || !p.avg_open_price) continue;
+      const distPct = p.pos_side === 'long'
+        ? (1 - p.liq_price / p.avg_open_price) * 100
+        : (p.liq_price / p.avg_open_price - 1) * 100;
+      if (distPct > 0 && distPct < 5) {
+        const sym = (p.symbol || '').replace('-SWAP', '');
+        alerts.push({
+          severity: distPct < 3 ? 'high' : 'mid',
+          icon: '💀',
+          title: `${sym} 距强平 ${distPct.toFixed(1)}%`,
+          desc: `${p.pos_side === 'long' ? '多' : '空'} ${p.leverage}x · 浮亏 ${fmtPnl(p.unrealized_pnl_usd)}`,
+        });
+      }
+    }
+    // 2. 现货浮亏 > 5%
+    for (const p of (positions || [])) {
+      if ((p.pnl_pct || 0) < -5) {
+        alerts.push({
+          severity: (p.pnl_pct < -10) ? 'high' : 'mid',
+          icon: '📉',
+          title: `${p.symbol} 浮亏 ${(p.pnl_pct || 0).toFixed(2)}%`,
+          desc: `${p.market} · ${(p.pnl_pct || 0) < -10 ? '严重亏损,关注' : '关注 SL 触发'}`,
+        });
+      }
+    }
+    // 3. 24h confirm 信号未重验
+    const now = Date.now();
+    const pending = (signals || []).filter(s =>
+      s.ai_verdict === 'confirm'
+      && (!s.revalidated_at || s.revalidated_at == 0)
+      && (s.status === 'active' || !s.status)
+      && (now - (s.generated_at || 0)) < 6 * 3600 * 1000  // 6h 内才告警
+    );
+    if (pending.length > 0) {
+      alerts.push({
+        severity: 'low',
+        icon: '⏳',
+        title: `${pending.length} 条信号待重验`,
+        desc: '6h 内 confirm 信号还没二次确认',
+      });
+    }
+    return alerts.slice(0, 5);  // 最多 5 条
+  }
+
+  // ─── ⚡合约 dashboard (PR1 核心新模块) ───
+  async function renderSwapDashboard() {
+    try {
+      const [acct, positions, orders] = await Promise.all([
+        loadSwapAccount(), loadSwapPositions(), loadSwapOrdersAll(),
+      ]);
+
+      // 模式检查
+      if (!acct || acct.mode !== 'swap_mock') {
+        $('#swap-account-hero').innerHTML = `<div style="padding:20px;text-align:center;">
+          <div style="font-size:36px;margin-bottom:8px;">🔒</div>
+          <div style="font-size:14px;font-weight:600;">合约模式未启用</div>
+          <div class="muted small" style="margin-top:6px;">当前 spot_mock 模式 · 去 [交易/自动] 切换到 swap_mock</div>
+        </div>`;
+        $('#swap-positions-summary').innerHTML = '';
+        $('#swap-positions-list').innerHTML = '';
+        return;
+      }
+
+      // ─ Hero: 账户信息 ─
+      const balance = acct.balance_usd || 0;
+      const margin = acct.total_margin_usd || 0;
+      const realized = acct.total_pnl_usd || 0;
+      const unrealized = (positions || []).reduce((s, p) => s + (p.unrealized_pnl_usd || 0), 0);
+      const equity = balance + margin + unrealized;
+      const initial = acct.initial_balance_usd || 10000;
+      const totalRet = ((equity - initial) / initial * 100);
+      const upnlCls = unrealized >= 0 ? 'up' : 'down';
+      const realizedCls = realized >= 0 ? 'up' : 'down';
+      const totalCls = totalRet >= 0 ? 'up' : 'down';
+      $('#swap-account-hero').innerHTML = `
+        <div class="swap-hero-label">⚡ 永续合约账户净值</div>
+        <div class="swap-hero-balance">${fmtMoney(equity)}</div>
+        <div class="${totalCls}" style="font-size:13px;margin-top:2px;">${fmtPct(totalRet)} (初始 ${fmtMoney(initial)})</div>
+        <div class="swap-hero-grid">
+          <div class="swap-hero-cell">
+            <div class="cell-label">可用余额</div>
+            <div class="cell-value">${fmtMoney(balance)}</div>
+          </div>
+          <div class="swap-hero-cell">
+            <div class="cell-label">占用保证金</div>
+            <div class="cell-value">${fmtMoney(margin)}</div>
+          </div>
+          <div class="swap-hero-cell">
+            <div class="cell-label">浮动 PnL</div>
+            <div class="cell-value ${upnlCls}">${fmtPnl(unrealized)}</div>
+          </div>
+        </div>
+        <div style="margin-top:8px;font-size:11px;color:#b8a8d0;text-align:center;">
+          累计已实现 PnL <span class="${realizedCls}">${fmtPnl(realized)}</span>
+        </div>
+      `;
+
+      // ─ 持仓汇总 ─
+      const longN = (positions || []).filter(p => p.pos_side === 'long').length;
+      const shortN = (positions || []).filter(p => p.pos_side === 'short').length;
+      const pendingOrders = (orders || []).filter(o => o.status === 'pending').length;
+      $('#swap-positions-summary').innerHTML = `
+        <div class="summary-row">
+          <span class="summary-k">持仓 ${positions.length}</span>
+          <span class="summary-v">🟢多 ${longN} · 🔴空 ${shortN}</span>
+        </div>
+        <div class="summary-row">
+          <span class="summary-k">挂单中</span>
+          <span class="summary-v">${pendingOrders} 笔限价</span>
+        </div>
+      `;
+
+      // ─ 持仓列表 ─
+      if (!positions.length) {
+        $('#swap-positions-list').innerHTML = `<div class="empty">
+          <div class="empty-icon">📭</div>
+          <div>暂无合约持仓</div>
+          <div class="small muted" style="margin-top:6px;">系统会按加密信号自动开仓</div>
+        </div>`;
+        return;
+      }
+      $('#swap-positions-list').innerHTML = positions.map(renderSwapPositionDetail).join('');
+      // 绑定平仓按钮
+      $$('#swap-positions-list .btn-close').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const posId = btn.dataset.posid;
+          const sym = btn.dataset.sym;
+          if (!confirm(`确定平仓 ${sym}?(市价单立即成交)`)) return;
+          btn.disabled = true; btn.textContent = '⏳ 平仓中...';
+          try {
+            const r = await fetch('/api/swap/close/' + encodeURIComponent(posId), {method: 'POST'});
+            const d = await r.json();
+            if (d.ok) {
+              toast('✅ 已平仓 ' + sym, 'up');
+              _state.cache.swapPos = null; _state.cache.swapAcct = null;
+              setTimeout(refresh, 800);
+            } else {
+              toast('❌ 平仓失败: ' + (d.reason || d.detail || '未知'), 'down');
+              btn.disabled = false; btn.textContent = '🔴 手动平仓';
+            }
+          } catch (err) {
+            toast('❌ ' + err.message, 'down');
+            btn.disabled = false; btn.textContent = '🔴 手动平仓';
+          }
+        });
+      });
+
+    } catch (e) {
+      console.error('[swap-dash]', e);
+      $('#swap-account-hero').innerHTML = '<div class="empty">加载失败</div>';
+    }
+  }
+
+  // ─── 合约持仓 row(详细版,含手动平仓按钮) ───
+  function renderSwapPositionDetail(p) {
+    const sym = (p.symbol || '').replace('-SWAP', '');
+    const isLong = p.pos_side === 'long';
+    const sideTxt = isLong ? '多' : '空';
+    const sideCls = isLong ? 'long' : 'short';
+    const upnl = p.unrealized_pnl_usd || 0;
+    const upnlCls = upnl >= 0 ? 'up' : 'down';
+    // 距强平距离
+    const liqDist = (p.liq_price && p.avg_open_price)
+      ? (isLong ? (1 - p.liq_price/p.avg_open_price) : (p.liq_price/p.avg_open_price - 1)) * 100
+      : null;
+    const liqDistTxt = liqDist != null ? `${liqDist.toFixed(1)}%` : '?';
+    const danger = liqDist != null && liqDist < 5;
+    const liqBarPct = liqDist != null ? Math.max(0, Math.min(100, 100 - liqDist * 4)) : 0;
+    // 浮盈率
+    const pnlPct = (p.qty && p.avg_open_price && p.contract_size && p.margin_usd)
+      ? (upnl / p.margin_usd * 100)
+      : 0;
+    return `<div class="swap-row ${danger ? 'danger' : ''}">
+      <div class="swap-row-hdr">
+        <div>
+          <span class="swap-symbol">${escape(sym)}</span>
+          <span class="swap-side-badge ${sideCls}">${sideTxt}</span>
+          <span class="lev-badge">${p.leverage}x</span>
+        </div>
+        <div class="swap-pnl ${upnlCls}">${fmtPnl(upnl)}<br><span style="font-size:10px;font-weight:400;">${fmtPct(pnlPct)}</span></div>
+      </div>
+      <div class="swap-info-grid">
+        <div class="swap-info-row"><span class="k">数量</span><span class="v">${(p.qty||0).toFixed(4)} 张</span></div>
+        <div class="swap-info-row"><span class="k">均价</span><span class="v">${(p.avg_open_price||0).toFixed(4)}</span></div>
+        <div class="swap-info-row"><span class="k">保证金</span><span class="v">${fmtMoney(p.margin_usd||0)}</span></div>
+        <div class="swap-info-row"><span class="k">强平价</span><span class="v ${danger?'down':''}">${(p.liq_price||0).toFixed(4)}</span></div>
+        <div class="swap-info-row"><span class="k">SL</span><span class="v">${p.stop_loss ? p.stop_loss.toFixed(4) : '—'}</span></div>
+        <div class="swap-info-row"><span class="k">TP</span><span class="v">${p.take_profit ? p.take_profit.toFixed(4) : '—'}</span></div>
+        <div class="swap-info-row"><span class="k">资金费</span><span class="v ${(p.funding_fee_total_usd||0)>=0?'up':'down'}">${fmtPnl(p.funding_fee_total_usd||0)}</span></div>
+        <div class="swap-info-row"><span class="k">手续费</span><span class="v down">-${fmtMoney(p.total_fee_usd||0)}</span></div>
+      </div>
+      ${liqDist != null ? `
+        <div style="font-size:10px;color:var(--text-3);margin-top:8px;display:flex;justify-content:space-between;">
+          <span>距强平 ${liqDistTxt}</span>
+          ${p.pre_liq_armed ? '<span style="color:#f59e0b;">⚠️ 已减仓</span>' : ''}
+          ${p.breakeven_armed ? '<span style="color:#22c55e;">✓ 保本</span>' : ''}
+          ${p.trailing_armed ? '<span style="color:#a78bfa;">📈 trailing</span>' : ''}
+        </div>
+        <div class="liq-bar"><div class="liq-bar-fill" style="width:${liqBarPct}%;"></div></div>
+      ` : ''}
+      <div class="swap-actions">
+        <button class="btn-close" data-posid="${escape(p.id)}" data-sym="${escape(sym)}">🔴 手动平仓</button>
+      </div>
+    </div>`;
+  }
+
+  // ─── 订单流水 (合约 + 现货合并) ───
+  async function loadSwapOrdersAll() {
+    try {
+      const r = await fetchJSON('/api/swap/orders?limit=100');
+      return r.items || [];
+    } catch { return []; }
+  }
+  async function renderOrderFlow() {
+    try {
+      const [swapOrders, log] = await Promise.all([
+        loadSwapOrdersAll(),
+        loadHistory(),
+      ]);
+      // 把 swap orders 和 spot trades 合并到一个时间线
+      const items = [];
+      for (const o of (swapOrders || [])) {
+        items.push({
+          ts: o.created_at,
+          status: o.status,
+          symbol: (o.symbol || '').replace('-SWAP', ''),
+          side: o.side,
+          pos_side: o.pos_side,
+          intent: o.intent,
+          price: o.fill_price || o.price || 0,
+          qty: o.fill_qty || o.qty || 0,
+          fee: o.fee_usd || 0,
+          leverage: o.leverage,
+          isSwap: true,
+          reason: o.reject_reason || '',
+        });
+      }
+      for (const t of (log.items || [])) {
+        items.push({
+          ts: t.traded_at,
+          status: t.status,
+          symbol: t.symbol,
+          side: t.action,
+          intent: t.action,
+          price: t.price || 0,
+          qty: t.quantity || 0,
+          isSwap: t.market === 'crypto' && t.trigger_type && t.trigger_type.indexOf('swap') === 0,
+          reason: t.reason || '',
+          market: t.market,
+        });
+      }
+      // 按时间倒序
+      items.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+
+      // 应用 filter
+      const f = _state.orderFilter || 'all';
+      const filtered = f === 'all' ? items : items.filter(i => i.status === f);
+
+      if (!filtered.length) {
+        $('#order-flow-list').innerHTML = `<div class="empty">
+          <div class="empty-icon">📋</div>
+          <div>无订单记录</div>
+        </div>`;
+        return;
+      }
+      $('#order-flow-list').innerHTML = filtered.slice(0, 80).map(renderOrderRow).join('');
+    } catch (e) {
+      console.error('[order-flow]', e);
+      $('#order-flow-list').innerHTML = '<div class="empty">加载失败</div>';
+    }
+  }
+  function renderOrderRow(o) {
+    const intentTxt = ACTION_LABEL[o.intent] || o.intent || '?';
+    const sideTxt = o.pos_side ? (o.pos_side === 'long' ? '多' : '空') : '';
+    const swapTag = o.isSwap ? `<span class="swap-tag">⚡${o.leverage || ''}${o.leverage ? 'x' : ''}</span>` : '';
+    const statusLabel = {
+      pending: '⏳挂单', filled: '✅成交', cancelled: '⊘撤单',
+      rejected: '❌拒单', executed: '✅成交',
+    }[o.status] || o.status;
+    return `<div class="order-row status-${o.status}">
+      <div class="order-hdr">
+        <div class="order-symbol">${escape(o.symbol)} ${swapTag} <span class="muted small">${intentTxt} ${sideTxt}</span></div>
+        <span class="order-status">${statusLabel}</span>
+      </div>
+      <div class="order-meta">
+        ${(o.qty||0).toFixed(4)} @ ${(o.price||0).toFixed(4)}
+        ${o.fee ? ` · 手续费 ${fmtMoney(o.fee)}` : ''}
+        · ${fmtRelTime(o.ts * 1000)}
+      </div>
+      ${o.reason && o.status !== 'filled' && o.status !== 'executed' ? `<div class="order-meta small" style="color:var(--color-down);margin-top:4px;">${escape(o.reason).slice(0, 80)}</div>` : ''}
+    </div>`;
+  }
+
+  // ─── 自动交易控制 ───
+  async function renderTradeControl() {
+    try {
+      const [status, swapAcct] = await Promise.all([loadStatus(), loadSwapAccount()]);
+      // 同步 toggle 状态
+      $('#auto-trade-toggle').checked = !!status.enabled;
+
+      // 加密模式 radio
+      const currentMode = swapAcct ? swapAcct.mode : 'spot_mock';
+      $('#crypto-mode-radio').innerHTML = `
+        <label class="${currentMode === 'spot_mock' ? 'checked' : ''}">
+          <input type="radio" name="crypto-mode" value="spot_mock" ${currentMode === 'spot_mock' ? 'checked' : ''}>
+          <div>
+            <div class="r-title">🪙 现货 mock</div>
+            <div class="r-sub">买入持有,无杠杆</div>
+          </div>
+        </label>
+        <label class="${currentMode === 'swap_mock' ? 'checked' : ''}">
+          <input type="radio" name="crypto-mode" value="swap_mock" ${currentMode === 'swap_mock' ? 'checked' : ''}>
+          <div>
+            <div class="r-title">⚡ 永续合约 mock</div>
+            <div class="r-sub">双向 + 杠杆 1-20x + 真实 OKX 数据</div>
+          </div>
+        </label>
+      `;
+      $$('#crypto-mode-radio input[name=crypto-mode]').forEach(r => {
+        r.addEventListener('change', async (e) => {
+          const newMode = e.target.value;
+          if (!confirm('切换到 ' + (newMode === 'swap_mock' ? '永续合约' : '现货') + ' 模式?')) {
+            e.target.checked = !e.target.checked;
+            return;
+          }
+          try {
+            const resp = await fetch('/api/swap/mode', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({mode: newMode}),
+            });
+            const d = await resp.json();
+            if (d.ok) {
+              toast('✅ 已切换到 ' + newMode, 'up');
+              _state.cache.swapAcct = null;
+              setTimeout(refresh, 600);
+            } else {
+              toast('❌ ' + (d.detail || '失败'), 'down');
+            }
+          } catch (err) {
+            toast('❌ ' + err.message, 'down');
+          }
+        });
+      });
+
+      // 当前配置摘要
+      const cfg = status.config || {};
+      $('#trade-config-info').innerHTML = `
+        <div class="kv-row"><span class="k">单股每日操作上限</span><span class="v">${cfg.max_daily_ops_per_symbol || 5} 次</span></div>
+        <div class="kv-row"><span class="k">同股冷却时间</span><span class="v">${Math.round((cfg.cooldown_sec || 900) / 60)} 分钟</span></div>
+        <div class="kv-row"><span class="k">单笔目标占比</span><span class="v">${((cfg.open_position_pct_buy || 0.05) * 100).toFixed(1)}%</span></div>
+        <div class="kv-row"><span class="k">单股软上限</span><span class="v">${((cfg.market_sizing_us_max_single || 0.12) * 100).toFixed(0)}%</span></div>
+        <div class="kv-row"><span class="k">单股硬上限</span><span class="v">${((cfg.hard_single_cap_pct || 0.30) * 100).toFixed(0)}%</span></div>
+      `;
+    } catch (e) {
+      console.error('[trade-control]', e);
+    }
+  }
+
+  // ─── 行情/候选池 增强 (加市场上限汇总) ───
+  async function renderPoolWithMarketSummary() {
+    // 先渲染原有 pool
+    await renderPool();
+    // 在顶部加按市场分组汇总
+    try {
+      const data = _state.cache.pool;
+      if (!data || !data.items) return;
+      const items = data.items;
+      const CAPS = { us: 650, cn: 600, hk: 200 };
+      const NAMES = { us: '🇺🇸 美股', cn: '🇨🇳 A 股', hk: '🇭🇰 港股' };
+      const byMarket = items.reduce((acc, it) => {
+        const m = it.market || 'unknown';
+        if (it.status === 'archived') return acc;
+        acc[m] = (acc[m] || 0) + 1;
+        return acc;
+      }, {});
+      const html = `<div class="pool-market-chips">${
+        ['us', 'cn', 'hk'].map(m => {
+          const n = byMarket[m] || 0;
+          const cap = CAPS[m];
+          const ratio = n / cap;
+          const cls = ratio >= 0.9 ? 'usage-high' : ratio >= 0.8 ? 'usage-mid' : 'usage-low';
+          return `<div class="pool-market-chip ${cls}">
+            <div class="pmc-name">${NAMES[m]}</div>
+            <div class="pmc-count">${n}</div>
+            <div class="pmc-cap">/ ${cap} (${(ratio*100).toFixed(0)}%)</div>
+          </div>`;
+        }).join('')
+      }</div>`;
+      const sumEl = $('#pool-market-summary');
+      if (sumEl) sumEl.innerHTML = html;
+    } catch (e) { console.debug('pool summary', e); }
+  }
+
+  // ─── 设置: 通知 ───
+  async function renderSettingsNotify() {
+    $('#settings-channels').innerHTML = `
+      <div class="kv-row"><span class="k">Telegram</span><span class="v up">✅ 已配置</span></div>
+      <div class="kv-row"><span class="k">推送频率</span><span class="v">实时 + 4h 简报</span></div>
+      <div class="kv-row muted small"><span class="k" colspan="2">详细推送类型管理 (PR3 实现)</span></div>
+    `;
+  }
+
+  // ─── 设置: LLM 配额 ───
+  async function renderSettingsLLM() {
+    try {
+      const cost = await loadLLMCost();
+      if (!cost) {
+        $('#llm-detail-card').innerHTML = '<div class="empty">无法加载 LLM 数据</div>';
+        return;
+      }
+      const today = cost.today_total_usd || 0;
+      const limit = cost.daily_limit_usd || 5.0;
+      const ratio = Math.min(100, today / limit * 100);
+      const byPath = cost.today_by_path || {};
+      const pathRows = Object.entries(byPath)
+        .sort((a, b) => (b[1].cost_usd || 0) - (a[1].cost_usd || 0))
+        .map(([path, d]) => {
+          const c = d.cost_usd || 0;
+          const pct = today > 0 ? (c / today * 100).toFixed(0) : 0;
+          return `<div class="kv-row"><span class="k">${escape(path)}</span><span class="v">$${c.toFixed(4)} (${pct}%)</span></div>`;
+        }).join('');
+      $('#llm-detail-card').innerHTML = `
+        <div class="section-title">💰 今日 LLM 花费</div>
+        <div style="text-align:center;padding:8px;">
+          <div style="font-size:24px;font-weight:700;">$${today.toFixed(4)}</div>
+          <div class="small muted">/ $${limit.toFixed(2)} 上限</div>
+        </div>
+        <div class="llm-progress"><div class="llm-progress-fill" style="width:${ratio}%;"></div></div>
+        <div class="small muted center" style="margin-top:4px;">${ratio.toFixed(1)}% 已用</div>
+        <div style="margin-top:14px;">
+          <div class="section-title small">按 path 分布</div>
+          ${pathRows || '<div class="empty small">无数据</div>'}
+        </div>
+      `;
+    } catch (e) {
+      $('#llm-detail-card').innerHTML = '<div class="empty">加载失败</div>';
+    }
+  }
+
+  // ─── 设置: 系统状态 ───
+  async function renderSettingsSystem() {
+    try {
+      const status = await loadStatus();
+      const cfg = status.config || {};
+      const rows = [];
+      rows.push(['运行状态', status.enabled ? '🟢 自动交易开' : '🔴 自动交易关']);
+      rows.push(['加密模式', cfg.crypto_trading_mode || 'spot_mock']);
+      rows.push(['池子数', (status.pools || []).length]);
+      const totalPos = (status.pools || []).reduce((s, p) => s + (p.position_count || 0), 0);
+      rows.push(['总持仓数', totalPos]);
+      $('#settings-status').innerHTML = rows.map(([k, v]) =>
+        `<div class="kv-row"><span class="k">${escape(k)}</span><span class="v">${escape(v)}</span></div>`
+      ).join('');
+    } catch (e) {
+      $('#settings-status').innerHTML = '<div class="empty">加载失败</div>';
+    }
+  }
+
+  // ─── 占位 (PR2/PR3 实现) ───
+  async function renderWeeklyPlaceholder() { /* 已在 HTML 内放占位 */ }
+  async function renderSourcesPlaceholder() { /* 已在 HTML 内放占位 */ }
 
   // 自动 30s 轮询当前 tab
   setInterval(() => {
