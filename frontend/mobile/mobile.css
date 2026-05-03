@@ -611,7 +611,7 @@ button {
 .seg-scroll .seg { flex: 0 0 auto; min-width: 70px; }
 
 /* 实时告警卡片 (总览页) */
-.alert-card { border-left: 3px solid var(--color-warn, #f59e0b); }
+.alert-card { border-left: 3px solid var(--warn, #f59e0b); }
 .alert-row {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 12px;
@@ -636,13 +636,13 @@ button {
 .card-grid::-webkit-scrollbar { display: none; }
 .pool-card {
   flex: 0 0 70%;
-  background: var(--card, #161b22);
+  background: var(--bg-card, #161b22);
   border-radius: 10px; padding: 12px;
   display: flex; align-items: center; justify-content: space-between;
   border-left: 3px solid transparent;
 }
-.pool-card.up    { border-left-color: var(--color-up, #22c55e); }
-.pool-card.down  { border-left-color: var(--color-down, #ef4444); }
+.pool-card.up    { border-left-color: var(--up, #22c55e); }
+.pool-card.down  { border-left-color: var(--down, #ef4444); }
 .pool-card.swap  { border-left-color: #a78bfa; background: linear-gradient(135deg, #1c1929, #161b22); }
 .pool-card .pool-name { font-size: 12px; color: var(--text-2); margin-bottom: 4px; }
 .pool-card .pool-equity { font-size: 18px; font-weight: 700; }
@@ -674,7 +674,7 @@ button {
 
 /* ⚡ 合约持仓 row(详细版) */
 .swap-row {
-  background: var(--card, #161b22);
+  background: var(--bg-card, #161b22);
   border-radius: 10px; padding: 12px;
   margin-bottom: 8px;
   border-left: 3px solid #a78bfa;
@@ -703,7 +703,7 @@ button {
 }
 .swap-row .swap-info-row { display: flex; justify-content: space-between; }
 .swap-row .swap-info-row .k { color: var(--text-3); }
-.swap-row .swap-info-row .v { color: var(--text-1); font-weight: 500; }
+.swap-row .swap-info-row .v { color: var(--text); font-weight: 500; }
 .swap-row .liq-bar {
   height: 4px; background: rgba(255,255,255,0.05);
   border-radius: 2px; margin-top: 8px; overflow: hidden;
@@ -727,13 +727,13 @@ button {
 .pool-market-chips { display: flex; gap: 6px; flex-wrap: wrap; padding: 4px 0; }
 .pool-market-chip {
   flex: 1; min-width: 80px;
-  background: var(--card, #161b22);
+  background: var(--bg-card, #161b22);
   padding: 8px 10px; border-radius: 8px;
   border-left: 2px solid var(--text-3);
 }
-.pool-market-chip.usage-low  { border-left-color: var(--color-up, #22c55e); }
-.pool-market-chip.usage-mid  { border-left-color: var(--color-warn, #f59e0b); }
-.pool-market-chip.usage-high { border-left-color: var(--color-down, #ef4444); }
+.pool-market-chip.usage-low  { border-left-color: var(--up, #22c55e); }
+.pool-market-chip.usage-mid  { border-left-color: var(--warn, #f59e0b); }
+.pool-market-chip.usage-high { border-left-color: var(--down, #ef4444); }
 .pool-market-chip .pmc-name { font-size: 11px; color: var(--text-2); }
 .pool-market-chip .pmc-count { font-size: 13px; font-weight: 700; margin-top: 2px; }
 .pool-market-chip .pmc-cap { font-size: 10px; color: var(--text-3); }
@@ -752,15 +752,15 @@ button {
 
 /* 订单流水 row */
 .order-row {
-  background: var(--card, #161b22);
+  background: var(--bg-card, #161b22);
   border-radius: 8px; padding: 10px 12px;
   margin-bottom: 6px;
   border-left: 3px solid var(--text-3);
 }
-.order-row.status-pending  { border-left-color: var(--color-warn, #f59e0b); }
-.order-row.status-filled   { border-left-color: var(--color-up, #22c55e); }
+.order-row.status-pending  { border-left-color: var(--warn, #f59e0b); }
+.order-row.status-filled   { border-left-color: var(--up, #22c55e); }
 .order-row.status-cancelled { border-left-color: var(--text-3); opacity: 0.7; }
-.order-row.status-rejected { border-left-color: var(--color-down, #ef4444); opacity: 0.7; }
+.order-row.status-rejected { border-left-color: var(--down, #ef4444); opacity: 0.7; }
 .order-row .order-hdr {
   display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 4px;
@@ -781,7 +781,7 @@ button {
 .llm-progress-fill { height: 100%; background: linear-gradient(90deg, #22c55e, #f59e0b, #ef4444); }
 
 /* 兼容 row 类型(避免新 sub-page 缺样式) */
-.row { background: var(--card, #161b22); border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
-.row.up   { border-left: 3px solid var(--color-up, #22c55e); }
-.row.down { border-left: 3px solid var(--color-down, #ef4444); }
-.row.warn { border-left: 3px solid var(--color-warn, #f59e0b); }
+.row { background: var(--bg-card, #161b22); border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
+.row.up   { border-left: 3px solid var(--up, #22c55e); }
+.row.down { border-left: 3px solid var(--down, #ef4444); }
+.row.warn { border-left: 3px solid var(--warn, #f59e0b); }

@@ -780,12 +780,16 @@
 
   // v12.19.0: 持仓页 = 顶部汇总条 + 按市场分组 + 各持仓 row
   // v12.20.3: 若 swap_mock 模式 → 同时显示 swap_positions
+  // v12.21.0 PR1: 仅在新 trade/spot 路由展示**现货**, swap 由 trade/swap 独立 dashboard 负责
+  //   不再在持仓 sub 重复渲染 swap (避免与 trade/swap 重复)
   async function renderPositions() {
     try {
-      const [items, advices, swapAcct, swapPositions] = await Promise.all([
-        loadPositions(), loadAdvices(), loadSwapAccount(), loadSwapPositions(),
+      const [items, advices] = await Promise.all([
+        loadPositions(), loadAdvices(),
       ]);
-      const swapMode = swapAcct && swapAcct.mode === 'swap_mock';
+      const swapMode = false;  // v12.21.0: 持仓 sub 永远不显示 swap (独立到 trade/swap)
+      const swapAcct = null;
+      const swapPositions = [];
       // ─ 顶部汇总条 ─
       let totalUSD = 0, pnlUSD = 0, winN = 0, loseN = 0;
       for (const p of items) {
