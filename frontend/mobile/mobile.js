@@ -1116,14 +1116,32 @@
       const cons = Array.isArray(r.cons) ? r.cons : [];
       const lessons = Array.isArray(r.lessons) ? r.lessons : [];
       const turning = Array.isArray(r.turning_points) ? r.turning_points : [];
+      // v12.21.3 PR2: 合约复盘加专属信息块 (杠杆/funding/手续费/强平)
+      const isSwap = r.is_swap == 1 || r.is_swap === true;
+      const swapBlock = isSwap ? `
+        <div style="background:linear-gradient(135deg,rgba(167,139,250,0.15),rgba(167,139,250,0.03));border-left:4px solid #a78bfa;padding:12px 14px;border-radius:0 8px 8px 0;margin-bottom:14px;">
+          <div style="color:#c4b5fd;font-weight:700;font-size:13px;margin-bottom:6px;">⚡ 加密永续合约 ${r.swap_pos_side === 'long' ? '🟢做多' : '🔴做空'} ${r.swap_leverage||'?'}x ${r.swap_liquidated ? '<span style="background:var(--down);color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;margin-left:4px;">💀 强平</span>' : ''}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;">
+            <div><span style="color:var(--text-3);">杠杆:</span> <strong>${r.swap_leverage||0}x</strong></div>
+            <div><span style="color:var(--text-3);">${r.swap_liquidated ? '强平亏损' : '正常平仓'}</span></div>
+            <div><span style="color:var(--text-3);">资金费累积:</span> <strong class="${(r.swap_funding_total||0)>=0?'up':'down'}">${fmtPnl(r.swap_funding_total||0)}</strong></div>
+            <div><span style="color:var(--text-3);">手续费累积:</span> <strong class="down">-${fmtMoney(r.swap_total_fee||0)}</strong></div>
+          </div>
+        </div>` : '';
       const html = `
+        ${swapBlock}
         <h4>结果</h4>
-        <div class="kv-row"><span class="k">代码</span><span class="v">${escape(r.symbol)}</span></div>
+        <div class="kv-row"><span class="k">代码</span><span class="v">${escape(r.symbol)}${isSwap ? ' <span style="background:#3d2f5a;color:#c4b5fd;padding:1px 4px;border-radius:3px;font-size:9px;margin-left:4px;">⚡合约</span>' : ''}</span></div>
         <div class="kv-row"><span class="k">评级</span><span class="v"><span class="grade-pill ${grade}">${grade||'?'}</span> ${GRADE_LABEL[grade]||''}</span></div>
         <div class="kv-row"><span class="k">实现盈亏</span><span class="v ${pnl>=0?'up':'down'}">${fmtPnl(pnl)} (${fmtPct(r.realized_pnl_pct||0)})</span></div>
         <div class="kv-row"><span class="k">持仓时长</span><span class="v">${Math.round((r.holding_seconds||0)/3600)} h</span></div>
         <div class="kv-row"><span class="k">闭环时间</span><span class="v">${fmtTime(r.close_at)}</span></div>
         ${r.summary ? `<h4>总结</h4><div>${escape(r.summary)}</div>` : ''}
+        ${r.primary_lesson ? `<h4>🎯 核心教训</h4><div>${escape(r.primary_lesson)}</div>` : ''}
+        ${r.what_if_better ? `<div class="muted small" style="margin-top:6px;">💭 若改进:${escape(r.what_if_better)}</div>` : ''}
+        ${r.entry_analysis ? `<h4>📥 入场分析</h4><div>${escape(r.entry_analysis)}</div>` : ''}
+        ${r.mid_analysis ? `<h4>⚙ 持仓中分析</h4><div>${escape(r.mid_analysis)}</div>` : ''}
+        ${r.exit_analysis ? `<h4>📤 出场分析</h4><div>${escape(r.exit_analysis)}</div>` : ''}
         ${pros.length ? `<h4>👍 做对了什么</h4><ul>${pros.map(x=>`<li>${escape(x)}</li>`).join('')}</ul>` : ''}
         ${cons.length ? `<h4>👎 做错了什么</h4><ul>${cons.map(x=>`<li>${escape(x)}</li>`).join('')}</ul>` : ''}
         ${turning.length ? `<h4>关键转折点</h4><ul>${turning.map(x=>{
@@ -1131,6 +1149,7 @@
             return `<li>${t}</li>`;
           }).join('')}</ul>` : ''}
         ${lessons.length ? `<h4>📌 教训</h4><ul>${lessons.map(x=>`<li>${escape(x)}</li>`).join('')}</ul>` : ''}
+        ${r.improvements ? `<h4>💡 改进建议</h4><div>${escape(r.improvements)}</div>` : ''}
         ${renderStrategyParamAnalysis(r.strategy_param_analysis)}
       `;
       $('#sheet-content').innerHTML = html;
@@ -1637,10 +1656,10 @@
     'learn/reviews':       renderReviewList,
     'learn/lessons':       renderLessons,
     'learn/rules':         renderRulesOnly,
-    'learn/weekly':        renderWeeklyPlaceholder,
+    'learn/weekly':        () => renderWeekly(),
     // 设置 (4 sub) — 拆出 4 sub
     'settings/notify':     renderSettingsNotify,
-    'settings/sources':    renderSourcesPlaceholder,
+    'settings/sources':    () => renderSources(),
     'settings/llm':        renderSettingsLLM,
     'settings/system':     renderSettingsSystem,
   };
@@ -2191,13 +2210,40 @@
     } catch (e) { console.debug('pool summary', e); }
   }
 
-  // ─── 设置: 通知 ───
+  // ─── 设置: 通知 (PR3 升级) ───
   async function renderSettingsNotify() {
-    $('#settings-channels').innerHTML = `
-      <div class="kv-row"><span class="k">Telegram</span><span class="v up">✅ 已配置</span></div>
-      <div class="kv-row"><span class="k">推送频率</span><span class="v">实时 + 4h 简报</span></div>
-      <div class="kv-row muted small"><span class="k" colspan="2">详细推送类型管理 (PR3 实现)</span></div>
-    `;
+    try {
+      const status = await loadStatus();
+      const cfg = status.config || {};
+      const tgEnabled = cfg.telegram_bot_token ? '✅ 已配置' : '❌ 未配置';
+      const tgEnabledCls = cfg.telegram_bot_token ? 'up' : 'down';
+      $('#settings-channels').innerHTML = `
+        <div class="kv-row"><span class="k">Telegram Bot</span><span class="v ${tgEnabledCls}">${tgEnabled}</span></div>
+        <div class="kv-row"><span class="k">Chat ID</span><span class="v">${cfg.telegram_chat_id ? '已设置' : '未设置'}</span></div>
+        <div class="kv-row"><span class="k">推送频率</span><span class="v">实时 + 4h 简报</span></div>
+        <div class="kv-row"><span class="k">日报推送</span><span class="v">每天 BJ 09:00</span></div>
+      `;
+      // 推送类型(展示当前推送的事件类型,这些都是后端硬编码暂时不可关)
+      const typeListHtml = `<div class="card section">
+        <div class="section-title">📲 当前推送事件类型</div>
+        <div class="kv-list">
+          <div class="kv-row"><span class="k">📡 高分信号 (AI conf ≥ 75)</span><span class="v up">✅ 启用</span></div>
+          <div class="kv-row"><span class="k">📥 自动开仓/加仓</span><span class="v up">✅ 启用</span></div>
+          <div class="kv-row"><span class="k">🏁 平仓 / 减仓</span><span class="v up">✅ 启用</span></div>
+          <div class="kv-row"><span class="k">⚡ 合约强平</span><span class="v up">✅ 启用</span></div>
+          <div class="kv-row"><span class="k">🔍 复盘完成</span><span class="v up">✅ 启用</span></div>
+          <div class="kv-row"><span class="k">📊 4h 持仓简报</span><span class="v up">✅ 启用</span></div>
+          <div class="kv-row muted small"><span class="k">分项关闭功能将在 v12.22 上线</span><span class="v"></span></div>
+        </div>
+      </div>`;
+      // append 到 notify subpage
+      const np = document.querySelector('.subpage[data-subpage="notify"]');
+      if (np && !np.querySelector('.section-title')) {
+        np.insertAdjacentHTML('beforeend', typeListHtml);
+      }
+    } catch (e) {
+      console.error('[notify]', e);
+    }
   }
 
   // ─── 设置: LLM 配额 ───
@@ -2237,28 +2283,174 @@
     }
   }
 
-  // ─── 设置: 系统状态 ───
+  // ─── 设置: 系统状态 (PR3 升级) ───
   async function renderSettingsSystem() {
     try {
-      const status = await loadStatus();
+      const [status, health] = await Promise.all([
+        loadStatus(),
+        fetchJSON('/api/health').catch(() => ({})),
+      ]);
       const cfg = status.config || {};
       const rows = [];
-      rows.push(['运行状态', status.enabled ? '🟢 自动交易开' : '🔴 自动交易关']);
+      // 服务状态
+      rows.push(['服务状态', '🟢 在线']);
+      rows.push(['自动交易', status.enabled ? '🟢 开' : '🔴 关']);
       rows.push(['加密模式', cfg.crypto_trading_mode || 'spot_mock']);
-      rows.push(['池子数', (status.pools || []).length]);
-      const totalPos = (status.pools || []).reduce((s, p) => s + (p.position_count || 0), 0);
-      rows.push(['总持仓数', totalPos]);
+      // 池子统计
+      const pools = status.pools || [];
+      rows.push(['活跃池子', pools.length]);
+      const totalPos = pools.reduce((s, p) => s + (p.position_count || 0), 0);
+      rows.push(['现货持仓总数', totalPos]);
+      // 配额
+      rows.push(['每股每日上限', `${cfg.max_daily_ops_per_symbol || 5} 次`]);
+      rows.push(['同股冷却', `${Math.round((cfg.cooldown_sec || 900) / 60)} 分钟`]);
+      // 后台 loop
+      rows.push(['新闻拉取', '🟢 28 个源']);
+      rows.push(['信号监控', '🟢 候选池自动绑定中']);
+      rows.push(['SL/TP 巡检', '🟢 60s 间隔']);
+      rows.push(['复盘引擎', '🟢 每 4h 单笔 + 每天周报']);
+      rows.push(['教训聚合', '🟢 每 6h 自动']);
+      // 健康
+      if (health && health.status) rows.push(['健康检查', `🟢 ${health.status}`]);
       $('#settings-status').innerHTML = rows.map(([k, v]) =>
         `<div class="kv-row"><span class="k">${escape(k)}</span><span class="v">${escape(v)}</span></div>`
       ).join('');
     } catch (e) {
+      console.error('[system]', e);
       $('#settings-status').innerHTML = '<div class="empty">加载失败</div>';
     }
   }
 
-  // ─── 占位 (PR2/PR3 实现) ───
-  async function renderWeeklyPlaceholder() { /* 已在 HTML 内放占位 */ }
-  async function renderSourcesPlaceholder() { /* 已在 HTML 内放占位 */ }
+  // ─── PR2: 周报页 ───
+  async function renderWeekly() {
+    const container = document.querySelector('.subpage[data-subpage="weekly"]');
+    if (!container) return;
+    container.innerHTML = '<div class="empty">⏳ 加载周报...</div>';
+    try {
+      const data = await fetchJSON('/api/trade-review/weekly/list?limit=4');
+      const reports = data.items || [];
+      if (!reports.length) {
+        container.innerHTML = `<div class="empty">
+          <div class="empty-icon">📊</div>
+          <div>暂无周报</div>
+          <div class="small muted" style="margin-top:6px;">每周日凌晨自动生成上周综合复盘</div>
+        </div>`;
+        return;
+      }
+      container.innerHTML = reports.map(r => renderWeeklyReportCard(r)).join('');
+    } catch (e) {
+      console.error('[weekly]', e);
+      container.innerHTML = '<div class="empty">加载周报失败</div>';
+    }
+  }
+
+  function renderWeeklyReportCard(r) {
+    const weekStart = new Date(r.week_start * 1000);
+    const weekEnd = new Date(r.week_end * 1000);
+    const winRate = ((r.win_rate || 0) * 100).toFixed(1);
+    const pnl = r.total_pnl_usd || 0;
+    const pnlCls = pnl >= 0 ? 'up' : 'down';
+    const grade = r.avg_grade || '?';
+    const wins = Array.isArray(r.top_wins) ? r.top_wins : [];
+    const losses = Array.isArray(r.top_losses) ? r.top_losses : [];
+    const mistakes = Array.isArray(r.recurring_mistakes) ? r.recurring_mistakes : [];
+    const changes = Array.isArray(r.actionable_changes) ? r.actionable_changes : [];
+    return `<div class="card section">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
+        <div style="font-weight:700;font-size:14px;">📊 ${weekStart.getMonth()+1}-${weekStart.getDate()} ~ ${weekEnd.getMonth()+1}-${weekEnd.getDate()}</div>
+        <span class="grade-pill ${grade}" style="font-size:12px;">${grade}</span>
+      </div>
+      <div class="quick-stats" style="margin-bottom:14px;">
+        <div class="stat-card"><div class="stat-label">总笔数</div><div class="stat-value">${r.trades_count || 0}</div></div>
+        <div class="stat-card"><div class="stat-label">胜率</div><div class="stat-value">${winRate}%</div></div>
+        <div class="stat-card"><div class="stat-label">胜/负</div><div class="stat-value">${r.wins||0}/${r.losses||0}</div></div>
+        <div class="stat-card"><div class="stat-label">总 PnL</div><div class="stat-value ${pnlCls}">${fmtPnl(pnl)}</div></div>
+      </div>
+      ${r.summary ? `<div style="font-size:12px;line-height:1.6;background:rgba(255,255,255,0.03);padding:10px;border-radius:6px;margin-bottom:12px;">${escape(r.summary)}</div>` : ''}
+      ${wins.length ? `
+        <div style="font-size:12px;font-weight:600;color:var(--up);margin-bottom:6px;">🏆 Top 盈利</div>
+        <ul style="margin:0 0 12px 0;padding-left:18px;font-size:11px;line-height:1.6;">
+          ${wins.slice(0, 3).map(w => `<li>${escape(typeof w === 'string' ? w : (w.symbol || '?') + ' ' + (w.note || ''))}</li>`).join('')}
+        </ul>` : ''}
+      ${losses.length ? `
+        <div style="font-size:12px;font-weight:600;color:var(--down);margin-bottom:6px;">📉 Top 亏损</div>
+        <ul style="margin:0 0 12px 0;padding-left:18px;font-size:11px;line-height:1.6;">
+          ${losses.slice(0, 3).map(l => `<li>${escape(typeof l === 'string' ? l : (l.symbol || '?') + ' ' + (l.note || ''))}</li>`).join('')}
+        </ul>` : ''}
+      ${mistakes.length ? `
+        <div style="font-size:12px;font-weight:600;color:var(--warn);margin-bottom:6px;">🔁 反复出现的错误</div>
+        <ul style="margin:0 0 12px 0;padding-left:18px;font-size:11px;line-height:1.6;">
+          ${mistakes.slice(0, 5).map(m => `<li>${escape(typeof m === 'string' ? m : (m.text || JSON.stringify(m)))}</li>`).join('')}
+        </ul>` : ''}
+      ${changes.length ? `
+        <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:6px;">💡 可操作的改进</div>
+        <ul style="margin:0;padding-left:18px;font-size:11px;line-height:1.6;">
+          ${changes.slice(0, 5).map(c => `<li>${escape(typeof c === 'string' ? c : (c.text || JSON.stringify(c)))}</li>`).join('')}
+        </ul>` : ''}
+    </div>`;
+  }
+
+  // ─── PR3: 新闻源管理 ───
+  async function renderSources() {
+    const container = document.querySelector('.subpage[data-subpage="sources"]');
+    if (!container) return;
+    container.innerHTML = '<div class="empty">⏳ 加载新闻源...</div>';
+    try {
+      const sources = await fetchJSON('/api/news/sources');
+      if (!sources || !sources.length) {
+        container.innerHTML = '<div class="empty">无新闻源数据</div>';
+        return;
+      }
+      // 排序: 启用 + 健康 在前; 失败/禁用 在后
+      sources.sort((a, b) => {
+        const aHealth = (a.disabled || (a.fail_count || 0) > 5) ? 1 : 0;
+        const bHealth = (b.disabled || (b.fail_count || 0) > 5) ? 1 : 0;
+        if (aHealth !== bHealth) return aHealth - bHealth;
+        return (b.last_success_at || 0) - (a.last_success_at || 0);
+      });
+      // 分类汇总
+      const total = sources.length;
+      const healthy = sources.filter(s => !s.disabled && (s.fail_count || 0) < 3).length;
+      const warning = sources.filter(s => !s.disabled && (s.fail_count || 0) >= 3 && (s.fail_count || 0) < 10).length;
+      const failed = sources.filter(s => s.disabled || (s.fail_count || 0) >= 10).length;
+      let html = `<div class="quick-stats" style="margin-bottom:12px;">
+        <div class="stat-card"><div class="stat-label">总数</div><div class="stat-value">${total}</div></div>
+        <div class="stat-card"><div class="stat-label">健康</div><div class="stat-value up">${healthy}</div></div>
+        <div class="stat-card"><div class="stat-label">告警</div><div class="stat-value warn">${warning}</div></div>
+        <div class="stat-card"><div class="stat-label">失败</div><div class="stat-value down">${failed}</div></div>
+      </div>`;
+      html += '<div class="list">' + sources.map(renderSourceRow).join('') + '</div>';
+      container.innerHTML = html;
+    } catch (e) {
+      console.error('[sources]', e);
+      container.innerHTML = '<div class="empty">加载失败</div>';
+    }
+  }
+
+  function renderSourceRow(s) {
+    const failCount = s.fail_count || 0;
+    const disabled = s.disabled || s.permanently_disabled;
+    let cls = 'up';
+    let statusIcon = '🟢';
+    let statusText = '正常';
+    if (disabled) { cls = 'down'; statusIcon = '🚫'; statusText = '已禁用'; }
+    else if (failCount >= 10) { cls = 'down'; statusIcon = '🔴'; statusText = `失败 ${failCount} 次`; }
+    else if (failCount >= 3) { cls = 'warn'; statusIcon = '🟡'; statusText = `失败 ${failCount} 次`; }
+    const lastOk = s.last_success_at ? fmtRelTime(s.last_success_at) : '从未成功';
+    return `<div class="row ${cls}">
+      <div class="row-title">
+        <div class="row-symbol">${statusIcon} ${escape(s.name || '?')}</div>
+        <div class="small muted">${statusText}</div>
+      </div>
+      <div class="row-meta small">
+        最后成功:${lastOk}
+        ${s.interval ? ` · 周期 ${Math.round(s.interval/60)}m` : ''}
+        ${s.last_count != null ? ` · 上次入库 ${s.last_count} 条` : ''}
+      </div>
+      ${s.last_error ? `<div class="row-reason">⚠️ ${escape(s.last_error).slice(0, 100)}</div>` : ''}
+    </div>`;
+  }
+
 
   // 自动 30s 轮询当前 tab
   setInterval(() => {

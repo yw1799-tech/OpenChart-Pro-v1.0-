@@ -11,7 +11,8 @@
   <meta name="apple-mobile-web-app-title" content="OC Pro">
   <meta name="theme-color" content="#0d1117">
   <link rel="apple-touch-icon" href="/mobile/icon-192.png">
-  <link rel="stylesheet" href="/mobile/mobile.css">
+  <!-- v12.21.3: cache-busting via version query (避免浏览器/PWA Service Worker 缓存旧版) -->
+  <link rel="stylesheet" href="/mobile/mobile.css?v=12.21.3">
 </head>
 <body>
   <!-- 顶部状态栏 -->
@@ -299,7 +300,7 @@
           <div class="kv-list" id="settings-status">—</div>
         </div>
         <div class="muted small center" style="padding:20px;">
-          OpenChart Pro · v12.21.0 mobile (PR1)
+          OpenChart Pro · v12.21.3 mobile (PR1+2+3 完整版)
         </div>
       </div>
     </section>
@@ -345,6 +346,6 @@
     </div>
   </div>
 
-  <script src="/mobile/mobile.js"></script>
+  <script src="/mobile/mobile.js?v=12.21.3"></script>
 </body>
 </html>
