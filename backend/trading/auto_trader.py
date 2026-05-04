@@ -603,57 +603,17 @@ class AutoTrader:
     # ───────── 风控检查 ─────────
 
     async def _check_cooldown(self, symbol: str, market: str) -> bool:
-        """同股冷却检查。True = 可下单；False = 冷却中。
-        v12.14: 按市场分档，美/港股 1h（避免 30min 内反复进出同一标的）
-        v12.20.11: 同时计入 swap_pending (status='pending' + trigger_type='swap_pending'),
-        让 swap 限价 pending 期间也能拦截同币种新信号 (避免 60min 内反复挂单)
+        """v12.21.8: 完全关闭同股冷却 — 用户决策。
+        理由: 单股 SL/TP + AI 验证 + 加仓门槛(浮盈≥5%) + 滑点保护 已经够,
+              冷却是多余的频次限制, 反而会错过有效信号。
         """
-        per_market = self._config.get("cooldown_sec_per_market") or {}
-        sec = int(per_market.get(market, self._config.get("cooldown_sec", 900)))
-        cutoff = int(time.time()) - sec
-        async with self.db.acquire() as conn:
-            cur = await conn.execute(
-                "SELECT MAX(traded_at) AS last FROM auto_trade_log "
-                "WHERE symbol=? AND market=? AND ("
-                " status='executed' "
-                " OR (status='pending' AND trigger_type='swap_pending')"
-                ")",
-                (symbol, market),
-            )
-            row = await cur.fetchone()
-        return not row or not row["last"] or row["last"] < cutoff
+        return True
 
     async def _check_daily_limit(self, symbol: str, market: str) -> bool:
-        """单日单股操作上限。只计 executed 记录，rejected 不占额度。
-        v12.14 (A4 修复): 按市场时区切日，避免美股一晚跨 BJ 自然日导致计数被误重置。
-          - 美股：美东时区 (EDT UTC-4 / EST UTC-5)
-          - A 股/港股：北京时区 (UTC+8)
-          - 加密：UTC（24/7 用 UTC 自然日已足够）
+        """v12.21.8: 完全关闭单股每日操作上限 — 用户决策。
+        理由: 同上, 系统严格按 SL/TP/AI 验证标准执行就行, 不需要人为限频次。
         """
-        from datetime import datetime, timezone, timedelta
-        now_ts = time.time()
-        if market == "us":
-            # 简化处理 — 美股 EDT (4-11月) UTC-4 / EST (11-3月) UTC-5；用 -4 当兜底（夏令时多）
-            tz_offset = timedelta(hours=-4)
-        elif market in ("cn", "hk"):
-            tz_offset = timedelta(hours=8)
-        else:
-            tz_offset = timedelta(hours=0)
-        local_now = datetime.fromtimestamp(now_ts, timezone(tz_offset))
-        local_midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
-        day_start = int(local_midnight.timestamp())
-        async with self.db.acquire() as conn:
-            # v12.20.11 hotfix: daily_limit **只**计已 fill 的 (status='executed'),
-            # 不能加 swap_pending — 一笔 swap 订单 pending+fill 各 1 条 log,
-            # 加 pending 会让一笔订单消耗 2 次额度 (实际 5 笔成交就误判达 10 次上限)
-            # 冷却 (_check_cooldown) 仍算 pending — 防短期反复挂单, 但 daily limit 应只看真实成交
-            cur = await conn.execute(
-                "SELECT COUNT(*) AS n FROM auto_trade_log "
-                "WHERE symbol=? AND market=? AND traded_at>=? AND status='executed'",
-                (symbol, market, day_start),
-            )
-            n = (await cur.fetchone())["n"]
-        return n < self._config["max_daily_ops_per_symbol"]
+        return True
 
     async def _get_pool_current_equity(self, pool_id: str) -> Tuple[float, str]:
         """v12.13: 池子当前总权益（cash + 持仓 mark-to-market），返回 (equity_local, currency)。
@@ -713,80 +673,20 @@ class AutoTrader:
             return 0.0
 
     async def _check_pool_cooldown(self, market: str) -> Tuple[bool, str]:
-        """v12.13 池级冷静期（替代旧全局熔断）。
+        """v12.21.8: 完全关闭池级冷静期 — 用户决策。
+        理由:
+          1. 浮亏触发不合理 — 浮亏不是真亏, 价格反弹就回去, 锁 4h 反而错过 confirm 信号
+          2. 单股 SL/TP 已经管控每只股票的下行风险
+          3. 单股 daily_limit 已经管控操作频次 (虽然 daily_limit 也关了,但 SL/TP 是核心)
+          4. AI 验证已经管控信号质量
+          5. risk_rules trend_block / drawdown_force_close / rsi_block 已经覆盖各类异常场景
+          → 池级冷静是多余的"第 4 层保护", 反而误伤合理交易
 
-        机制：
-          - 每池独立日初快照 + 独立阈值（crypto -5% / us_hk -4% / cn -3%）
-          - 池权益较日初跌超阈值 → 该池进入冷静期 4h
-          - 冷静期内：拒绝该池所有市场的 open / add（reduce / close 不受限）
-          - 4h 自动到期 + UTC+8 自然日 00:00 也会刷新基准
-
-        返回：(allow_open, reject_reason)。allow_open=False 时 reject_reason 是给 _log_rejected 的人类可读理由。
+        今天 (2026-05-04) 实例:
+          11:33 浮亏 4.05% 触发 → 锁 4h
+          15:32 9988.HK confirm AI=75 → 被锁拦截
+          当前池子实际浮盈 +1.3% (130/$10000) — 4 小时白白锁定, 错过机会
         """
-        pool_id = self._pool_for(market)
-        cd_key = f"pool_cooldown_{pool_id}"
-        now_ts = int(time.time())
-
-        # 1) 是否在冷静期内
-        try:
-            async with self.db.acquire() as conn:
-                cur = await conn.execute("SELECT value FROM config WHERE key=?", (cd_key,))
-                row = await cur.fetchone()
-            if row and row[0]:
-                cd = json.loads(row[0])
-                expires_at = int(cd.get("expires_at") or 0)
-                if expires_at and now_ts < expires_at:
-                    remain_min = (expires_at - now_ts) // 60
-                    return False, (
-                        f"{pool_id} 池冷静期中，剩余 {remain_min} 分钟"
-                        f"（触发：日内损失 {float(cd.get('loss_pct', 0))*100:.2f}%）"
-                    )
-        except Exception as e:
-            logger.debug(f"[cooldown] {pool_id} 读冷静状态失败: {e}")
-
-        # 2) 是否需要触发新冷静期
-        threshold_map = {
-            "crypto": self._config.get("market_cooldown_loss_pct_crypto", 0.05),
-            "us_hk":  self._config.get("market_cooldown_loss_pct_us_hk",  0.04),
-            "cn":     self._config.get("market_cooldown_loss_pct_cn",     0.03),
-        }
-        threshold = float(threshold_map.get(pool_id, 0.05))
-        try:
-            day_start = await self._get_or_init_pool_day_start(pool_id)
-            if day_start <= 0:
-                return True, ""
-            current_equity, ccy = await self._get_pool_current_equity(pool_id)
-            loss_pct = (day_start - current_equity) / day_start
-            if loss_pct >= threshold:
-                duration = int(self._config.get("market_cooldown_duration_sec", 4 * 3600))
-                expires_at = now_ts + duration
-                try:
-                    async with self.db.acquire() as conn:
-                        await conn.execute(
-                            "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)",
-                            (cd_key, json.dumps({
-                                "triggered_at": now_ts,
-                                "expires_at": expires_at,
-                                "loss_pct": loss_pct,
-                                "day_start": day_start,
-                                "current_equity": current_equity,
-                                "currency": ccy,
-                            })),
-                        )
-                        await conn.commit()
-                except Exception as e:
-                    logger.debug(f"[cooldown] {pool_id} 写冷静状态失败: {e}")
-                logger.warning(
-                    f"[cooldown] {pool_id} 池触发 {duration//3600}h 冷静期 "
-                    f"loss={loss_pct*100:.2f}% >= {threshold*100:.0f}% "
-                    f"(日初 {day_start:.2f}{ccy} → 当前 {current_equity:.2f}{ccy})"
-                )
-                return False, (
-                    f"{pool_id} 池亏损 {loss_pct*100:.2f}% ≥ {threshold*100:.0f}% "
-                    f"触发冷静期 {duration//3600}h（出场不受限）"
-                )
-        except Exception as e:
-            logger.debug(f"[cooldown] {pool_id} 检查异常: {e}")
         return True, ""
 
     async def _get_current_price(self, symbol: str, market: str) -> Optional[float]:
