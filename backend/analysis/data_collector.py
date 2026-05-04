@@ -68,12 +68,26 @@ async def collect_all(
     if not symbol:
         raise ValueError("symbol cannot be empty")
 
-    # crypto symbol 规整: 用户可能输入 "ETH" / "ETH-USDT" / "BTC"
-    # 内部统一存为 "ETH-USDT" (现货) / "ETH-USDT-SWAP" (合约) 看下游需要
-    if market == "crypto" and "-" not in symbol:
-        symbol = f"{symbol.upper()}-USDT"
-    elif market in ("us", "hk", "cn"):
+    # symbol 规整 (与 backend/main.py:_normalize_symbol 同逻辑,避免循环引用直接内联):
+    #   - crypto: "ETH" → "ETH-USDT" (内部统一存现货代码,合约下游再加 -SWAP)
+    #   - 港股: 纯数字补足 4 位 + .HK (981 → 0981.HK, 700 → 0700.HK, 9988 → 9988.HK)
+    #   - A 股: 6 位数字保持不变,去除可能的 .SH/.SZ 后缀
+    #   - 美股: 大写,去除可能的 .US 后缀
+    if market == "crypto":
         symbol = symbol.upper()
+        if "-" not in symbol:
+            symbol = f"{symbol}-USDT"
+    elif market == "hk":
+        s = symbol.upper().strip()
+        core = s.replace(".HK", "")
+        if core.isdigit():
+            symbol = core.zfill(4) + ".HK"
+        else:
+            symbol = s if s.endswith(".HK") else s + ".HK"
+    elif market == "cn":
+        symbol = symbol.upper().replace(".SH", "").replace(".SZ", "")
+    elif market == "us":
+        symbol = symbol.upper().replace(".US", "")
 
     missing_data: List[str] = []
 
