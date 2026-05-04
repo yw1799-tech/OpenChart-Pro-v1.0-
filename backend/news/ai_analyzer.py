@@ -31,319 +31,358 @@ logger = logging.getLogger(__name__)
 # Prompt 模板
 # ═══════════════════════════════════════════════════════════════════
 
-DEEP_ANALYSIS_PROMPT = """你是一个专业的金融分析师。请对下面这条财经新闻做深度解读，输出严格的 JSON 格式（不要解释/不要 markdown 包裹）：
+DEEP_ANALYSIS_PROMPT = """你是一位资深金融新闻分析师。任务是对一条财经新闻做客观深度解读,识别其对具体品种的可量化影响。
 
-新闻标题：{title}
-新闻来源：{source}
-新闻正文：{content}
-关联品种：{categories}
+【输入】
+新闻标题: {title}
+新闻来源: {source}
+新闻正文: {content}
+关联品种(粗筛): {categories}
 
-【用户关注列表】（impacts 必须尽可能从此列表挑选相关品种；仅当此清单中确实无相关标的时才可用列表外代码）：
+【用户关注列表】(impacts 优先从此列表挑选;若新闻确与本列表外品种强相关,可补充)
 {watch_context}
 
-请输出 JSON：
+【分析原则】
+1. 用数据说话,不预设立场。新闻偏多就标 bullish,偏空就标 bearish,信息不足或两可就 neutral。
+2. impacts 只列**真实强相关**的品种(strength >= 0.6);宁缺毋滥,不确定直接空数组。
+3. 宏观/政策类新闻若对具体品种无清晰直接传导路径,impacts 直接 []。
+4. 如果"新闻正文"为空(只有标题),strength 上限设 0.6,且 catalyst_timing 倾向 uncertain。
+5. 价格字段没把握就 null;不要编造数据。
+6. impacts 不要重复同一 symbol。
+
+【输出严格 JSON】(不要解释/不要 markdown 包裹)
 {{
   "overall_view": "bullish|bearish|neutral",
   "summary": "30 字以内的核心摘要",
-  "catalyst_timing": "immediate|1-3d|1-2w|delayed",
-  "catalyst_explanation": "一句话说清：事件什么时候最可能反映到股价上。立即（盘中跳空）/ 1-3 天 / 1-2 周（需消化）/ 延迟（等财报/数据兑现）",
+  "catalyst_timing": "immediate|1-3d|1-2w|delayed|uncertain",
+  "catalyst_explanation": "一句话说清:事件最可能何时反映到股价。immediate(盘中跳空) / 1-3d / 1-2w(需消化) / delayed(等财报或数据兑现) / uncertain(信息不足)",
   "impacts": [
-    {{"symbol": "品种代码", "direction": "bullish|bearish|neutral", "horizon": "1d|1-5d|1-3m", "strength": 0.0-1.0, "reason": "一句话原因"}}
+    {{"symbol": "品种代码", "direction": "bullish|bearish|neutral", "horizon": "1d|1-5d|1-3m", "strength": 0.0-1.0, "reason": "一句话原因(基于新闻明确表述)"}}
   ],
-  "reasons": ["利好/利空理由 1", "理由 2"],
+  "reasons": ["事件偏多/偏空的具体证据 1", "证据 2"],
   "risks": ["潜在风险 1", "风险 2"],
   "key_levels": {{"support": 数字 or null, "resistance": 数字 or null}},
-  "historical_analogies": ["类似事件 1（如有）"]
+  "historical_analogies": ["类似历史事件 1(如有)"]
 }}
 
-**严格要求（必须遵守）：**
-1. impacts 只列**真实强相关**的品种（strength >= 0.6）。**不确定就留空数组 [], 不要硬凑**。宁缺毋滥。
-2. 仅当新闻明确涉及【用户关注列表】里某品种时才列入 impacts。绝不允许"看到候选清单就随便挑几个"。
-3. 宏观/政策类新闻：如果对你列出的具体品种没有清晰直接的影响，impacts 直接空数组。不要编造关联。
-4. direction/horizon/strength 必须填准确；strength < 0.6 一律不列。
-5. 价格字段没把握就 null；不要编造数据。
-6. 不要在 impacts 里重复同一 symbol。
-
-**正面例子：** "苹果发布新 iPhone 销量超预期" → impacts: [{{"symbol":"AAPL","direction":"bullish","strength":0.8,...}}]
-**反面例子（绝对禁止）：** "欧洲央行讲话" → 不要把 02442.HK 怡俊集团列入 impacts，因为它是港股零售小盘，与欧央行无直接关系。
+【参考示例】
+正例: "苹果 Q3 财报营收超预期 12%" → impacts 含 AAPL(direction=bullish, strength=0.8, reason 引用 12% 数据)
+反例: "欧洲央行讲话维持利率不变" → 不要因为关注列表有港股零售小盘就强行关联,impacts 应仅含明确相关品种(若无则 [])
 """
 
 
-SIGNAL_VERIFY_PROMPT = """你是一个专业的金融交易分析师。请对一个**技术策略触发的交易信号**做独立的二次验证（不是背书，而是挑刺）。
+SIGNAL_VERIFY_PROMPT = """你是一位资深量化交易分析师。任务是对策略触发的交易信号做**独立验证**:基于技术、新闻、衍生品数据,客观判断该信号当前是否值得跟单。
+
+【分析原则】
+1. 用数据说话,不预设立场。证据支持信号就 confirm,证据反对就 reject,模糊则 warn,绝不为否定而否定。
+2. 系统置信度仅供参考,你的判断基于下方原始数据独立得出。
+3. 数据缺失的维度直接跳过,不在缺失数据上推断 — 在 reason 里注明"X 数据缺失,本判断未计入"。
 
 ## 信号基本信息
-品种：{symbol} ({market})
-周期：{interval}
-方向：{action}
-价格：{price}
-触发策略：{strategy}（系统置信度 {confidence}）
-触发理由：{reason}
+品种: {symbol} ({market})  周期: {interval}  方向: {action}
+价格: {price}  触发策略: {strategy} (系统置信度 {confidence})
+触发理由: {reason}
 
-## 技术面快照（最重要，是你判断的主要依据）
+## 技术面快照(主要判断依据)
 {tech_snapshot}
 
-## 最近 24 小时相关新闻（{news_count} 条）
+## 最近 24 小时相关新闻 ({news_count} 条)
 {news_summary}
 
-## 加密衍生品市场情绪（仅加密信号提供，否则为空）
+## 加密衍生品市场情绪(仅加密信号有,否则为空)
 {crypto_insights}
 
-## 该品种上一次 AI 诊断结论（系统给的独立判断，**信号方向与诊断严重冲突时必须 reject/warn 并说清冲突点**）
+## 该品种上次 AI 诊断结论(独立第二意见)
 {diagnosis_context}
 
-## 多策略共振情况（v12.13 新增；近 30min 同 symbol+方向 的其他策略信号）
+## 多策略共振情况(近 30min 同品种+同方向其他策略)
 {consensus_context}
 
-## 市场天气（v12.13 新增；A股看北向资金 / 美股+加密看 CNN 恐贪指数）
+## 市场天气(A 股北向资金 / 美股+加密 CNN 恐贪指数)
 {market_weather}
 
-## 你的任务
-**不要被系统置信度误导**。基于技术快照独立判断：
+## 验证维度
 
-1. **技术面验证**（主要）：
-   - 均线排列、RSI、MACD、量能是否真的支持该方向？
-   - 价格距离关键阻力/支撑位置是否合理（BUY 时要离支撑近、离阻力远；SELL 相反）
-   - 是否有假突破风险（如 RSI 已超买再 BUY、无量突破、距阻力很近）
+**A. 技术面**(主要):
+- 均线排列、RSI、MACD、量能是否支持该方向?
+- 价格与关键阻力/支撑距离是否合理(BUY 离支撑近离阻力远;SELL 反之)?
+- 假突破风险(超买后追多、无量突破、距阻力 < 1% 等)?
 
-2. **新闻验证**：近期新闻情绪是否和技术方向一致？有重大利空/利好未反映？
+**B. 新闻面**: 近期新闻情绪与信号方向是否一致?有未反映的重大利好/利空?
 
-3. **风险识别**：波动率是否异常？超买/超卖？流动性问题？
+**C. 加密衍生品**(若提供):
+- 资金费率年化 > 100% → 多头拥挤,BUY 降权
+- 资金费率显著为负 → 空头拥挤,SELL 降权
+- OI 上升 + 价上升 = 真多头(有效背书)
+- OI 下降 + 价上升 = 空头回补(短命反弹,BUY 警惕)
+- 大户多空比与散户严重背离(大户空、散户多) = 散户接盘风险,BUY 应 reject 或 warn
+- 主动买盘占比 < 45% → BUY 降权
+- 恐贪 > 85 → BUY 应 warn;< 15 → SELL 应 warn
 
-4. **加密衍生品情绪验证**（若上文给了衍生品数据）：
-   - 资金费率 > 0.1%/8h (年化>100%) → 多头过度拥挤，BUY 信号要降权
-   - 资金费率 << 0 → 空头过度拥挤，SELL 信号要降权
-   - 持仓量上升 + 价格上升 = 真多头趋势（有效 BUY 背书）
-   - 持仓量下降 + 价格上升 = 空头回补（短命反弹，BUY 信号要警惕）
-   - **大户多空比** 与 **散户多空比** 严重背离（大户空散户多）= 散户接盘信号，**BUY 信号必须 reject 或 warn**
-   - 主动买盘占比 < 45% 时 BUY 信号应降权
-   - 恐慌贪婪 > 85（极度贪婪）时 BUY 信号必须 warn；< 15 时 SELL 信号必须 warn
+**D. 诊断对比**:
+- 诊断 sell/reduce + 信号 BUY = 严重冲突 → reject,reason 注明"与诊断反向"
+- 诊断 buy/strong_buy + 信号 BUY = 同向加强,技术也支持则 confirm
+- 诊断 hold + 信号 BUY = 非冲突,按信号自身质量判
+- 诊断暂无 = 忽略该维度
 
 ## 输出严格 JSON
+
 {{
   "verdict": "confirm|warn|reject",
   "ai_confidence": 0-100,
-  "reason": "100 字内，必须引用技术快照里的具体数据说话（如 RSI=62 未超买、距阻力 2.6% 空间不足等），不要空话",
-  "ai_stop_loss": 数字（基于支撑位/ATR 给出的更优止损价；不调整可填 null）,
-  "ai_take_profit": 数字（基于阻力位/目标位给出的更优止盈价；不调整可填 null）
+  "reason": "100 字内,引用技术快照具体数据说明判断依据(如 RSI=62 未超买、距阻力 2.6% 等),避免空话",
+  "ai_stop_loss": 数字 或 null,
+  "ai_take_profit": 数字 或 null
 }}
 
-止盈止损要求：
-- 必须基于技术快照里的"关键位"（20日高低、支撑阻力）给出
-- BUY: ai_stop_loss 应在当前价下方且不低于 20日低，ai_take_profit 应在 20日高附近或之前
+**SL/TP 要求**:
+- 基于技术快照"关键位"(20 日高低、支撑阻力、ATR)给出
+- BUY: SL 在当前价下方且不低于 20 日低;TP 在 20 日高附近或之前
 - SELL: 反之
-- 若你的 SL/TP 与系统给的相同则填 null
+- 与系统给的相同则填 null
 - 风险回报比建议 1:2 以上
 
-## 判定阈值（不要过度严格，给合格信号以通行）
-- **confirm（AI_conf ≥ 65）**：方向与主趋势一致 + 主要风险可控 → 跟单
-  * 不要求"完美"，有中等风险但方向清晰就可以 confirm
-  * 例：多头趋势 + MA 多头排列 + 未超买 = BUY confirm（即便距阻力 3-5% 也可以，只需在 reason 里提示）
-- **warn（40-64）**：信号成立但有具体可量化的风险（必须引用数据说清楚是什么风险）→ 减仓跟或观察
-  * 例：多头趋势但 RSI=72 已超买 → BUY warn
-- **reject（< 40）**：技术面方向矛盾 / 被新闻明确推翻 / 关键位严重不利 → 放弃
-  * **最典型的 reject 情形**：信号方向与主趋势反向（如多头排列里出 SELL、空头排列里出 BUY）
+## 判定阈值
+
+- **confirm (ai_confidence ≥ 65)**: 方向与主趋势一致 + 主要风险可控 → 值得跟单
+  * 不要求"完美",方向清晰即可 confirm,中等风险在 reason 里提示
+  * 例: 多头趋势 + MA 多头排列 + 未超买 = BUY confirm(即便距阻力 3-5%)
+- **warn (40-64)**: 信号成立但有具体可量化风险 → 减仓跟或观察
+  * 例: 多头趋势但 RSI=72 已超买 → BUY warn
+- **reject (< 40)**: 技术面方向矛盾 / 新闻明确推翻 / 关键位严重不利 → 放弃
+  * 信号方向与主趋势反向(多头排列里出 SELL、空头排列里出 BUY)
   * 距关键阻力/支撑 < 0.5% 几乎无空间
   * 明确利空新闻 + 技术面假突破
 
-## v12.13 多策略共振 + 市场天气加分规则（重要）
+## 共振 + 市场天气调整规则(对 ai_confidence 微调)
 
-**A. 多策略共振**（基于上文"多策略共振情况"调整 ai_confidence）：
-- **0 个其他同向信号（孤狼）**：默认 confidence；如果只有"勉强 confirm"边缘特征，宁可标 warn
-- **1 个其他同向 confirm/warn（双重）**：技术面+新闻面也支持时 confidence 自然 +5
-- **≥2 个其他同向 confirm（三重+）**：高质量共振，confidence +10~15
-- **若共振信号都是 reject**：本信号必须 warn 或 reject（多数策略都否决，单策略不应坚持）
+**A. 多策略共振**(基于"多策略共振情况"):
+- 0 个其他同向信号(孤狼): 默认;若仅"勉强 confirm"边缘特征,标 warn
+- 1 个其他同向 confirm/warn(双重): 技术 + 新闻也支持时 +5
+- ≥2 个其他同向 confirm(三重+): +10~15
+- 共振信号都是 reject: 本信号必须 warn 或 reject
 
-**B. 市场天气**（基于上文"市场天气"调整 ai_confidence）：
-- A 股 BUY + 北向"强流入" → +5；A 股 BUY + 北向"强流出" → -10（外资抛售逆势买套牢风险高）
-- 美股/加密 BUY + CNN F&G ≥80（极贪）→ -10（高位风险）；BUY + ≤20（极恐）→ +5
-- 美股/加密 SELL 反向（≥80 加分 / ≤20 扣分）
+**B. 市场天气**(基于"市场天气"):
+- A 股 BUY + 北向"强流入": +5;+ "强流出": -10
+- 美股/加密 BUY + CNN F&G ≥80: -10;+ ≤20: +5
+- 美股/加密 SELL 反向
 
-**C. ADX 趋势强度**（基于技术快照中 ADX 值调整）：
-- ADX ≥25 + 趋势策略（ma_cross / volume_breakout / chanlun / donchian_breakout）→ +5
-- ADX ≤20 + 反转策略（bollinger_reversion / rsi_divergence）→ +5
-- 趋势/反转策略错配（如震荡市出现强买突破信号）→ -5
+**C. ADX 趋势强度**(基于技术快照 ADX):
+- ADX ≥25 + 趋势策略(ma_cross / volume_breakout / chanlun / donchian_breakout): +5
+- ADX ≤20 + 反转策略(bollinger_reversion / rsi_divergence): +5
+- 趋势/反转策略错配(震荡市出强买突破): -5
 
-**D. 通用约束**：
-- 多项加减分总和上限 ±15（避免叠加膨胀）
-- 共振是充分非必要：单策略孤狼若主体技术面+诊断都强支持，仍可 confirm，但 ai_confidence 不应虚高
+**D. 通用约束**:
+- 加减分总和上限 ±15(避免叠加膨胀)
+- 共振是充分非必要;孤狼若主体技术 + 诊断都强支持,仍可 confirm,但 ai_confidence 不应虚高
 
-## 特别说明
-- 若系统信号与主趋势一致，不要因为"可能回调"或"需要观望"就 reject；这类保守担忧应该 warn
-- confirm 不是"背书这个信号会赚钱"，而是"这个信号合理，值得跟单"
-- 加密衍生品规则独立判断，与上述阈值叠加
-- **诊断 rating 的正确用法**（不要误读 hold 为冲突）：
-  * 诊断 **sell/reduce** + 信号 **BUY** = 严重冲突 → 必须 reject，reason 点明"与诊断 rating=sell/reduce 反向"
-  * 诊断 **buy/strong_buy** + 信号 **BUY** = 强化正向信号 → 只要技术面也支持就给 confirm
-  * 诊断 **hold** + 信号 **BUY** = 不是冲突，只是诊断更保守 → 按信号自身技术面质量判断，不因为诊断 hold 就扣分
-  * 诊断 **暂无** = 忽略该段，按信号自身判断
+## 提醒
+- "可能回调""需要观望"这类保守担忧应该 warn,不是 reject
+- confirm 不是"背书会赚钱",而是"信号合理,值得跟单"
+- 加密衍生品规则独立判断,与上述阈值叠加
+- 数值映射(reason→verdict)由后端处理,你只需如实给出 ai_confidence 和判定
 """
 
 
-POSITION_ADVICE_PROMPT = """你是一个专业的金融顾问。基于下列信息，对用户的持仓给出操作建议（输出严格 JSON）：
+POSITION_ADVICE_PROMPT = """你是一位资深持仓顾问。任务是基于完整信息,对用户的持仓给出客观、可执行的操作建议。
 
-持仓品种：{symbol} ({market})
-数量：{quantity}  成本价：{avg_cost}  当前价：{current_price}
-浮动盈亏：{pnl_pct}%
+【分析原则】
+1. 用数据说话,不预设立场。证据支持持有就 hold,支持加仓就 add,支持减仓/平仓就 reduce/close。
+2. 信息不充分时倾向 reduce 锁部分风险,优于盲目 hold 等待。
+3. 与候选池诊断/策略信号/前次建议矛盾时,必须在 reason 给出可量化证据(数据变化/事件触发等)。
+4. 数据缺失的维度直接跳过,不在缺失数据上推断。
 
-最近 24 小时相关新闻 ({news_count} 条)：
+【输入】
+持仓品种: {symbol} ({market})
+数量: {quantity}  成本价: {avg_cost}  当前价: {current_price}
+浮动盈亏: {pnl_pct}%
+
+最近 24 小时相关新闻 ({news_count} 条):
 {news_summary}
 
-【候选池最近 AI 诊断】（如果存在，须与你的建议做对照，避免前后矛盾）：
+【候选池 AI 诊断】(若存在,需对照避免前后矛盾):
 {pool_diagnosis_context}
 
-【系统最近 24 小时针对该品种的策略信号】（策略集体立场，若与你建议矛盾必须解释）：
+【最近 24 小时该品种策略信号】(系统集体立场,与你建议矛盾时需解释):
 {recent_signals}
 
-【你之前对此持仓的建议历史】（必须保持逻辑一致；反转必须在 reason 里给出市场已变化的具体证据）：
+【你之前对此持仓的建议历史】(逻辑需一致;方向反转必须给出"市场已变化"的具体证据):
 {advice_history}
 
-请输出 JSON：
+【输出严格 JSON】
+
 {{
   "advice": "hold|reduce|add|close",
   "urgency": "low|medium|high",
-  "reason": "100 字以内的核心理由；若与候选池诊断/策略信号/前次建议矛盾必须解释",
+  "reason": "100 字以内核心理由;与诊断/信号/前次建议矛盾时必须说明",
   "key_factors": ["因素 1", "因素 2"],
   "alignment": "aligned_with_system|partial|conflict",
-  "alignment_note": "一句话说明你的建议与系统信号/诊断是一致/部分一致/冲突",
-  "suggested_action": {{"qty_pct": 0-100, "target_price": 数字 or null, "stop_loss": 数字 or null}}
+  "alignment_note": "一句话说明本建议与系统信号/诊断的一致/部分一致/冲突关系",
+  "suggested_action": {{
+    "reduce_pct": 0-100 或 null,   // advice=reduce 时必填(减仓百分比);其他情况 null
+    "add_pct": 0-100 或 null,      // advice=add 时必填(加仓百分比);其他情况 null
+    "target_price": 数字 或 null,  // 目标价(基于阻力位/技术目标位)
+    "stop_loss": 数字 或 null      // 止损价(基于支撑位/ATR)
+  }}
 }}
 
-【硬性原则】（违反这些原则你的建议会被人工驳回）：
-1. **行情一致性**：advice 必须与 K 线动量一致 — 浮亏 > 5% 且无明确利好催化，禁止给 hold（要么 reduce 要么 close 离场）
-2. **不反复变卦（B2/B6 反 flip 检查）**：若你 30 min 内给过 reduce/close，现在改 hold/add 必须给出"市场已反转"的具体证据（股价反弹 >2%、利好发布等），否则维持原来的 reduce/close
-3. **RSI 不是单一信号（B1 修正）**：仅 RSI > 80 不足以触发 reduce，必须配合"K 线收阴 + 量能放大 + 趋势转折"才算超买减仓
-4. **避免沉没成本陷阱（B3 修正）**：浮亏 > 8% 且无明确利好，必须 close 或 reduce ≥ 50%；禁止用"基本面中性偏多"作为继续持有的理由
-5. **不确定优先 reduce 而非 hold**：信息不充分时给 reduce 锁部分风险，比给 hold 等出方向更稳
+【硬性约束】(影响 confidence 评分,违反则 reason 必须说清楚为何例外):
 
-只对"明确利好/利空"才给 add/close 建议，不确定时优先 reduce 而非 hold。
-若最近策略信号全部 SELL/reduce 而你建议 hold/add，必须在 reason 里说清为何反向。
+1. **行情一致性**: 浮亏 > 5% 且无明确利好催化时,不应给 hold(应 reduce 或 close)
+2. **不反复变卦**: 30 min 内给过 reduce/close,现在改 hold/add 必须有"市场反转"的具体证据(如股价反弹 > 2%、重大利好发布);否则维持原方向
+3. **RSI 不是单一信号**: 仅 RSI > 80 不足以触发 reduce,需配合"K 线收阴 + 量能放大 + 趋势转折"才算超买减仓
+4. **避免沉没成本陷阱**: 浮亏 > 8% 且无明确利好时,应 close 或 reduce ≥ 50%;不要用"基本面中性偏多"作为继续持有的理由
+5. **不确定优先 reduce**: 信息不充分时,reduce 锁部分风险比 hold 等待更稳健
+
+【提醒】
+- 仅对"明确利好/利空"给 add/close;不确定优先 reduce
+- 最近策略信号全部 SELL/reduce 时若你建议 hold/add,reason 必须说清反向理由
+- reduce_pct / add_pct 是该字段语义统一: reduce 时填减仓比例, add 时填加仓比例(以现持仓量为基数), 其他 advice 都填 null
 """
 
 
-CRYPTO_DIAGNOSIS_PROMPT = """你是一个专业的加密货币衍生品交易分析师。请对下面这个加密币种做**全面诊断 + 操作建议**，输出严格 JSON。
+CRYPTO_DIAGNOSIS_PROMPT = """你是一位资深加密衍生品交易分析师。任务是综合技术、衍生品情绪、新闻和市场情绪,给出客观的诊断与可执行建议。
 
-## 币种基本信息
-品种：{symbol}
-当前价：{last_price}
-24h 涨跌：{change_pct_24h}%（最高 {high_24h} / 最低 {low_24h}）
-24h 成交额：{vol_24h} USDT
+【分析原则】
+1. 用数据说话,不预设立场。技术看多就标多,衍生品拥挤就指出风险,中性就承认中性。
+2. 数据缺失的维度直接跳过(对应 view 字段标"数据缺失,本判断不计入");不在缺失数据上推断。
+3. 5 档评级要分清楚,不要把所有模糊情况一律 hold(同时也不要为了展现观点强行给极端评级)。
 
-## 期货市场情绪（过去 24h）
-- 资金费率：{funding_rate}%（年化 {funding_annual}%）→ 正值=多头付空头（多拥挤）；负值=空头付多头（空拥挤）
-- 持仓量变化：{oi_change}%（24h）→ OI 上升 + 价上升 = 真多头；OI 下降 + 价上升 = 空头回补
-- 普通账户多空比：{ls_ratio}（散户信号）
-- 精英交易员多空比：{top_trader_ratio}（**重点关注**：大户的方向通常更专业）
-- 主动买卖：买盘占比 {buy_pct}%（{taker_signal}）
+【输入】
+品种: {symbol}
+当前价: {last_price}
+24h 涨跌: {change_pct_24h}% (最高 {high_24h} / 最低 {low_24h})
+24h 成交额: {vol_24h} USDT
 
-## 恐慌贪婪指数
-- 当前：{fng_value}（{fng_label}）—— 极度贪婪时要谨慎做多，极度恐惧时可能是机会
+期货情绪(过去 24h):
+- 资金费率: {funding_rate}% (年化 {funding_annual}%) → 正值 = 多头付空头(多拥挤);负值 = 空头付多头(空拥挤)
+- 持仓量变化: {oi_change}% (24h) → OI 升 + 价升 = 真多头;OI 降 + 价升 = 空头回补
+- 普通账户多空比: {ls_ratio} (散户信号)
+- 精英交易员多空比: {top_trader_ratio} (大户信号,通常更专业)
+- 主动买卖: 买盘占比 {buy_pct}% ({taker_signal})
 
-## 技术面快照
+恐慌贪婪指数: {fng_value} ({fng_label})
+
+技术面快照:
 {tech_snapshot}
 
-## 最近 48 小时相关新闻（{news_count} 条）
+最近 48 小时相关新闻 ({news_count} 条):
 {news_summary}
 
-## 上一次诊断（供对比；无则为空）
+上一次诊断(供对比,无则为空):
 {previous_diagnosis}
 
-## 你的任务
-结合**技术面 + 期货情绪 + 新闻 + 市场情绪**，给出可执行的操作建议。
+【输出严格 JSON】(不要解释/不要 markdown 包裹)
 
-输出严格 JSON（不要解释/不要 markdown）：
 {{
   "rating": "strong_buy|buy|hold|reduce|sell",
   "confidence": 0-100,
-  "summary": "80 字以内的核心结论（必须说清楚当前是什么状态）",
-  "change_from_last": "若上次诊断存在，说清本次 vs 上次的关键变化（25 字内，例：资金费率从 0.01% 跳到 0.08% 多头拥挤显化）；无则为空",
+  "summary": "80 字以内核心结论,说清当前状态",
+  "change_from_last": "若上次诊断存在,说本次 vs 上次的关键变化(25 字内,如'资金费率从 0.01% 升到 0.08%,多头拥挤显化');无则为空",
   "market_regime": "趋势多头|趋势空头|震荡|顶部拥挤|底部反转",
   "strengths": ["做多理由 1", "理由 2", "理由 3"],
   "risks": ["风险 1", "风险 2", "风险 3"],
-  "technical_view": "技术面一句话（趋势/位置/动量）",
-  "derivatives_view": "期货情绪一句话（funding/OI/top-trader 综合）",
-  "news_view": "新闻一句话（催化/利空）",
-  "key_levels": {{"support": 数字, "resistance": 数字, "stop_loss": 数字, "take_profit": 数字}},
+  "technical_view": "技术面一句话(趋势/位置/动量),数据缺失时标注",
+  "derivatives_view": "期货情绪一句话(funding/OI/大户多空比综合),数据缺失时标注",
+  "news_view": "新闻一句话(催化/利空),数据缺失时标注",
+  "key_levels": {{"support": 数字 或 null, "resistance": 数字 或 null, "stop_loss": 数字 或 null, "take_profit": 数字 或 null}},
   "operations": {{
-     "open_position": "是否适合开新仓；如何开（方向、仓位比例、触发条件）",
-     "add_position": "如果已有仓位，是否加仓；何价何条件加",
-     "reduce_position": "是否减仓；何价何条件减",
-     "close_position": "是否清仓；什么信号出现必须清"
+     "open_position": "是否适合开新仓;如何开(方向/仓位/触发条件)",
+     "add_position": "已有仓位时是否加仓;何价何条件加",
+     "reduce_position": "是否减仓;何价何条件减",
+     "close_position": "是否清仓;什么信号出现必须清"
   }},
-  "exit_triggers": ["触发后必须立即撤出的硬条件 1（例：funding 年化 > 150% 且大户多空比跌至 0.7 下）", "条件 2", "条件 3"],
+  "exit_triggers": ["撤出硬条件 1(可量化,如'funding 年化 > 150% 且大户多空比 < 0.7')", "条件 2(可填 1 条但需说明为何只 1 条)"],
   "horizon": "1-3d|3-14d|1-3m"
 }}
 
-**严格要求**：
-1. 必须基于提供的数据说话，绝不编造
-2. rating=strong_buy 必须满足：技术多头 + 精英多空比 > 1.3 + funding 不拥挤 + 无重大利空；不全满足就 hold
-3. operations 四项都要填（即便是"不建议开新仓"也要明确说）
-4. key_levels 必须基于技术快照里的 20日高低 + ATR，不要瞎猜
-5. 若资金费率 > 0.1%/8h 或年化 > 100% 必须标注"多头拥挤，注意回撤"
-6. 若精英多空比与散户多空比背离（大户空散户多）必须标注"散户接盘风险"
-7. exit_triggers 必须 2-3 条**硬条件**（数字/阈值可对比），不要写"小心风险"这种模糊话
-8. 若上次诊断存在且本次 rating 变化，change_from_last 必须说清"变化的核心触发因素"
+【评级标准】
+- **strong_buy**: 技术多头排列 + 精英多空比 > 1.3 + 资金费率不拥挤(年化 < 100%) + 无重大利空,**四者俱全**
+- **buy**: 至少满足下列任一,且无明确利空:
+  * 技术向好(MA 多头排列 / MACD 金叉 / 突破阻力)
+  * 衍生品偏多(精英多空比 > 1.2 且 OI 配合上升)
+  * 利好催化 + 价格未透支
+- **hold**: 方向不明确 / 关键指标矛盾 / 拉锯整理
+- **reduce**: 趋势转弱(跌破 MA20 / 资金费率拥挤过热) 或 出现可量化利空
+- **sell**: 空头排列 + 跌破支撑 + 负面催化,三者至少俱两
+
+【硬性约束】
+1. 必须基于提供的数据,不编造
+2. operations 四项都要填(即便"不建议开新仓"也要明确说)
+3. key_levels 基于技术快照 20 日高低 + ATR,缺数据时填 null
+4. 资金费率年化 > 100% 必须在 risks 标注"多头拥挤,回撤风险"
+5. 大户与散户多空比严重背离(大户空、散户多)必须在 risks 标注"散户接盘风险"
+6. exit_triggers 至少 1 条可量化硬条件;无法量化的"小心风险"不算
+7. 若上次诊断存在且 rating 变化,change_from_last 必须说清触发因素
+8. 数据缺失维度: 在对应 view 字段写"数据缺失,本判断未计入";rating 不应仅基于缺失维度推断
 """
 
 
-STOCK_DIAGNOSIS_PROMPT = """你是一个专业的金融分析师。请对下面这只股票做一次**全面诊断**，输出严格的 JSON。
+STOCK_DIAGNOSIS_PROMPT = """你是一位资深股票分析师。任务是综合技术、基本面、新闻三维度,给出客观全面诊断。
 
-## 股票信息
-品种：{symbol} ({market_label})
-名称：{name}
-当前价：{price}
-入池来源：{source}
-入池理由：{reason}
+【分析原则】
+1. 用数据说话,不预设立场。证据支持就明确给方向,不要用 hold 当"安全选项"。
+2. 5 档评级要用活,优质标的若"无明确利空 + 至少一维向好",应果断给 buy。
+3. 数据缺失的维度直接跳过(对应 view 标"数据缺失,本判断不计入")。
+4. confidence 反映把握度;基本面缺失时上限建议 70。
 
-## 评分（0-100）
-- 综合分：{total_score} (= 事件 {event_score} + 技术 {technical_score} + 基本面 {fundamentals_score})
+【输入】
+品种: {symbol} ({market_label})
+名称: {name}
+当前价: {price}
+入池来源: {source}
+入池理由: {reason}
 
-## 基本面快照
+评分(0-100): 综合 {total_score} = 事件 {event_score} + 技术 {technical_score} + 基本面 {fundamentals_score}
+
+基本面快照:
 {fundamentals_text}
 
-## 技术面快照（最近 60 根日 K）
+技术面快照(最近 60 根日 K):
 {tech_snapshot}
 
-## 最近 7 天相关新闻 ({news_count} 条)
+最近 7 天相关新闻 ({news_count} 条):
 {news_summary}
 
-## 上一次诊断（供对比；无则为空）
+上一次诊断(供对比,无则为空):
 {previous_diagnosis}
 
-## 你的任务
-基于以上数据做出**全面诊断**，输出严格 JSON（不要解释/不要 markdown 包裹）：
+【输出严格 JSON】(不要解释/不要 markdown)
+
 {{
   "rating": "strong_buy|buy|hold|reduce|sell",
   "confidence": 0-100,
-  "summary": "60 字以内的核心结论",
-  "change_from_last": "若"上一次诊断"段存在，说明本次 vs 上次的关键变化（20 字）；无则为空",
+  "summary": "60 字以内核心结论",
+  "change_from_last": "若上次诊断存在,说本次 vs 上次的关键变化(20 字内);无则为空",
   "strengths": ["优势 1", "优势 2", "优势 3"],
   "risks": ["风险 1", "风险 2", "风险 3"],
-  "technical_view": "技术面一句话点评（趋势/位置/动量）",
-  "fundamental_view": "基本面一句话点评（市值/估值/流动性）",
-  "news_view": "新闻面一句话点评（近期催化/利空）",
-  "key_levels": {{"support": 数字 or null, "resistance": 数字 or null, "stop_loss": 数字 or null}},
+  "technical_view": "技术面一句话(趋势/位置/动量),数据缺失时标注",
+  "fundamental_view": "基本面一句话(市值/估值/流动性),数据缺失时标注",
+  "news_view": "新闻面一句话(近期催化/利空),数据缺失时标注",
+  "key_levels": {{"support": 数字 或 null, "resistance": 数字 或 null, "stop_loss": 数字 或 null}},
   "horizon": "1-5d|1-3m|3-12m",
-  "next_action": "等具体什么条件触发买/卖/观察的明确动作（一句话，可执行）",
-  "exit_triggers": ["触发后必须立即撤出的条件 1（引用技术面/新闻数据）", "条件 2"]
+  "next_action": "可执行的具体触发条件(如'价突破 X 且成交量 > 1.5 倍均量时小仓位试多'),非'建议关注'空话",
+  "exit_triggers": ["撤出硬条件 1(引用具体数据,如'跌破 MA20'/'RSI > 75 且量比 > 1.5'/'出现 ★4+ 利空新闻')", "条件 2"]
 }}
 
-**严格要求**：
-1. 必须基于上面提供的数据说话；不要编造数据。
-2. 评级必须严格按以下 5 档定义选择（**不允许把所有模糊情况一律 hold**，五档要用活）：
-   - **strong_buy**：强势多头趋势（MA 多头排列 + MACD 金叉 + 放量）+ 明确利好催化 + 基本面支持，三者俱全（稀有）
-   - **buy**：至少满足下列任一条件，且无明确利空 → 应给 buy（不要怕给）：
-     * 技术面向好：MA 多头排列 或 站稳 MA20 + 放量 或 MACD 金叉
-     * 基本面优质：市值/估值/流动性三项中至少两项良好
-     * 估值合理偏低 + 所在赛道有热点
-   - **hold**：方向不明确 / 关键指标矛盾 / 正处在支撑阻力间拉锯 / 待确认信号
-   - **reduce**：趋势转弱（跌破 MA20 或 MACD 死叉）或出现可量化利空催化
-   - **sell**：明确空头排列 + 跌破关键支撑 + 负面催化，三者至少俱两
-   **关键：**不要把"需要观察"、"等更好机会"的心理一律写成 hold。优质标的只要**没有明确利空**且**至少一条技术/基本面/催化支持**，应果断给 buy。
-3. 风险/优势各 2-3 条具体的（如"RSI=65 接近超买"，不是"动量过热"）。
-4. key_levels 必须基于技术快照里的数据（20 日高低/支撑阻力/ATR），没把握就 null。
-5. next_action 必须可执行（例："价格突破 X 且成交量 > 1.5 倍均量时小仓位试多" 不是"建议关注")。
-6. **exit_triggers** 必须 2-3 条可量化的撤出条件（"跌破 MA20" / "RSI > 75 且量比放大" / "出现 ★4+ 利空新闻"）—— 不是"发现异常"这种空话。
-7. 如果上次诊断存在且本次评级变化，change_from_last 必须说清触发变化的具体原因（例："技术面金叉 + 20 日放量 vs 上次观察无量"）。
+【评级标准】(避免一律 hold,五档用活)
+- **strong_buy**: 强势多头(MA 多头排列 + MACD 金叉 + 放量) + 明确利好催化 + 基本面支持,三者俱全(稀有)
+- **buy**: 至少下列一条,且无明确利空:
+  * 技术向好(MA 多头排列 或 站稳 MA20 + 放量 或 MACD 金叉)
+  * 基本面优(市值/估值/流动性三项中至少两项良好)
+  * 估值合理偏低 + 赛道有热点
+- **hold**: 方向不明 / 关键指标矛盾 / 支撑阻力间拉锯 / 等待信号确认
+- **reduce**: 趋势转弱(跌破 MA20 或 MACD 死叉) 或 可量化利空催化
+- **sell**: 空头排列 + 跌破关键支撑 + 负面催化,三者至少俱两
+
+【硬性约束】
+1. 基于提供的数据,不编造
+2. 风险/优势各 2-3 条具体内容(如"RSI=65 接近超买",不写"动量过热"这种空话)
+3. key_levels 基于技术快照 20 日高低/支撑阻力/ATR,无把握时 null
+4. next_action 必须可执行,引用具体数据
+5. exit_triggers 至少 1 条可量化条件;"发现异常"这种模糊话不算
+6. 上次诊断存在且本次评级变化时,change_from_last 必须说清触发因素
+7. 数据缺失维度: 对应 view 字段写"数据缺失,本判断未计入";rating 不应仅基于缺失维度推断
 """
 
 
@@ -1683,28 +1722,48 @@ class NewsAIAnalyzer:
         lo20 = min(float(r["low"]) for r in rows)
         pnl_pct = (cur_price - avg) / avg * 100 if side == "long" else (avg - cur_price) / avg * 100
 
-        prompt = f"""你是专业交易员。为以下{('多' if side=='long' else '空')}头持仓给出**止盈价**与**止损价**（输出严格 JSON）：
+        side_label = '多' if side == 'long' else '空'
+        side_full = 'long=做多' if side == 'long' else 'short=做空'
+        tp_guide = (
+            '多头: 应在当前价上方,参考 20 日高或合理目标位(avg × 1.15 ~ 1.30 之间为常见)'
+            if side == 'long'
+            else '空头: 应在当前价下方,参考 20 日低或合理目标位(avg × 0.70 ~ 0.85 之间为常见)'
+        )
+        sl_guide = (
+            '多头: 应在当前价下方,参考 20 日低或不低于 avg × 0.92(留 8% 容忍)'
+            if side == 'long'
+            else '空头: 应在当前价上方,参考 20 日高或不高于 avg × 1.08'
+        )
+        range_pct = ((hi20 - lo20) / cur_price * 100) if cur_price > 0 else 0
+        prompt = f"""你是一位资深风险管理交易员。任务是为已有持仓给出客观的止盈价和止损价,基于技术位而非情绪。
 
-品种：{symbol} ({market})
-方向：{side}（{'long=做多' if side=='long' else 'short=做空'}）
-成本均价：{avg:.4f}
-当前价：{cur_price:.4f}
-浮动盈亏：{pnl_pct:+.2f}%
-近 20 日区间：高 {hi20:.4f} / 低 {lo20:.4f}
+【分析原则】
+1. 用数据说话: 优先引用 20 日高低、支撑阻力位
+2. 数据不充分时返回 null,不要编造数字 — 后端会按规则兜底
+3. SL 必须与持仓方向匹配,且不能超出常见安全区(避免 LLM 幻觉给出反向止损)
+
+【持仓信息】
+品种: {symbol} ({market})
+方向: {side}({side_full})
+成本均价: {avg:.4f}
+当前价: {cur_price:.4f}
+浮动盈亏: {pnl_pct:+.2f}%
+近 20 日区间: 高 {hi20:.4f} / 低 {lo20:.4f}
+20 日波动幅度: {range_pct:.2f}% (低于 5% 时区间窄,SL/TP 可能无意义)
 
 【止盈价 ai_take_profit】
-- {('多头：应在当前价上方，参考 20 日高或合理目标位（avg × 1.15 ~ 1.30 之间常见）' if side=='long' else '空头：应在当前价下方，参考 20 日低或合理目标位（avg × 0.70 ~ 0.85 之间常见）')}
-- 必须给出数字，不能为 null
+- {tp_guide}
+- 优先取数字;若 20 日区间 < 5% 或缺乏可参考阻力位,可返回 null
 
 【止损价 ai_stop_loss】
-- {('多头：应在当前价下方，参考 20 日低或不超过 avg × 0.92（留 8% 容忍）' if side=='long' else '空头：应在当前价上方，参考 20 日高或不超过 avg × 1.08')}
-- 必须给出数字，不能为 null
+- {sl_guide}
+- 优先取数字;若 20 日区间 < 5% 或缺乏可参考支撑位,可返回 null
 
-输出 JSON：
+【输出严格 JSON】
 {{
-  "ai_take_profit": 数字,
-  "ai_stop_loss": 数字,
-  "reason": "100 字以内说明依据（参考的支撑/阻力位、ATR、或固定百分比）"
+  "ai_take_profit": 数字 或 null,
+  "ai_stop_loss": 数字 或 null,
+  "reason": "100 字内说明依据,必须引用 20 日高低或具体百分比;若返回 null 需说明原因"
 }}
 """
         result = await self._call_llm(prompt, max_tokens=300, path="position_advice")
