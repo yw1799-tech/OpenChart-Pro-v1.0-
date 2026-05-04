@@ -2495,7 +2495,7 @@
         <div class="section-title">🔍 按需分析</div>
         <div class="muted small" style="margin-bottom:8px;">输入代码 + 持仓状态 → AI 分析师建议</div>
         <div style="display:flex;gap:6px;margin-bottom:8px;">
-          <input id="od-symbol" type="text" placeholder="ETH / AAPL / 0700"
+          <input id="od-symbol" type="text" placeholder="如: ETH / AAPL / 0981"
             style="flex:1;padding:8px 10px;background:var(--bg-tertiary,#1a1a1f);border:1px solid #333;border-radius:6px;color:#fff;font-size:14px;">
           <select id="od-market" style="padding:8px 6px;background:var(--bg-tertiary,#1a1a1f);border:1px solid #333;border-radius:6px;color:#fff;font-size:13px;">
             <option value="crypto">加密</option>
@@ -2514,15 +2514,15 @@
               <option value="long">多</option>
               <option value="short">空</option>
             </select>
-            <input id="od-pos-avg" type="number" step="any" placeholder="均价"
+            <input id="od-pos-avg" type="number" step="any" placeholder="持仓成本价"
               style="flex:1;padding:6px 8px;background:#0d1117;border:1px solid #333;border-radius:4px;color:#fff;font-size:13px;">
-            <input id="od-pos-qty" type="number" step="any" placeholder="数量"
+            <input id="od-pos-qty" type="number" step="any" placeholder="股数/张数"
               style="flex:1;padding:6px 8px;background:#0d1117;border:1px solid #333;border-radius:4px;color:#fff;font-size:13px;">
           </div>
           <div style="display:flex;gap:6px;">
-            <input id="od-pos-sl" type="number" step="any" placeholder="止损 (选填)"
+            <input id="od-pos-sl" type="number" step="any" placeholder="止损 (留空 AI 给)"
               style="flex:1;padding:6px 8px;background:#0d1117;border:1px solid #333;border-radius:4px;color:#fff;font-size:12px;">
-            <input id="od-pos-tp" type="number" step="any" placeholder="止盈 (选填)"
+            <input id="od-pos-tp" type="number" step="any" placeholder="止盈 (留空 AI 给)"
               style="flex:1;padding:6px 8px;background:#0d1117;border:1px solid #333;border-radius:4px;color:#fff;font-size:12px;">
             <button id="od-pos-fetch" class="btn" style="padding:6px 10px;font-size:11px;">📥 账户</button>
           </div>

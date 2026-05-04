@@ -57,7 +57,7 @@ const OnDemand = (function () {
           <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
             <div style="flex:0 0 auto;">
               <label style="display:block;font-size:11px;color:var(--text-tertiary);margin-bottom:4px;">代码</label>
-              <input id="od-symbol" type="text" placeholder="ETH / AAPL / 0700" style="width:140px;padding:5px 8px;background:var(--bg-tertiary);border:1px solid var(--border-secondary);color:var(--text-primary);border-radius:4px;font-size:13px;">
+              <input id="od-symbol" type="text" placeholder="如: ETH / AAPL / 0981" style="width:160px;padding:5px 8px;background:var(--bg-tertiary);border:1px solid var(--border-secondary);color:var(--text-primary);border-radius:4px;font-size:13px;">
             </div>
             <div style="flex:0 0 auto;">
               <label style="display:block;font-size:11px;color:var(--text-tertiary);margin-bottom:4px;">市场</label>
@@ -89,19 +89,19 @@ const OnDemand = (function () {
               </div>
               <div>
                 <label style="display:block;font-size:11px;color:var(--text-tertiary);margin-bottom:4px;">均价</label>
-                <input id="od-pos-avg" type="number" step="any" placeholder="3100.00" style="width:120px;padding:5px 8px;background:var(--bg-tertiary);border:1px solid var(--border-secondary);color:var(--text-primary);border-radius:4px;font-size:13px;">
+                <input id="od-pos-avg" type="number" step="any" placeholder="持仓成本价" style="width:120px;padding:5px 8px;background:var(--bg-tertiary);border:1px solid var(--border-secondary);color:var(--text-primary);border-radius:4px;font-size:13px;">
               </div>
               <div>
                 <label style="display:block;font-size:11px;color:var(--text-tertiary);margin-bottom:4px;">数量</label>
-                <input id="od-pos-qty" type="number" step="any" placeholder="1.5" style="width:100px;padding:5px 8px;background:var(--bg-tertiary);border:1px solid var(--border-secondary);color:var(--text-primary);border-radius:4px;font-size:13px;">
+                <input id="od-pos-qty" type="number" step="any" placeholder="股数/张数" style="width:100px;padding:5px 8px;background:var(--bg-tertiary);border:1px solid var(--border-secondary);color:var(--text-primary);border-radius:4px;font-size:13px;">
               </div>
               <div>
                 <label style="display:block;font-size:11px;color:var(--text-tertiary);margin-bottom:4px;">止损 (选填)</label>
-                <input id="od-pos-sl" type="number" step="any" placeholder="3050" style="width:110px;padding:5px 8px;background:var(--bg-tertiary);border:1px solid var(--border-secondary);color:var(--text-primary);border-radius:4px;font-size:13px;">
+                <input id="od-pos-sl" type="number" step="any" placeholder="留空让 AI 给" style="width:130px;padding:5px 8px;background:var(--bg-tertiary);border:1px solid var(--border-secondary);color:var(--text-primary);border-radius:4px;font-size:13px;">
               </div>
               <div>
                 <label style="display:block;font-size:11px;color:var(--text-tertiary);margin-bottom:4px;">止盈 (选填)</label>
-                <input id="od-pos-tp" type="number" step="any" placeholder="3380" style="width:110px;padding:5px 8px;background:var(--bg-tertiary);border:1px solid var(--border-secondary);color:var(--text-primary);border-radius:4px;font-size:13px;">
+                <input id="od-pos-tp" type="number" step="any" placeholder="留空让 AI 给" style="width:130px;padding:5px 8px;background:var(--bg-tertiary);border:1px solid var(--border-secondary);color:var(--text-primary);border-radius:4px;font-size:13px;">
               </div>
               <button id="od-pos-fetch" type="button" style="padding:5px 12px;font-size:11px;background:var(--bg-tertiary);border:1px solid var(--border-secondary);color:var(--text-secondary);border-radius:4px;cursor:pointer;" title="从我的账户读取已有持仓">📥 从账户读取</button>
             </div>
