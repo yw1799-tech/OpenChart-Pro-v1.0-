@@ -1,11 +1,15 @@
 """
-候选池三维评分（Phase 6 扩展）。
+候选池四维评分（v12.22.7 重构 — 加质量惩罚维度防垃圾股拿高分）。
 
-total = event (0-50) + technical (0-30) + fundamentals (0-20)
+total = event (0-35) + technical (0-30) + fundamentals (0-20) + quality_penalty (-30~0)
 
-- event_score  入池时产生，保留取 max
-- technical_score  每小时后台批量重算（基于 60 根日 K）
-- fundamentals_score  24h 缓存（与 symbol_fundamentals 同周期）
+- event_score          入池时产生,保留取 max
+- technical_score      每小时后台批量重算(基于 60 根日 K)
+- fundamentals_score   24h 缓存(与 symbol_fundamentals 同周期)
+- quality_penalty      v12.22.7 新增 — ST/仙股/微盘/数据bug/高波/频繁异动 直接扣分
+
+历史问题: 旧公式 event 上限 50,ST合纵这种垃圾股能拿 97 分进池。新公式
+event 降到 35,加质量惩罚最多 -30,垃圾股直接降到 candidate 阈值(40)以下。
 """
 
 from __future__ import annotations
@@ -26,24 +30,21 @@ logger = logging.getLogger(__name__)
 
 
 def event_score_anomaly(change_pct: float, rank: int) -> float:
-    """涨幅榜：涨幅 + 排名靠前加分。"""
-    return min(50.0, max(0.0, change_pct * 1.0 + (30 - min(rank, 30)) * 0.25))
+    """涨幅榜:涨幅 + 排名靠前加分。v12.22.7 上限 50→35"""
+    return min(35.0, max(0.0, change_pct * 1.0 + (30 - min(rank, 30)) * 0.25))
 
 
 def event_score_news(importance: int) -> float:
+    """新闻事件分(v12.22.7 上限 50→35):
+      ★1=16 / ★2=22 / ★3=28 / ★4=34 / ★5=35(原 40,clamp)
+    公式: 10 + importance × 6
     """
-    新闻事件分：
-      ★1=16 / ★2=22 / ★3=28 / ★4=34 / ★5=40
-    公式：10 + importance × 6
-    过去版本 importance × 4 让 ★3 只得 12 分，加上 tech+fund 仍难过 40 阈值 → 大量被淘汰。
-    新公式让 ★3 就有 28 分，配合技术+基本面能轻松过门槛。
-    """
-    return min(50.0, max(0.0, 10 + importance * 6.0))
+    return min(35.0, max(0.0, 10 + importance * 6.0))
 
 
 def event_score_ai(importance: int, strength: float) -> float:
-    """AI 解读：importance × 2 + strength × 10"""
-    return min(50.0, max(0.0, importance * 2.0 + strength * 10.0))
+    """AI 解读:importance × 2 + strength × 10。v12.22.7 上限 50→35"""
+    return min(35.0, max(0.0, importance * 2.0 + strength * 10.0))
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -326,6 +327,118 @@ def _compute_tech_from_candles(candles: List[Dict]) -> float:
     return max(0.0, min(30.0, score))
 
 
+# ═══════════════════════════════════════════════════════════════════
+# v12.22.7 — 波动率指标 + 质量惩罚 (防 ST/仙股/微盘/妖股 拿高分)
+# ═══════════════════════════════════════════════════════════════════
+
+
+def _compute_volatility_metrics(candles: List[Dict]) -> Dict:
+    """从 60 根日 K 算波动率指标 (取最近 30 根计算)。
+    返回 {atr_avg, max_atr, ex10pct_30d, amount_avg}, 失败返回 {}.
+    注意: A 股 amount_avg 这里没乘 100, 由 caller 修正 (volume 字段=手)。
+    """
+    if not candles or len(candles) < 10:
+        return {}
+    recent = candles[-30:]
+    atrs = []
+    amounts = []
+    ex_count = 0
+    prev_close = None
+    for c in recent:
+        close = c.get("close") or 0
+        high = c.get("high") or 0
+        low = c.get("low") or 0
+        vol = c.get("volume") or 0
+        if close <= 0:
+            prev_close = close if close > 0 else prev_close
+            continue
+        atrs.append((high - low) / close * 100)
+        amounts.append(vol * close)
+        if prev_close and prev_close > 0:
+            change = abs(close - prev_close) / prev_close
+            if change >= 0.10:
+                ex_count += 1
+        prev_close = close
+    if not atrs:
+        return {}
+    return {
+        "atr_avg": sum(atrs) / len(atrs),
+        "max_atr": max(atrs),
+        "ex10pct_30d": ex_count,
+        "amount_avg": sum(amounts) / len(amounts) if amounts else 0,
+    }
+
+
+def compute_quality_penalty(market: str, fund: Dict, vol: Dict) -> float:
+    """v12.22.7 质量惩罚 — 返回 -30 ~ 0 (在 total 计算时直接相加)。
+
+    扣分项 (clamp 总和 ≥ -30):
+      1. ST 股 (A 股) → -30 (一票否决)
+      2. 数据 bug (max_atr > 50%) → -30 (一票否决)
+      3. 仙股 (美 < $3 / 港 < HK$1 / A < ¥3) → -20
+      4. 微盘 (美 < $1B / 港 < HK$3B / A < ¥30亿) → -15
+      5. 高波动 (avg_atr > 10%) → -10
+      6. 频繁异动 (月内 ≥4 次 ±10%) → -15
+      7. 流动性差 (美/港 < 1千万本币 / A < 5千万) → -10
+    """
+    p = 0.0
+    if not fund and not vol:
+        return p
+
+    # 1. ST 股 (一票顶到底)
+    if fund and fund.get("is_st"):
+        return -30.0
+
+    # 2. 数据 bug (一票顶到底)
+    if vol and vol.get("max_atr", 0) > 50:
+        return -30.0
+
+    # 3. 仙股
+    price = float((fund or {}).get("price") or 0)
+    if price > 0:
+        if market == "us" and price < 3:
+            p -= 20
+        elif market == "hk" and price < 1:
+            p -= 20
+        elif market == "cn" and price < 3:
+            p -= 20
+
+    # 4. 微盘
+    cap = float((fund or {}).get("market_cap") or 0)
+    if cap > 0:
+        if market == "us" and cap < 1e9:
+            p -= 15
+        elif market == "hk" and cap < 3e9:
+            p -= 15
+        elif market == "cn" and cap < 3e9:
+            p -= 15
+
+    # 5-7. 波动 / 异动 / 流动 (需要 vol 数据)
+    if vol:
+        avg_atr = vol.get("atr_avg", 0)
+        ex_count = vol.get("ex10pct_30d", 0)
+        amount_avg = vol.get("amount_avg", 0)
+        # A 股 amount × 100 修正 (K 线 volume 字段 = 手)
+        if market == "cn":
+            amount_avg = amount_avg * 100
+
+        if avg_atr > 10:
+            p -= 10
+
+        if ex_count >= 4:
+            p -= 15
+
+        if amount_avg > 0:
+            if market == "us" and amount_avg < 1e7:
+                p -= 10
+            elif market == "hk" and amount_avg < 1e7:
+                p -= 10
+            elif market == "cn" and amount_avg < 5e7:
+                p -= 10
+
+    return max(-30.0, p)
+
+
 async def rescore_pool_items(db) -> Dict[str, int]:
     """
     扫候选池所有条目：
@@ -379,14 +492,22 @@ async def rescore_pool_items(db) -> Dict[str, int]:
             market = it["market"]; symbol = it["symbol"]
             candles = kline_cache.get((symbol, market), [])
             tech = _compute_tech_from_candles(candles)
+            vol = _compute_volatility_metrics(candles)  # v12.22.7
             fund_row = await _load_any(db, symbol, market, max_stale_days=30)
             fund = compute_fundamentals_score(market, fund_row or {})
+            penalty = compute_quality_penalty(market, fund_row or {}, vol)  # v12.22.7
             event = float(it.get("event_score") or 0)
             if event == 0:
-                event = min(50.0, float(it.get("score") or 0) * 0.5)
-            total = min(100.0, event + tech + fund)
+                event = min(35.0, float(it.get("score") or 0) * 0.5)  # v12.22.7 上限 50→35
+            event = min(35.0, event)  # v12.22.7 强制 clamp 35
+            total = max(0.0, min(100.0, event + tech + fund + penalty))
             factors = _json.dumps(
-                {"event": round(event, 1), "tech": round(tech, 1), "fund": round(fund, 1)},
+                {
+                    "event": round(event, 1),
+                    "tech": round(tech, 1),
+                    "fund": round(fund, 1),
+                    "penalty": round(penalty, 1),  # v12.22.7
+                },
                 ensure_ascii=False,
             )
             pending.append((
