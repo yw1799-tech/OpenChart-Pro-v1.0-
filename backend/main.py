@@ -4772,6 +4772,14 @@ async def elliott_wave_from_data(req: Dict[str, Any] = Body(...)):
 
 app.include_router(chanlun_router)
 
+# v12.22.0: 按需分析模块
+try:
+    from backend.api.on_demand_router import router as on_demand_router
+    app.include_router(on_demand_router)
+    logger.info("[on_demand] 按需分析路由已注册 /api/on-demand/*")
+except Exception as e:
+    logger.warning(f"[on_demand] 路由注册失败: {e}")
+
 
 # ═══════════════════════════════════════════════════════════════════
 # 健康检查 + 静态文件

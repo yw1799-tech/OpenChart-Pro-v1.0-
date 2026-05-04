@@ -12,7 +12,7 @@
   <meta name="theme-color" content="#0d1117">
   <link rel="apple-touch-icon" href="/mobile/icon-192.png">
   <!-- v12.21.3: cache-busting via version query (避免浏览器/PWA Service Worker 缓存旧版) -->
-  <link rel="stylesheet" href="/mobile/mobile.css?v=12.21.4">
+  <link rel="stylesheet" href="/mobile/mobile.css?v=12.22.0">
 </head>
 <body>
   <!-- 顶部状态栏 -->
@@ -134,6 +134,7 @@
       <div class="segment seg-scroll">
         <button class="seg active" data-sub="spot">🪙 现货</button>
         <button class="seg" data-sub="swap">⚡ 合约</button>
+        <button class="seg" data-sub="ondemand">🔍 按需</button>
         <button class="seg" data-sub="orders">📋 订单</button>
         <button class="seg" data-sub="rejected">⊘ 拒单</button>
         <button class="seg" data-sub="control">⚙️ 自动</button>
@@ -155,6 +156,12 @@
 
         <!-- swap 持仓列表 -->
         <div id="swap-positions-list" class="list">—</div>
+      </div>
+
+      <!-- 🔍 按需分析 (v12.22.0) -->
+      <div class="subpage" data-subpage="ondemand" hidden>
+        <div id="ondemand-form" class="card section">—</div>
+        <div id="ondemand-result" class="list">—</div>
       </div>
 
       <!-- 订单流水 (合约 + 现货成交合并) -->
@@ -346,6 +353,6 @@
     </div>
   </div>
 
-  <script src="/mobile/mobile.js?v=12.21.4"></script>
+  <script src="/mobile/mobile.js?v=12.22.0"></script>
 </body>
 </html>

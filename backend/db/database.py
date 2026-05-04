@@ -301,7 +301,7 @@ class DatabaseManager:
         # 查当前 schema 版本
         cur = await conn.execute("PRAGMA user_version")
         current_version = (await cur.fetchone())[0]
-        TARGET_VERSION = 21  # v21 (v12.20.9): trade_review 加 is_swap 字段（合约复盘闭环）
+        TARGET_VERSION = 22  # v22 (v12.22.0): on_demand_advices 表 (按需分析模块)
         if current_version < TARGET_VERSION:
             # v12.11: 用 BEGIN/COMMIT 包整个迁移；任何步骤抛错则 ROLLBACK + 不前进 user_version
             migration_ok = True
@@ -444,6 +444,23 @@ class DatabaseManager:
                 "ALTER TABLE trade_review ADD COLUMN swap_funding_total REAL DEFAULT 0",
                 "ALTER TABLE trade_review ADD COLUMN swap_total_fee REAL DEFAULT 0",
                 "ALTER TABLE trade_review ADD COLUMN swap_liquidated INTEGER DEFAULT 0",
+                # v22 (v12.22.0) 按需分析模块 — 用户输入代码 → LLM 分析师建议 → 用户拍板执行
+                """CREATE TABLE IF NOT EXISTS on_demand_advices (
+                    id TEXT PRIMARY KEY,
+                    symbol TEXT NOT NULL,
+                    market TEXT NOT NULL,
+                    t0_price REAL,
+                    t0_ts_ms INTEGER,
+                    action TEXT NOT NULL,                -- hold/add/reduce/close/open_long/open_short/wait
+                    confidence INTEGER DEFAULT 0,
+                    advice_json TEXT NOT NULL,           -- 完整 advice JSON (含 main_thesis, signals, risks 等)
+                    position_json TEXT,                  -- 分析时持仓快照 (DB 实际或用户覆盖)
+                    executed INTEGER DEFAULT 0,
+                    execution_id TEXT,                   -- 关联 trades.id 或 swap_orders.id
+                    created_at INTEGER NOT NULL
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_on_demand_time ON on_demand_advices (created_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_on_demand_symbol ON on_demand_advices (symbol, market, created_at DESC)",
             ]:
                 try:
                     await conn.execute(alter)

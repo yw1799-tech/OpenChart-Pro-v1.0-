@@ -197,6 +197,7 @@
       <button class="bottom-tab" data-tab="crypto">🪙 加密诊断</button>
       <button class="bottom-tab" data-tab="portfolio">💼 持仓管理</button>
       <button class="bottom-tab" data-tab="review">📝 复盘学习</button>
+      <button class="bottom-tab" data-tab="on-demand">🔍 按需分析</button>
       <button class="bottom-tab" data-tab="alert-log">警报日志</button>
       <button class="bottom-tab" data-tab="backtest">回测报告</button>
       <button class="bottom-tab" data-tab="dashboard">仪表盘</button>
@@ -220,6 +221,8 @@
       <div class="bottom-pane" data-pane="portfolio"></div>
       <!-- v12.4 复盘学习（独立面板） -->
       <div class="bottom-pane" data-pane="review"></div>
+      <!-- v12.22.0 按需分析 — 输入代码 + 持仓 → AI 分析师建议 → 用户拍板执行 -->
+      <div class="bottom-pane" data-pane="on-demand"></div>
       <!-- 控制台 -->
       <div class="bottom-pane" data-pane="console">
         <div class="console-output"></div>
@@ -663,6 +666,7 @@
 <script src="js/portfolio.js?v=p5a" defer></script>
 <script src="js/crypto.js?v=p5a" defer></script>
 <script src="js/review.js?v=p5a" defer></script>
+<script src="js/on_demand.js?v=12.22.0" defer></script>
 <script src="js/app.js?v=p5a" defer></script>
 <!-- 以下 JS 模块将在 Phase 3A/4/5 开发时添加：
      js/news.js         新闻快讯

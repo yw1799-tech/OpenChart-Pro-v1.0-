@@ -36,6 +36,7 @@
     'market/combos':     '共振组合',
     'trade/spot':        '现货持仓',
     'trade/swap':        '⚡ 合约持仓',
+    'trade/ondemand':    '🔍 按需分析',
     'trade/orders':      '订单流水',
     'trade/rejected':    '拒单记录',
     'trade/control':     '自动交易控制',
@@ -1655,9 +1656,10 @@
     'market/signals':      renderSignals,
     'market/library':      renderStrategyLibrary,
     'market/combos':       renderCombos,
-    // 交易 (5 sub) — 含全新 ⚡合约 + 订单流水 + 自动控制
+    // 交易 (6 sub) — 含全新 ⚡合约 + 🔍 按需分析 + 订单流水 + 自动控制
     'trade/spot':          renderPositions,             // 复用,但只显示现货
     'trade/swap':          renderSwapDashboard,         // 全新,合约专属页
+    'trade/ondemand':      renderOnDemandPage,          // v12.22.0 按需分析
     'trade/orders':        renderOrderFlow,             // 全新,合约+现货订单合并
     'trade/rejected':      renderRejected,
     'trade/control':       renderTradeControl,          // 全新,自动交易控制
@@ -2461,6 +2463,277 @@
       </div>
       ${s.last_error ? `<div class="row-reason">⚠️ ${escape(s.last_error).slice(0, 100)}</div>` : ''}
     </div>`;
+  }
+
+
+  // ═══════════════════════════════════════════════════════════
+  // v12.22.0: 按需分析模块 (mobile)
+  // ═══════════════════════════════════════════════════════════
+  const _onDemandState = {
+    lastAdvice: null,
+    hasPos: false,
+  };
+  const OD_ACTION_LABEL = {
+    hold: '继续持有', add: '加仓', reduce: '减仓 50%', close: '平仓',
+    open_long: '开多', open_short: '开空', wait: '暂不建议',
+  };
+  const OD_ACTION_ICON = {
+    hold: '✅', add: '🟢', reduce: '🟡', close: '🔴',
+    open_long: '🟢', open_short: '🔴', wait: '⏸',
+  };
+  const OD_ACTION_COLOR_CLS = {
+    hold: '', add: 'up', reduce: 'warning',
+    close: 'down', open_long: 'up', open_short: 'down', wait: 'muted',
+  };
+
+  async function renderOnDemandPage() {
+    const formEl = $('#ondemand-form');
+    if (!formEl) return;
+    if (!formEl.dataset.inited) {
+      formEl.dataset.inited = '1';
+      formEl.innerHTML = `
+        <div class="section-title">🔍 按需分析</div>
+        <div class="muted small" style="margin-bottom:8px;">输入代码 + 持仓状态 → AI 分析师建议</div>
+        <div style="display:flex;gap:6px;margin-bottom:8px;">
+          <input id="od-symbol" type="text" placeholder="ETH / AAPL / 0700"
+            style="flex:1;padding:8px 10px;background:var(--bg-tertiary,#1a1a1f);border:1px solid #333;border-radius:6px;color:#fff;font-size:14px;">
+          <select id="od-market" style="padding:8px 6px;background:var(--bg-tertiary,#1a1a1f);border:1px solid #333;border-radius:6px;color:#fff;font-size:13px;">
+            <option value="crypto">加密</option>
+            <option value="us">美股</option>
+            <option value="hk">港股</option>
+            <option value="cn">A股</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:0;margin-bottom:8px;">
+          <button id="od-no-pos" class="seg active" data-pos="no" style="flex:1;">📈 无持仓</button>
+          <button id="od-has-pos" class="seg" data-pos="yes" style="flex:1;">💼 已有持仓</button>
+        </div>
+        <div id="od-pos-panel" hidden style="margin-bottom:8px;padding:8px;background:var(--bg-tertiary,#1a1a1f);border-radius:6px;">
+          <div style="display:flex;gap:6px;margin-bottom:6px;">
+            <select id="od-pos-side" style="padding:6px 8px;background:#0d1117;border:1px solid #333;border-radius:4px;color:#fff;font-size:13px;">
+              <option value="long">多</option>
+              <option value="short">空</option>
+            </select>
+            <input id="od-pos-avg" type="number" step="any" placeholder="均价"
+              style="flex:1;padding:6px 8px;background:#0d1117;border:1px solid #333;border-radius:4px;color:#fff;font-size:13px;">
+            <input id="od-pos-qty" type="number" step="any" placeholder="数量"
+              style="flex:1;padding:6px 8px;background:#0d1117;border:1px solid #333;border-radius:4px;color:#fff;font-size:13px;">
+          </div>
+          <div style="display:flex;gap:6px;">
+            <input id="od-pos-sl" type="number" step="any" placeholder="止损 (选填)"
+              style="flex:1;padding:6px 8px;background:#0d1117;border:1px solid #333;border-radius:4px;color:#fff;font-size:12px;">
+            <input id="od-pos-tp" type="number" step="any" placeholder="止盈 (选填)"
+              style="flex:1;padding:6px 8px;background:#0d1117;border:1px solid #333;border-radius:4px;color:#fff;font-size:12px;">
+            <button id="od-pos-fetch" class="btn" style="padding:6px 10px;font-size:11px;">📥 账户</button>
+          </div>
+        </div>
+        <button id="od-analyze-btn" class="btn" style="width:100%;padding:10px;font-size:14px;font-weight:600;background:var(--up,#26a69a);color:#fff;">🚀 开始分析</button>
+      `;
+      // 绑定
+      $$('#ondemand-form .seg[data-pos]').forEach(b => {
+        b.addEventListener('click', () => {
+          const isYes = b.dataset.pos === 'yes';
+          $$('#ondemand-form .seg[data-pos]').forEach(x => x.classList.toggle('active', x === b));
+          $('#od-pos-panel').hidden = !isYes;
+          _onDemandState.hasPos = isYes;
+        });
+      });
+      $('#od-pos-fetch')?.addEventListener('click', _odFetchPos);
+      $('#od-analyze-btn')?.addEventListener('click', _odAnalyze);
+    }
+  }
+
+  async function _odFetchPos() {
+    const sym = ($('#od-symbol').value || '').trim();
+    const mkt = $('#od-market').value;
+    if (!sym) { toast('先填代码', 'down'); return; }
+    try {
+      const resp = await fetch('/api/positions');
+      const items = await resp.json();
+      const arr = Array.isArray(items) ? items : (items.items || []);
+      const sUp = sym.toUpperCase();
+      const found = arr.find(p => {
+        const ps = (p.symbol || '').toUpperCase();
+        return (p.market || '').toLowerCase() === mkt &&
+          (ps === sUp || ps.startsWith(sUp + '-') || ps.startsWith(sUp + '.'));
+      });
+      if (!found) { toast(`未找到 ${sym}(${mkt}) 持仓`, 'muted'); return; }
+      $('#od-pos-side').value = found.side || 'long';
+      $('#od-pos-avg').value = found.avg_cost || '';
+      $('#od-pos-qty').value = found.quantity || '';
+      $('#od-pos-sl').value = found.ai_stop_loss || '';
+      $('#od-pos-tp').value = found.ai_take_profit || '';
+      toast('已读取持仓', 'up');
+    } catch (e) {
+      toast(`读取失败: ${e.message}`, 'down');
+    }
+  }
+
+  async function _odAnalyze() {
+    const sym = ($('#od-symbol').value || '').trim();
+    const mkt = $('#od-market').value;
+    if (!sym) { toast('请填代码', 'down'); return; }
+    let position = null;
+    if (_onDemandState.hasPos) {
+      const qty = parseFloat($('#od-pos-qty').value || '0');
+      const avg = parseFloat($('#od-pos-avg').value || '0');
+      if (!(qty > 0 && avg > 0)) { toast('请填均价和数量', 'down'); return; }
+      const slV = parseFloat($('#od-pos-sl').value || '');
+      const tpV = parseFloat($('#od-pos-tp').value || '');
+      position = {
+        side: $('#od-pos-side').value || 'long',
+        avg_cost: avg, quantity: qty,
+        stop_loss: isNaN(slV) ? null : slV,
+        take_profit: isNaN(tpV) ? null : tpV,
+      };
+    }
+    const btn = $('#od-analyze-btn');
+    btn.disabled = true; btn.textContent = '⏳ 分析中...';
+    $('#ondemand-result').innerHTML = `
+      <div class="card section">
+        <div style="text-align:center;padding:16px;">🔄 正在分析 ${escape(sym)}...<br>
+        <span class="muted small">收集数据 + AI 分析师 (~20-30s)</span></div>
+      </div>`;
+    try {
+      const resp = await fetch('/api/on-demand/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol: sym, market: mkt, has_position: _onDemandState.hasPos, position }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+      _onDemandState.lastAdvice = data;
+      _odRenderResult(data);
+    } catch (e) {
+      $('#ondemand-result').innerHTML = `<div class="card section" style="border-left:3px solid var(--down,#ef5350);">
+        <div style="color:var(--down,#ef5350);">❌ ${escape(e.message)}</div></div>`;
+    } finally {
+      btn.disabled = false; btn.textContent = '🚀 开始分析';
+    }
+  }
+
+  function _odRenderResult(data) {
+    const advice = data.advice || {};
+    const t0 = data.t0_snapshot || {};
+    const action = advice.action || 'wait';
+    const conf = advice.confidence || 0;
+    const cls = OD_ACTION_COLOR_CLS[action] || '';
+    const sigs = advice.supporting_signals || [];
+    const counters = advice.counter_signals || [];
+    const risks = advice.key_risks || [];
+    const watch = advice.watch_signals || [];
+    const aborts = advice.abort_conditions || [];
+    const exit = advice.exit_strategy || {};
+    const entry = advice.entry_strategy || {};
+    const sizing = advice.position_sizing || {};
+    const pos = data.position;
+
+    const sym = ($('#od-symbol').value || '').trim();
+    const mkt = $('#od-market').value;
+    let html = `
+      <div class="card section">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div>
+            <div style="font-size:15px;font-weight:600;">${escape(sym)} <span class="small muted">${escape(mkt)}</span></div>
+            <div class="small muted">T0: ${t0.price ? t0.price : '—'} · ${t0.ts ? new Date(t0.ts).toLocaleTimeString() : ''}</div>
+          </div>
+          <div style="text-align:right;">
+            <div class="${cls}" style="font-size:16px;font-weight:600;">${OD_ACTION_ICON[action]} ${escape(OD_ACTION_LABEL[action] || action)}</div>
+            <div class="small">把握度 ${conf}/100</div>
+            ${advice.time_horizon ? `<div class="small muted">${escape(advice.time_horizon)}</div>` : ''}
+          </div>
+        </div>
+      </div>`;
+
+    if (pos) {
+      const cur = t0.price || 0;
+      const cost = pos.avg_cost || 0;
+      const isLong = (pos.side || 'long') === 'long';
+      const pnlPct = (cost > 0 && cur > 0) ? ((isLong ? cur - cost : cost - cur) / cost * 100) : 0;
+      const pnlCls = pnlPct >= 0 ? 'up' : 'down';
+      html += `<div class="card section" style="font-size:12px;">
+        📌 你的${pos.type === 'swap' ? '合约' : '现货'}持仓: ${isLong ? '多' : '空'} · ${pos.quantity} @ ${pos.avg_cost} ·
+        <span class="${pnlCls}">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</span>
+      </div>`;
+    }
+
+    html += `<div class="card section">
+      <div class="muted small">💭 核心逻辑</div>
+      <div style="margin-top:4px;">${escape(advice.main_thesis || '')}</div>
+    </div>`;
+
+    if (entry && entry.ideal_price) {
+      html += `<div class="card section">
+        <div class="muted small">💡 入场策略</div>
+        <div style="margin-top:4px;">理想入场: <strong>${entry.ideal_price}</strong>${entry.acceptable_range ? ` · 区间 ${entry.acceptable_range[0]}~${entry.acceptable_range[1]}` : ''}</div>
+        <div class="small">方式: ${escape(entry.approach || '市价')} · 仓位 <strong>${sizing.suggested_pct || 0}%</strong></div>
+        ${sizing.reasoning ? `<div class="muted small" style="margin-top:4px;">${escape(sizing.reasoning)}</div>` : ''}
+      </div>`;
+    }
+
+    if (exit && (exit.stop_loss || exit.take_profit_1)) {
+      html += `<div class="card section">
+        <div class="muted small">🎯 风控</div>
+        <div style="margin-top:4px;">
+          ${exit.stop_loss ? `止损: <span class="down">${exit.stop_loss}</span>` : ''}
+          ${exit.take_profit_1 ? ` · 目标 1: <span class="up">${exit.take_profit_1}</span>` : ''}
+          ${exit.take_profit_2 ? ` · 目标 2: <span class="up">${exit.take_profit_2}</span>` : ''}
+        </div>
+        ${exit.trail_logic ? `<div class="muted small">${escape(exit.trail_logic)}</div>` : ''}
+      </div>`;
+    }
+
+    html += _odRenderCollapse('📈 支撑信号', sigs.map(s => `<div>• ${escape(s.signal || '')}${s.weight ? ` <span class="muted small">[${escape(s.weight)}]</span>` : ''}${s.data ? `<br><span class="muted small">${escape(s.data)}</span>` : ''}</div>`).join('<hr style="border:none;border-top:1px dashed #333;margin:4px 0;">'));
+    html += _odRenderCollapse('⚠️ 反向信号', counters.map(s => `<div>• ${escape(s.signal || '')}${s.data ? `<br><span class="muted small">${escape(s.data)}</span>` : ''}</div>`).join('<hr style="border:none;border-top:1px dashed #333;margin:4px 0;">'));
+    html += _odRenderCollapse('🚨 关键风险', risks.map(r => `<div>• <span class="down">${escape(r.risk || '')}</span>${r.trigger ? `<br><span class="muted small">触发: ${escape(r.trigger)}</span>` : ''}</div>`).join('<hr style="border:none;border-top:1px dashed #333;margin:4px 0;">'));
+    if (watch.length) html += _odRenderCollapse('👀 需关注信号', watch.map(t => `<div>• ${escape(t)}</div>`).join(''));
+    if (aborts.length) html += _odRenderCollapse('⛔ 执行前再核对', aborts.map(t => `<div>• ${escape(t)}</div>`).join(''));
+    if (advice.professional_summary) html += _odRenderCollapse('📄 完整报告', `<div style="white-space:pre-wrap;">${escape(advice.professional_summary)}</div>`);
+    if (data.missing_data && data.missing_data.length) {
+      html += `<div class="card section" style="border-left:3px solid var(--warning,#ffa726);font-size:12px;">⚠️ 数据缺失: ${data.missing_data.join(', ')}</div>`;
+    }
+
+    const execLabel = action === 'hold' ? '更新止损/止盈' : action === 'wait' ? '暂无可执行操作' : `按建议${OD_ACTION_LABEL[action] || action}`;
+    const execDisabled = action === 'wait';
+    html += `<button id="od-exec-btn" class="btn" ${execDisabled ? 'disabled' : ''} style="width:100%;padding:12px;font-size:15px;font-weight:600;margin-top:8px;background:${execDisabled ? '#444' : 'var(--up,#26a69a)'};color:#fff;">${OD_ACTION_ICON[action]} ${escape(execLabel)}</button>`;
+
+    $('#ondemand-result').innerHTML = html;
+    $('#od-exec-btn')?.addEventListener('click', _odExecute);
+  }
+
+  function _odRenderCollapse(title, inner) {
+    if (!inner || !inner.trim()) return '';
+    return `<details class="card section" style="padding:0;">
+      <summary style="padding:10px 12px;cursor:pointer;">${title}</summary>
+      <div style="padding:0 12px 10px;font-size:12px;line-height:1.6;">${inner}</div>
+    </details>`;
+  }
+
+  async function _odExecute() {
+    const data = _onDemandState.lastAdvice;
+    if (!data || !data.advice) { toast('请先分析', 'down'); return; }
+    const advice = data.advice;
+    const aid = advice.advice_id;
+    if (!aid) { toast('advice_id 缺失', 'down'); return; }
+    const action = advice.action;
+    const ok = confirm(`确认执行?\n${OD_ACTION_LABEL[action] || action}\n把握度 ${advice.confidence}/100\n仓位 ${(advice.position_sizing||{}).suggested_pct||0}%\n\n执行前会重读实时价检查漂移`);
+    if (!ok) return;
+    const btn = $('#od-exec-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ 执行中...'; }
+    try {
+      const resp = await fetch('/api/on-demand/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ advice_id: aid, confirm: true }),
+      });
+      const r = await resp.json();
+      if (!resp.ok) throw new Error(r.detail || `HTTP ${resp.status}`);
+      toast(`✅ 执行成功 @ ${r.executed_price}`, 'up');
+      if (btn) { btn.style.background = 'var(--up,#26a69a)'; btn.textContent = '✅ 已执行'; }
+    } catch (e) {
+      toast(`❌ ${e.message}`, 'down');
+      if (btn) { btn.disabled = false; btn.textContent = '🔄 重试'; }
+    }
   }
 
 

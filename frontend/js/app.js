@@ -314,6 +314,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     ['Crypto',     () => typeof Crypto     !== 'undefined' && Crypto.init()],
     ['Portfolio',  () => typeof Portfolio  !== 'undefined' && Portfolio.init()],
     ['Review',     () => typeof Review     !== 'undefined' && Review.init()],
+    ['OnDemand',   () => typeof OnDemand   !== 'undefined' && OnDemand.init()],
     ['Formula', () => typeof Formula !== 'undefined' && Formula.init()],
     ['ChanlunVerdict', () => typeof ChanlunVerdict !== 'undefined' && ChanlunVerdict.init()],
   ];
