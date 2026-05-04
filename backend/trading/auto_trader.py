@@ -2636,6 +2636,48 @@ class AutoTrader:
                 elif side == "short" and (ai_tp >= avg_for_check or ai_tp <= 0):
                     logger.warning(f"[auto-open] {symbol} short ai_tp={ai_tp} 不合理 (应在 0 ~ avg)，丢弃")
                     ai_tp = None
+            # v12.22.6: SL 抗噪守门 + ai_sl 缺失兜底 (修复美股 7 笔真亏全是 SL 离开仓太近被噪音扫损)
+            # 方案 A: AI SL 距开仓 < 最小抗噪距离 (美/港/A 股 2.5%, 加密 4%) → 自动放宽
+            # 方案 B: ai_sl 缺失 (chanlun 等无 SL/TP 策略) → 立即补默认 5%/25%, 不等 grace 10min
+            # 写入 positions.ai_stop_loss / ai_take_profit, 前端立即可见, 替代 monitor 兜底前的"裸奔窗口"
+            min_sl_dist_pct = 0.04 if market == "crypto" else 0.025
+            default_sl_pct = float(self._config.get("default_stop_loss_pct", 5.0)) / 100.0
+            default_tp_pct = float(self._config.get("default_take_profit_pct", 25.0)) / 100.0
+            if market == "crypto":
+                default_sl_pct = float(self._config.get("default_stop_loss_pct_crypto", 10.0)) / 100.0
+                default_tp_pct = float(self._config.get("default_take_profit_pct_crypto", 40.0)) / 100.0
+            if side == "long":
+                if ai_sl is None or ai_sl <= 0:
+                    ai_sl = round(avg_for_check * (1 - default_sl_pct), 4)
+                    logger.info(f"[sl-default] {symbol}({market}) AI SL 缺失,补默认 -{default_sl_pct*100:.1f}% → {ai_sl}")
+                else:
+                    dist_pct = (avg_for_check - ai_sl) / avg_for_check
+                    if dist_pct < min_sl_dist_pct:
+                        old_sl = ai_sl
+                        ai_sl = round(avg_for_check * (1 - min_sl_dist_pct), 4)
+                        logger.info(
+                            f"[sl-widen] {symbol}({market}) AI SL {old_sl} 距开仓 {dist_pct*100:.2f}% < "
+                            f"最小抗噪 {min_sl_dist_pct*100:.1f}% → 放宽到 {ai_sl}"
+                        )
+                if ai_tp is None or ai_tp <= 0:
+                    ai_tp = round(avg_for_check * (1 + default_tp_pct), 4)
+                    logger.info(f"[tp-default] {symbol}({market}) AI TP 缺失,补默认 +{default_tp_pct*100:.1f}% → {ai_tp}")
+            else:  # short
+                if ai_sl is None or ai_sl <= 0:
+                    ai_sl = round(avg_for_check * (1 + default_sl_pct), 4)
+                    logger.info(f"[sl-default] short {symbol}({market}) AI SL 缺失,补默认 +{default_sl_pct*100:.1f}% → {ai_sl}")
+                else:
+                    dist_pct = (ai_sl - avg_for_check) / avg_for_check
+                    if dist_pct < min_sl_dist_pct:
+                        old_sl = ai_sl
+                        ai_sl = round(avg_for_check * (1 + min_sl_dist_pct), 4)
+                        logger.info(
+                            f"[sl-widen] short {symbol}({market}) AI SL {old_sl} 距开仓 {dist_pct*100:.2f}% < "
+                            f"最小抗噪 {min_sl_dist_pct*100:.1f}% → 放宽到 {ai_sl}"
+                        )
+                if ai_tp is None or ai_tp <= 0:
+                    ai_tp = round(avg_for_check * (1 - default_tp_pct), 4)
+                    logger.info(f"[tp-default] short {symbol}({market}) AI TP 缺失,补默认 -{default_tp_pct*100:.1f}% → {ai_tp}")
             async with self.db.acquire() as conn:
                 await conn.execute(
                     "UPDATE positions SET cost_currency=?, entry_fx_rate=?, total_cost_usd=?, "
