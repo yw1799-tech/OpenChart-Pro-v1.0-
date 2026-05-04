@@ -603,17 +603,59 @@ class AutoTrader:
     # ───────── 风控检查 ─────────
 
     async def _check_cooldown(self, symbol: str, market: str) -> bool:
-        """v12.21.8: 完全关闭同股冷却 — 用户决策。
-        理由: 单股 SL/TP + AI 验证 + 加仓门槛(浮盈≥5%) + 滑点保护 已经够,
-              冷却是多余的频次限制, 反而会错过有效信号。
+        """同股冷却检查。True = 可下单；False = 冷却中。
+        v12.14: 按市场分档，美/港股 1h（避免 30min 内反复进出同一标的）
+        v12.20.11: 同时计入 swap_pending (status='pending' + trigger_type='swap_pending'),
+        让 swap 限价 pending 期间也能拦截同币种新信号 (避免 60min 内反复挂单)
+        v12.21.9: 保留 — 防 SL 后立刻追入循环(QCOM 33min 二开亏 -3.58% 教训)
         """
-        return True
+        per_market = self._config.get("cooldown_sec_per_market") or {}
+        sec = int(per_market.get(market, self._config.get("cooldown_sec", 900)))
+        cutoff = int(time.time()) - sec
+        async with self.db.acquire() as conn:
+            cur = await conn.execute(
+                "SELECT MAX(traded_at) AS last FROM auto_trade_log "
+                "WHERE symbol=? AND market=? AND ("
+                " status='executed' "
+                " OR (status='pending' AND trigger_type='swap_pending')"
+                ")",
+                (symbol, market),
+            )
+            row = await cur.fetchone()
+        return not row or not row["last"] or row["last"] < cutoff
 
     async def _check_daily_limit(self, symbol: str, market: str) -> bool:
-        """v12.21.8: 完全关闭单股每日操作上限 — 用户决策。
-        理由: 同上, 系统严格按 SL/TP/AI 验证标准执行就行, 不需要人为限频次。
+        """单日单股操作上限。只计 executed 记录，rejected 不占额度。
+        v12.14 (A4 修复): 按市场时区切日，避免美股一晚跨 BJ 自然日导致计数被误重置。
+          - 美股：美东时区 (EDT UTC-4 / EST UTC-5)
+          - A 股/港股：北京时区 (UTC+8)
+          - 加密：UTC（24/7 用 UTC 自然日已足够）
+        v12.21.9: 保留 — 防同股一天连续亏 N 次 (灾难日防护)
         """
-        return True
+        from datetime import datetime, timezone, timedelta
+        now_ts = time.time()
+        if market == "us":
+            # 简化处理 — 美股 EDT (4-11月) UTC-4 / EST (11-3月) UTC-5；用 -4 当兜底（夏令时多）
+            tz_offset = timedelta(hours=-4)
+        elif market in ("cn", "hk"):
+            tz_offset = timedelta(hours=8)
+        else:
+            tz_offset = timedelta(hours=0)
+        local_now = datetime.fromtimestamp(now_ts, timezone(tz_offset))
+        local_midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_start = int(local_midnight.timestamp())
+        async with self.db.acquire() as conn:
+            # v12.20.11 hotfix: daily_limit **只**计已 fill 的 (status='executed'),
+            # 不能加 swap_pending — 一笔 swap 订单 pending+fill 各 1 条 log,
+            # 加 pending 会让一笔订单消耗 2 次额度 (实际 5 笔成交就误判达 10 次上限)
+            # 冷却 (_check_cooldown) 仍算 pending — 防短期反复挂单, 但 daily limit 应只看真实成交
+            cur = await conn.execute(
+                "SELECT COUNT(*) AS n FROM auto_trade_log "
+                "WHERE symbol=? AND market=? AND traded_at>=? AND status='executed'",
+                (symbol, market, day_start),
+            )
+            n = (await cur.fetchone())["n"]
+        return n < self._config["max_daily_ops_per_symbol"]
 
     async def _get_pool_current_equity(self, pool_id: str) -> Tuple[float, str]:
         """v12.13: 池子当前总权益（cash + 持仓 mark-to-market），返回 (equity_local, currency)。
