@@ -1179,9 +1179,13 @@ const Portfolio = (function () {
 
   async function refresh() {
     try {
-      const resp = await fetch('/api/positions');
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      _items = await resp.json();
+      // v12.21.10: 同时拉 spot + swap, 顶部状态条按市场分类显示 (含合约)
+      const [posResp, swapResp] = await Promise.all([
+        fetch('/api/positions'),
+        fetch('/api/swap/positions?status=open').catch(() => null),
+      ]);
+      if (!posResp.ok) throw new Error(`HTTP ${posResp.status}`);
+      _items = await posResp.json();
       // 拉取每个持仓的最新 AI 建议
       try {
         const advResp = await fetch('/api/positions/advices/latest');
@@ -1193,9 +1197,35 @@ const Portfolio = (function () {
           }
         }
       } catch {}
+      // 解析合约持仓数
+      let swapCount = 0;
+      if (swapResp && swapResp.ok) {
+        try {
+          const sd = await swapResp.json();
+          swapCount = (sd.items || []).length;
+        } catch {}
+      }
       render();
       const statusEl = document.querySelector('.bottom-pane[data-pane="portfolio"] #port-status');
-      if (statusEl) statusEl.textContent = `共 ${_items.length} 个持仓 · ${new Date().toLocaleTimeString()}`;
+      if (statusEl) {
+        // v12.21.10: 按市场分类显示 (空市场也显示 0, 合约独立列)
+        const counts = { us: 0, hk: 0, cn: 0, crypto_spot: 0 };
+        for (const p of _items) {
+          const m = p.market || '';
+          if (m === 'crypto') counts.crypto_spot++;
+          else if (m in counts) counts[m]++;
+        }
+        const total = _items.length + swapCount;
+        const parts = [
+          `🇺🇸 美 ${counts.us}`,
+          `🇭🇰 港 ${counts.hk}`,
+          `🇨🇳 A ${counts.cn}`,
+        ];
+        if (counts.crypto_spot > 0) parts.push(`🪙 加密 ${counts.crypto_spot}`);
+        parts.push(`⚡ 合约 ${swapCount}`);
+        parts.push(`共 ${total}`);
+        statusEl.textContent = `${parts.join(' · ')} · ${new Date().toLocaleTimeString()}`;
+      }
     } catch (e) {
       console.warn('[Portfolio] 刷新失败:', e);
     }
