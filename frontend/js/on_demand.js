@@ -523,29 +523,77 @@ const OnDemand = (function () {
     }
     r.innerHTML = `
       <div style="background:var(--bg-secondary);padding:12px;border-radius:6px;border:1px solid var(--border-secondary);">
-        <div style="font-size:13px;color:var(--text-primary);font-weight:600;margin-bottom:10px;">📜 最近 ${_historyItems.length} 次按需分析</div>
+        <div style="font-size:13px;color:var(--text-primary);font-weight:600;margin-bottom:10px;">📜 最近 ${_historyItems.length} 次按需分析(点击查看详情)</div>
         <div style="font-size:12px;">
           ${_historyItems.map(_renderHistoryRow).join('')}
         </div>
       </div>
     `;
+    // 绑定点击事件
+    r.querySelectorAll('.od-history-row').forEach(row => {
+      row.addEventListener('click', () => _showHistoryDetail(row.dataset.adviceId));
+    });
   }
 
   function _renderHistoryRow(it) {
     const action = it.action || 'wait';
     const ts = new Date((it.created_at || 0) * 1000);
     const tsStr = ts.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-    return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border-secondary);">
+    return `<div data-advice-id="${_esc(it.id)}" class="od-history-row" style="display:flex;justify-content:space-between;padding:8px 6px;border-bottom:1px solid var(--border-secondary);cursor:pointer;border-radius:3px;" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background='transparent'" title="点击查看详情">
       <div>
         <span style="color:var(--text-primary);font-weight:600;">${_esc(it.symbol)}</span>
         <span style="color:var(--text-tertiary);font-size:11px;margin-left:6px;">${_esc(it.market)}</span>
         <span style="color:${ACTION_COLOR[action]};margin-left:10px;">${ACTION_ICON[action]} ${ACTION_LABEL[action] || action}</span>
         <span style="color:var(--text-tertiary);font-size:11px;margin-left:6px;">把握 ${it.confidence}</span>
+        <span style="color:var(--text-tertiary);font-size:11px;margin-left:6px;">价 ${it.t0_price !== null && it.t0_price !== undefined ? Number(it.t0_price).toFixed(4) : '--'}</span>
       </div>
       <div style="color:var(--text-tertiary);font-size:11px;">
-        ${tsStr} ${it.executed ? '✅' : ''}
+        ${tsStr} ${it.executed ? '✅ 已执行' : '👁 查看 →'}
       </div>
     </div>`;
+  }
+
+  async function _showHistoryDetail(adviceId) {
+    if (!adviceId) return;
+    const r = document.getElementById('od-result');
+    if (!r) return;
+    r.innerHTML = `<div style="text-align:center;padding:30px;color:var(--text-tertiary);">⏳ 加载详情中...</div>`;
+    try {
+      const resp = await fetch('/api/on-demand/advice/' + encodeURIComponent(adviceId));
+      const rec = await resp.json();
+      if (!resp.ok) throw new Error(rec.detail || `HTTP ${resp.status}`);
+      // 构造 _lastAdvice 兼容结构,复用 _renderAdvice
+      _lastAdvice = {
+        advice: rec.advice,
+        t0_snapshot: { price: rec.t0_price, ts_ms: rec.t0_ts_ms, ts: rec.t0_ts_ms ? new Date(rec.t0_ts_ms).toISOString() : '' },
+        position: rec.position,
+        missing_data: [],
+      };
+      // 把表单 symbol/market 也回填(便于"重新分析"按钮)
+      const symInput = document.getElementById('od-symbol');
+      const mktSel = document.getElementById('od-market');
+      if (symInput) symInput.value = rec.symbol || '';
+      if (mktSel) mktSel.value = rec.market || 'crypto';
+      _renderAdvice(_lastAdvice);
+      // 加返回按钮
+      const back = document.createElement('button');
+      back.textContent = '← 返回历史列表';
+      back.style.cssText = 'padding:6px 12px;font-size:12px;background:transparent;border:1px solid var(--border-secondary);color:var(--text-secondary);border-radius:4px;cursor:pointer;margin-bottom:10px;';
+      back.addEventListener('click', _showHistory);
+      r.insertBefore(back, r.firstChild);
+      // 历史记录场景下,执行按钮失效(advice 已过期或已执行)
+      const execBtn = document.getElementById('od-execute-btn');
+      if (execBtn) {
+        const isExec = rec.executed;
+        execBtn.disabled = true;
+        execBtn.textContent = isExec ? '✅ 已执行' : '历史记录 — 不可执行(请重新分析)';
+        execBtn.style.background = 'var(--bg-tertiary)';
+        execBtn.style.color = 'var(--text-tertiary)';
+        execBtn.style.cursor = 'not-allowed';
+      }
+    } catch (e) {
+      r.innerHTML = `<div style="background:var(--bg-secondary);padding:20px;border-radius:6px;border:1px solid var(--color-down);color:var(--color-down);">❌ 读取历史详情失败: ${_esc(e.message)}</div>`;
+    }
   }
 
   // ─── 工具 ─────────────────────────────────────

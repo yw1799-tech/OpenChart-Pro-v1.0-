@@ -152,11 +152,22 @@ async def collect_all(
 
 # ─── T0 快照 ─────────────────────────────────────────────────────
 async def _collect_t0_snapshot(db, symbol: str, market: str) -> Dict[str, Any]:
-    """实时价格 + 时间戳 (执行前漂移检查的基准)"""
+    """实时价格 + 时间戳 + 今日实时高低 (供 LLM 判断目标价是否已被超越)
+
+    返回字段:
+      price: 当前价
+      ts / ts_ms: 时间戳
+      today_high / today_low: 今日已达最高/最低 (基于今日 1D K 线 high/low)
+      data_age_min: 数据延迟分钟数 (用户可知数据时效)
+      source: 数据来源标记 ('ticker' / 'kline_xxx')
+    """
     from datetime import datetime, timezone, timedelta
     bj_tz = timezone(timedelta(hours=8))
 
     price: Optional[float] = None
+    source = ""
+    data_age_ms: Optional[int] = None
+
     if market == "crypto":
         try:
             from backend.data.fetcher import get_fetcher
@@ -165,34 +176,67 @@ async def _collect_t0_snapshot(db, symbol: str, market: str) -> Dict[str, Any]:
             ticker = await okx.get_ticker(symbol)
             if ticker and ticker.get("last"):
                 price = float(ticker["last"])
+                source = "ticker"
+                data_age_ms = 0
         except Exception as e:
             logger.debug(f"[t0] crypto ticker {symbol} 失败: {e}")
 
+    now_ms = int(time.time() * 1000)
     if price is None:
-        # K 线兜底 (取最近 1H / 15m / 1D 任一)
+        # K 线兜底 (按周期粒度试)
         for interval in ("15m", "1H", "1D"):
             try:
                 async with db.acquire() as conn:
                     cur = await conn.execute(
-                        f"SELECT close FROM [klines_{market}_{interval.lower()}] "
+                        f"SELECT close, timestamp FROM [klines_{market}_{interval.lower()}] "
                         "WHERE symbol=? ORDER BY timestamp DESC LIMIT 1",
                         (symbol,),
                     )
                     row = await cur.fetchone()
                 if row and row["close"]:
                     price = float(row["close"])
+                    source = f"kline_{interval}"
+                    data_age_ms = now_ms - int(row["timestamp"])
                     break
             except Exception:
                 continue
 
-    ts_ms = int(time.time() * 1000)
+    # 今日实时高低 (优先用 1D 最新 bar 的 high/low;若市场 24h 制如 crypto 用今日 1D bar)
+    today_high: Optional[float] = None
+    today_low: Optional[float] = None
+    try:
+        async with db.acquire() as conn:
+            cur = await conn.execute(
+                f"SELECT high, low FROM [klines_{market}_1d] "
+                "WHERE symbol=? ORDER BY timestamp DESC LIMIT 1",
+                (symbol,),
+            )
+            row = await cur.fetchone()
+        if row:
+            today_high = float(row["high"]) if row["high"] is not None else None
+            today_low = float(row["low"]) if row["low"] is not None else None
+    except Exception:
+        pass
+
+    ts_ms = now_ms
     ts_iso = datetime.fromtimestamp(ts_ms / 1000, bj_tz).isoformat()
-    return {"price": price, "ts": ts_iso, "ts_ms": ts_ms}
+    data_age_min = round(data_age_ms / 60000, 1) if data_age_ms is not None else None
+    return {
+        "price": price,
+        "ts": ts_iso,
+        "ts_ms": ts_ms,
+        "today_high": today_high,
+        "today_low": today_low,
+        "data_age_min": data_age_min,
+        "source": source,
+    }
 
 
 # ─── K 线收集 ────────────────────────────────────────────────────
 async def _collect_klines(db, symbol: str, market: str) -> Dict[str, List[Dict]]:
-    """5 周期 K 线 (DB 表 klines_<market>_<interval>),每周期 200 根"""
+    """5 周期 K 线 (DB 表 klines_<market>_<interval>),每周期 200 根。
+    若全部 5 周期都缺(用户首次查询新股票),按需主动拉 1H + 1D 入库。
+    """
     out: Dict[str, List[Dict]] = {}
     for interval in KLINE_INTERVALS:
         try:
@@ -204,7 +248,6 @@ async def _collect_klines(db, symbol: str, market: str) -> Dict[str, List[Dict]]
                     (symbol, KLINE_LIMIT_PER_INTERVAL),
                 )
                 rows = await cur.fetchall()
-            # rows 是 desc 顺序; 反转为 asc (最旧→最新),便于指标计算
             candles = [
                 {
                     "ts": r["timestamp"],
@@ -221,7 +264,71 @@ async def _collect_klines(db, symbol: str, market: str) -> Dict[str, List[Dict]]
         except Exception as e:
             logger.debug(f"[klines] {symbol}({market}) {interval} 失败: {e}")
             continue
+
+    # Fallback: 全部周期都缺 → 按需主动拉 1H + 1D (仅股票/加密走 fetcher)
+    if not out:
+        await _on_demand_fetch_klines(db, symbol, market)
+        # 重新读 1H + 1D
+        for interval in ("1H", "1D"):
+            try:
+                async with db.acquire() as conn:
+                    cur = await conn.execute(
+                        f"SELECT timestamp, open, high, low, close, volume "
+                        f"FROM [klines_{market}_{interval.lower()}] "
+                        "WHERE symbol=? ORDER BY timestamp DESC LIMIT ?",
+                        (symbol, KLINE_LIMIT_PER_INTERVAL),
+                    )
+                    rows = await cur.fetchall()
+                candles = [
+                    {"ts": r["timestamp"], "o": float(r["open"]), "h": float(r["high"]),
+                     "l": float(r["low"]), "c": float(r["close"]), "v": float(r["volume"] or 0)}
+                    for r in reversed(rows)
+                ]
+                if candles:
+                    out[interval] = candles
+                    logger.info(f"[klines-fallback] {symbol}({market}) {interval} 拉取 {len(candles)} 根成功")
+            except Exception as e:
+                logger.debug(f"[klines-fallback-read] {symbol}({market}) {interval} 失败: {e}")
     return out
+
+
+async def _on_demand_fetch_klines(db, symbol: str, market: str):
+    """按需拉取 K 线 (仅在 DB 完全无数据时调用,避免性能损耗)。
+    成功则写入 [klines_<market>_<interval>] 表;失败安静忽略 (上层会标记 missing_data)。
+    """
+    try:
+        from backend.data.fetcher import get_fetcher
+        from backend.data.models import Market, Interval
+        market_enum = {"us": Market.US, "hk": Market.HK, "cn": Market.CN, "crypto": Market.CRYPTO}.get(market)
+        if not market_enum:
+            return
+        fetcher = get_fetcher(market_enum)
+        for interval_str, interval_enum in [("1H", Interval.H1), ("1D", Interval.D1)]:
+            try:
+                candles = await fetcher.get_klines(symbol, interval_enum, limit=200)
+                if not candles:
+                    continue
+                # 写入 DB (CREATE IF NOT EXISTS + INSERT OR REPLACE)
+                table = f"klines_{market}_{interval_str.lower()}"
+                async with db.acquire() as conn:
+                    await conn.execute(
+                        f"CREATE TABLE IF NOT EXISTS [{table}] ("
+                        "symbol TEXT NOT NULL, timestamp INTEGER NOT NULL, "
+                        "open REAL, high REAL, low REAL, close REAL, volume REAL, "
+                        "PRIMARY KEY(symbol, timestamp))"
+                    )
+                    for c in candles:
+                        await conn.execute(
+                            f"INSERT OR REPLACE INTO [{table}] (symbol, timestamp, open, high, low, close, volume) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            (symbol, c.timestamp, c.open, c.high, c.low, c.close, c.volume),
+                        )
+                    await conn.commit()
+                logger.info(f"[klines-fetch] {symbol}({market}) {interval_str} 入库 {len(candles)} 根")
+            except Exception as e:
+                logger.debug(f"[klines-fetch] {symbol}({market}) {interval_str} 失败: {e}")
+    except Exception as e:
+        logger.debug(f"[klines-fetch] {symbol}({market}) fetcher 不可用: {e}")
 
 
 # ─── 指标计算 ────────────────────────────────────────────────────
