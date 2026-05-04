@@ -416,6 +416,28 @@ class MockSwapEngine:
                         fill_price = limit
                     else:
                         continue  # 价格未穿过, 继续等
+                    # v12.21.7 P0 修复: ATOMIC CLAIM 防止同一订单被重复 fill
+                    # 旧 bug: _mark_filled 内 commit 失败时(database is locked) 状态没真改
+                    #         status 仍是 'pending', 下次 loop 又扫到, 重复 fill 累积巨额持仓
+                    #         (ETH 12 次 / SOL 5 次实际就是这样发生的)
+                    # 修法: 用 UPDATE...WHERE status='pending' 原子标记 status='filling',
+                    #       rowcount=0 说明已被处理过(被其他 loop / 自己之前没 commit 改回的),
+                    #       直接跳过, 不再调 _mark_filled
+                    claim_ok = False
+                    try:
+                        async with self.db.acquire() as claim_conn:
+                            cur = await claim_conn.execute(
+                                "UPDATE swap_orders SET status='filling' WHERE id=? AND status='pending'",
+                                (o["id"],),
+                            )
+                            await claim_conn.commit()
+                            claim_ok = (cur.rowcount or 0) > 0
+                    except Exception as e:
+                        logger.warning(f"[swap-engine] atomic claim {o['id'][:8]} 失败: {e}")
+                        continue  # 拿不到 claim, 跳过本次, 下次 loop 再试
+                    if not claim_ok:
+                        # 已被其他流程处理过(无论是 _mark_filled 真成功了还是别的)
+                        continue
                     fee_rate = config.SWAP_MAKER_FEE_RATE
                     # fill
                     nominal = o["qty"] * fill_price * (await self._get_specs(o["symbol"]) or {}).get("ctVal", 0.01)
@@ -423,7 +445,19 @@ class MockSwapEngine:
                     # v12.20.5 Bug 13 修复: _mark_filled 必须在 _lock 内
                     # 避免与 place_order(已在 lock)/force_liquidate(已在 lock) 竞态写同一持仓
                     async with self._lock:
-                        await self._mark_filled(o, fill_price, 0.0, fee, is_maker)
+                        result = await self._mark_filled(o, fill_price, 0.0, fee, is_maker)
+                    # v12.21.7: 如果 _mark_filled 失败, 把 claim 改回 pending 让下次 loop 重试
+                    if not (result and result.get("ok")):
+                        try:
+                            async with self.db.acquire() as fix_conn:
+                                await fix_conn.execute(
+                                    "UPDATE swap_orders SET status='pending' WHERE id=? AND status='filling'",
+                                    (o["id"],),
+                                )
+                                await fix_conn.commit()
+                            logger.warning(f"[swap-engine] _mark_filled 失败, 还原 status=pending {o['id'][:8]}")
+                        except Exception:
+                            pass
             except Exception as e:
                 logger.warning(f"[swap-engine] limit loop err: {e}")
             await asyncio.sleep(interval_sec)
@@ -616,6 +650,12 @@ class MockSwapEngine:
                     "fill_price": fill_price, "fee_usd": fee, "is_maker": is_maker}
         except Exception as e:
             logger.warning(f"[swap-engine] mark_filled err: {e}", exc_info=True)
+            # v12.21.7 P0: 显式 rollback 确保失败时事务清理 (双保险, 配合 __aexit__ 修复)
+            try:
+                if 'conn' in locals() and conn is not None:
+                    await conn.rollback()
+            except Exception:
+                pass
             return {"ok": False, "reason": f"成交处理异常: {e}"}
 
     # ─────────────────────── 强平监控 ───────────────────────

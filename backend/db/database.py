@@ -162,7 +162,17 @@ class DatabaseManager:
             return self.conn
 
         async def __aexit__(self, exc_type, exc_val, exc_tb):
+            # v12.21.7 P0 修复:swap_orders 重复 fill bug
+            # 连接归还池前显式 rollback,清理任何未完成的 implicit transaction
+            # 旧 bug:_mark_filled commit 失败时(database is locked → 30s 超时抛异常),
+            # except 吞掉异常但事务仍 active,conn 还回池后下次 acquire 拿到 stale state
+            # 导致同一订单被反复处理 (ETH/SOL 各重复 fill 5-12 次累积巨额持仓)
             if self.conn is not None:
+                try:
+                    await self.conn.rollback()
+                except Exception:
+                    # rollback 失败也不能让 conn 漏掉, 继续归还(下次使用时会重新尝试)
+                    pass
                 await self.manager._pool.put(self.conn)
             return False
 
