@@ -491,16 +491,33 @@ class MockSwapEngine:
 
     async def _mark_filled(self, order: Dict, fill_price: float, slip_pct: float,
                             fee: float, is_maker: bool) -> Dict[str, Any]:
-        """订单 fill → 更新 swap_orders + swap_positions + swap_account"""
+        """订单 fill → 更新 swap_orders + swap_positions + swap_account
+
+        v12.22.5 P0 终极修复 (ETH 12 次/SOL 5 次重复 fill bug 复发根因):
+            v12.21.7 atomic claim 修了上游, 但本函数第一个 UPDATE 是 WHERE id=? 无条件覆盖,
+            如果 claim 因任何原因 (WAL/connection 缓存/锁竞态) 误判, 这里仍会重复 fill。
+            本次加 WHERE status NOT IN ('filled','cancelled') 守门: rowcount=0 时早返回, 不写
+            auto_trade_log/position/account, 彻底杜绝重复 fill 累积虚假持仓。
+        """
         now = int(time.time())
         try:
             async with self.db.acquire() as conn:
-                # 1. 更新订单
-                await conn.execute(
+                # 1. 更新订单 (加 status guard 防重复 fill)
+                cur = await conn.execute(
                     """UPDATE swap_orders SET status='filled', fill_price=?, fill_qty=?,
-                       fee_usd=?, is_maker=?, slippage_pct=?, filled_at=? WHERE id=?""",
+                       fee_usd=?, is_maker=?, slippage_pct=?, filled_at=?
+                       WHERE id=? AND status NOT IN ('filled','cancelled','rejected')""",
                     (fill_price, order["qty"], fee, 1 if is_maker else 0, slip_pct, now, order["id"]),
                 )
+                if (cur.rowcount or 0) == 0:
+                    # 该订单已经被处理过 (status='filled'/'cancelled'/'rejected') → 早返回, 不重复操作
+                    await conn.commit()  # commit 空事务也无害
+                    logger.warning(
+                        f"[swap-fill] DUPLICATE-GUARD {order['id'][:8]} status 已是 filled/cancelled/rejected, "
+                        f"跳过本次 _mark_filled (上游 claim 可能误判)"
+                    )
+                    return {"ok": True, "order_id": order["id"], "status": "already_processed",
+                            "skip_reason": "duplicate-guard"}
                 # 2. 找/建持仓 (UNIQUE symbol+pos_side)
                 cur = await conn.execute(
                     "SELECT * FROM swap_positions WHERE symbol=? AND pos_side=? AND status='open'",
