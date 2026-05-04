@@ -78,10 +78,16 @@ async def collect_all(
         if "-" not in symbol:
             symbol = f"{symbol}-USDT"
     elif market == "hk":
+        # 港股标准: 先去前导零再补足 4 位 + .HK
+        # "01024" → "1024.HK" (yfinance 标准, 用户多输的前导零会破坏匹配)
+        # "0700"/"700"/"00700" → "0700.HK"
+        # "9988"/"09988" → "9988.HK"
+        # "80123" (5 位真实代码) → "80123.HK" (zfill 不截断)
         s = symbol.upper().strip()
         core = s.replace(".HK", "")
         if core.isdigit():
-            symbol = core.zfill(4) + ".HK"
+            stripped = core.lstrip("0") or "0"
+            symbol = stripped.zfill(4) + ".HK"
         else:
             symbol = s if s.endswith(".HK") else s + ".HK"
     elif market == "cn":
