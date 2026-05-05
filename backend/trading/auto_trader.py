@@ -987,6 +987,29 @@ class AutoTrader:
         if market != "crypto" and action == "sell":
             await self._handle_stock_sell_confirm(sig)
             return
+
+        # v12.23.0 Phase 1: trading_v2 决策层灰度
+        # 仅对 BUY 信号生效, 按 signal_id 哈希 % 100 < V2_GRAYSCALE_PCT 走 v2 质量门
+        # config.V2_GRAYSCALE_PCT 默认 0 = 全部走 v1, 灰度爬坡时改为 10/30/50/100
+        if action == "buy":
+            try:
+                from backend.trading_v2 import feature_flag, decision_engine
+                if feature_flag.use_v2(signal_id, market):
+                    decision = await decision_engine.evaluate_with_fallback(self.db, sig)
+                    if not decision.allow:
+                        await self._log_rejected(
+                            sig, "open",
+                            f"[v2-{decision.gate_failed}] {decision.reason}"
+                        )
+                        logger.info(
+                            f"[v2-reject] {symbol}({market})/{action} "
+                            f"gate={decision.gate_failed}: {decision.reason}"
+                        )
+                        return
+                    # v2 PASS — 继续走 v1 的冷却/每日上限/开仓路径
+            except Exception as e:
+                logger.warning(f"[v2-decision] {symbol}/{action} 异常 fallback v1: {e}")
+
         # 风控：同股冷却 / 单日同股操作上限
         if not await self._check_cooldown(symbol, market):
             await self._log_rejected(
