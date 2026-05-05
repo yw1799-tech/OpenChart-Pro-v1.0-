@@ -301,7 +301,7 @@ class DatabaseManager:
         # 查当前 schema 版本
         cur = await conn.execute("PRAGMA user_version")
         current_version = (await cur.fetchone())[0]
-        TARGET_VERSION = 22  # v22 (v12.22.0): on_demand_advices 表 (按需分析模块)
+        TARGET_VERSION = 23  # v23 (v12.23.2): swap_orders 加 realized_pnl_usd 字段 (前端订单流水显示单笔平仓 PnL)
         if current_version < TARGET_VERSION:
             # v12.11: 用 BEGIN/COMMIT 包整个迁移；任何步骤抛错则 ROLLBACK + 不前进 user_version
             migration_ok = True
@@ -461,6 +461,9 @@ class DatabaseManager:
                 )""",
                 "CREATE INDEX IF NOT EXISTS idx_on_demand_time ON on_demand_advices (created_at DESC)",
                 "CREATE INDEX IF NOT EXISTS idx_on_demand_symbol ON on_demand_advices (symbol, market, created_at DESC)",
+                # v23 (v12.23.2) swap_orders 加 realized_pnl_usd — 前端订单流水显示单笔平仓 PnL
+                # 仅 close/reduce intent 的订单填该字段, open/add intent 该字段为 NULL
+                "ALTER TABLE swap_orders ADD COLUMN realized_pnl_usd REAL",
             ]:
                 try:
                     await conn.execute(alter)

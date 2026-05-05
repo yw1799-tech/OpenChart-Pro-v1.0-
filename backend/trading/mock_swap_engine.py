@@ -635,10 +635,18 @@ class MockSwapEngine:
                             f"realized=${realized:+.2f} fee=${fee:.2f}"
                         )
                 # 关联订单 → position
-                await conn.execute(
-                    "UPDATE swap_orders SET position_id=? WHERE id=?",
-                    (pos_id_use, order["id"]),
-                )
+                # v12.23.2: 平仓/减仓订单 写入单笔 realized_pnl_usd, 让前端订单流水可显示
+                # open/add 订单不写入该字段, 保持 NULL
+                if order["intent"] in ("close", "reduce") and pos_row is not None:
+                    await conn.execute(
+                        "UPDATE swap_orders SET position_id=?, realized_pnl_usd=? WHERE id=?",
+                        (pos_id_use, round(realized, 4), order["id"]),
+                    )
+                else:
+                    await conn.execute(
+                        "UPDATE swap_orders SET position_id=? WHERE id=?",
+                        (pos_id_use, order["id"]),
+                    )
                 # v12.20.9: 同步写 auto_trade_log (让 _check_cooldown/_check_daily_limit 自动生效)
                 # trigger_type='swap_fill' 区分现货
                 try:

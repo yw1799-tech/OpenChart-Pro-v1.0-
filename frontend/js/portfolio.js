@@ -813,12 +813,17 @@ const Portfolio = (function () {
             <td style="padding:6px;text-align:right;">${o.leverage}x</td>
             <td style="padding:6px;text-align:right;">${o.is_maker ? 'M 0.02%' : 'T 0.05%'}</td>
             <td style="padding:6px;text-align:right;">$${fmt(o.fee_usd, 4)}</td>
+            <td style="padding:6px;text-align:right;font-weight:600;">${
+              o.realized_pnl_usd !== null && o.realized_pnl_usd !== undefined
+                ? `<span style="color:${o.realized_pnl_usd >= 0 ? 'var(--color-up)' : 'var(--color-down)'};">${o.realized_pnl_usd >= 0 ? '+' : ''}$${fmt(o.realized_pnl_usd, 2)}</span>`
+                : '<span style="color:var(--text-tertiary);">—</span>'
+            }</td>
             <td style="padding:6px;${statusColor}">${o.status}${o.reject_reason ? ' — '+o.reject_reason.slice(0,30) : ''}</td>
           </tr>`;
         }).join('');
         ordHtml = `
           <div style="padding:14px 14px 4px;font-size:13px;color:var(--text-secondary);">
-            📜 最近 15 单
+            📜 最近 15 单 (平仓单显示单笔已实现 PnL)
           </div>
           <div style="overflow-x:auto;padding:0 14px 14px;">
             <table style="width:100%;border-collapse:collapse;font-size:11px;">
@@ -833,6 +838,7 @@ const Portfolio = (function () {
                   <th style="padding:6px;text-align:right;">杠杆</th>
                   <th style="padding:6px;text-align:right;">M/T</th>
                   <th style="padding:6px;text-align:right;">手续费</th>
+                  <th style="padding:6px;text-align:right;">PnL</th>
                   <th style="padding:6px;text-align:left;">状态</th>
                 </tr>
               </thead>

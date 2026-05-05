@@ -2064,6 +2064,8 @@
           leverage: o.leverage,
           isSwap: true,
           reason: o.reject_reason || '',
+          // v12.23.2: 单笔已实现 PnL (仅 close/reduce 订单填, 其他为 null)
+          realized_pnl_usd: o.realized_pnl_usd,
         });
       }
       for (const t of (log.items || [])) {
@@ -2108,6 +2110,11 @@
       pending: '⏳挂单', filled: '✅成交', cancelled: '⊘撤单',
       rejected: '❌拒单', executed: '✅成交',
     }[o.status] || o.status;
+    // v12.23.2: 单笔 PnL 显示 (close/reduce 才有, open/add 为 null)
+    const pnl = o.realized_pnl_usd;
+    const pnlHtml = (pnl !== null && pnl !== undefined && pnl !== '')
+      ? ` · <span class="${pnl >= 0 ? 'up' : 'down'}" style="font-weight:600;">${pnl >= 0 ? '+' : ''}$${Number(pnl).toFixed(2)}</span>`
+      : '';
     return `<div class="order-row status-${o.status}">
       <div class="order-hdr">
         <div class="order-symbol">${escape(o.symbol)} ${swapTag} <span class="muted small">${intentTxt} ${sideTxt}</span></div>
@@ -2115,7 +2122,7 @@
       </div>
       <div class="order-meta">
         ${(o.qty||0).toFixed(4)} @ ${(o.price||0).toFixed(4)}
-        ${o.fee ? ` · 手续费 ${fmtMoney(o.fee)}` : ''}
+        ${o.fee ? ` · 手续费 ${fmtMoney(o.fee)}` : ''}${pnlHtml}
         · ${fmtRelTime(o.ts * 1000)}
       </div>
       ${o.reason && o.status !== 'filled' && o.status !== 'executed' ? `<div class="order-meta small" style="color:var(--down);margin-top:4px;">${escape(o.reason).slice(0, 80)}</div>` : ''}
