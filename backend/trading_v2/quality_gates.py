@@ -37,13 +37,20 @@ DIST_TO_HIGH_MIN_PCT = 0.05  # 距 20 日高 < 5% 拒
 INTRADAY_PUMP_MAX_PCT = 0.04  # 当日已涨 > 4% 拒
 
 # Gate 3: 风险回报门
-MIN_RISK_REWARD = 1.5  # R:R 必须 ≥ 1.5
+# v12.23.1 审计 P1 修: 1.5 → 3.0 (因 v12.22.6 SL 抗噪 ≥ 2.5% + TP 默认 25%, R:R = 10:1
+# 阈值 1.5 永远拦不住任何信号, 形同虚设. 提到 3.0 才有实际过滤意义.)
+MIN_RISK_REWARD = 3.0
 
 # Gate 4: 大盘环境门
-SPY_DROP_THRESHOLD_PCT = -0.015  # SPY 当日跌 > 1.5% 暂停美股 BUY
+# v12.23.1 审计 P1 修: -1.5% → -2.0% (SPY 日内 1% 波动家常便饭, 1.5% 阈值在 2024-25
+# 年触发 12-15 天/年 偏严; 中午跌 1.6% 但收盘 -0.5% 的恢复日会被错误暂停整天)
+SPY_DROP_THRESHOLD_PCT = -0.020
 
-# Gate 5: 财报临近门
-EARNINGS_BLACKOUT_DAYS = 3  # 距财报 < 3 天 拒
+# Gate 5: 财报临近门 (Phase 1 stub, Phase 2 接入财报日历后启用)
+EARNINGS_BLACKOUT_DAYS = 3
+
+# 市场白名单 (防 SQL 注入双保险, signal.market 来源是枚举但显式校验更稳妥)
+ALLOWED_MARKETS = frozenset(["us", "hk", "cn", "crypto"])
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -121,6 +128,8 @@ async def run_all_gates(
 
 async def _gate_position(db, symbol: str, market: str, price: float) -> Dict[str, Any]:
     """信号价距 20 日高 < DIST_TO_HIGH_MIN_PCT (默认 5pct) → 拒."""
+    if market not in ALLOWED_MARKETS:
+        return {"passed": True, "reason": f"未知市场 {market},跳过", "skipped": True}
     try:
         async with db.acquire() as conn:
             cutoff_ms = int(time.time() * 1000) - 20 * 86400 * 1000
@@ -164,6 +173,8 @@ async def _gate_intraday_pump(db, symbol: str, market: str, price: float) -> Dic
     简化版: 用最新 1D K 线的 open 字段作为"当日开盘价".
     更精确版本 (Phase 2): 用 1H 或 15m K 线算精确"信号前 30min 涨幅".
     """
+    if market not in ALLOWED_MARKETS:
+        return {"passed": True, "reason": f"未知市场 {market},跳过", "skipped": True}
     try:
         async with db.acquire() as conn:
             cur = await conn.execute(
@@ -200,31 +211,48 @@ async def _gate_intraday_pump(db, symbol: str, market: str, price: float) -> Dic
 
 
 def _gate_risk_reward(signal: Dict[str, Any]) -> Dict[str, Any]:
-    """信号必须自带 stop_loss + take_profit, 且 R:R ≥ 1.5.
+    """R:R 评估 — 优先用 AI 验证后的 ai_stop_loss/ai_take_profit, 退化用策略原始 stop_loss/take_profit.
 
-    Phase 1 严格: 缺 SL/TP 直接拒 (倒逼策略层给出有意义的 SL/TP).
-    Phase 2 可改为: 缺 SL/TP 时用 ATR 默认值算 R:R.
+    审计 P0 修复 (v12.23.1):
+      - 字段优先级: ai_stop_loss > stop_loss (生产路径用 ai_*, 策略原始字段大量为 None)
+      - 缺 SL/TP 时改为 passed=True + skipped=True (与 gate_1/2 K 线缺失一致),
+        而不是 reject — 因为 chanlun 等策略 by design 不带 SL/TP, 一刀切 reject 会
+        100% 错杀这类策略. SL/TP 兜底由后续 _execute_open 的 v12.22.6 逻辑负责.
+      - R:R 阈值 1.5 → 3.0 (审计 P1 — 1.5 在 v12.22.6 兜底 (SL 2.5%, TP 25%) 下名存实亡)
     """
-    sl = signal.get("stop_loss")
-    tp = signal.get("take_profit")
+    # 优先 AI 给的, 退化策略原始
+    sl = signal.get("ai_stop_loss")
+    if sl is None:
+        sl = signal.get("stop_loss")
+    tp = signal.get("ai_take_profit")
+    if tp is None:
+        tp = signal.get("take_profit")
     price = float(signal.get("price") or 0)
+
     try:
         sl_f = float(sl) if sl is not None else None
         tp_f = float(tp) if tp is not None else None
     except (TypeError, ValueError):
-        return {"passed": False, "reason": "SL/TP 字段类型错误"}
+        return {"passed": True, "reason": "SL/TP 字段类型错误,跳过", "skipped": True}
 
-    if sl_f is None or tp_f is None or price <= 0:
+    if sl_f is None or sl_f <= 0 or tp_f is None or tp_f <= 0:
+        # 缺 SL/TP — 跳过本门 (chanlun 等策略 by design 无 SL/TP, 兜底由 _execute_open 处理)
         return {
-            "passed": False,
-            "reason": f"SL/TP 缺失 (sl={sl_f}, tp={tp_f}) — 拒入场",
+            "passed": True,
+            "reason": "SL/TP 缺失,跳过 R:R 评估 (兜底由开仓时 SL 抗噪机制处理)",
+            "skipped": True,
+            "ai_sl": sl_f, "ai_tp": tp_f,
         }
+    if price <= 0:
+        return {"passed": True, "reason": "信号价 0,跳过", "skipped": True}
+
     risk = price - sl_f
     reward = tp_f - price
     if risk <= 0 or reward <= 0:
         return {
             "passed": False,
             "reason": f"SL/TP 方向不合理 (risk={risk:.4f}, reward={reward:.4f})",
+            "ai_sl": sl_f, "ai_tp": tp_f,
         }
     rr = reward / risk
     passed = rr >= MIN_RISK_REWARD
