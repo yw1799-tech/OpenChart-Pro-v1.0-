@@ -913,7 +913,7 @@
         <div class="row-pnl ${cls}">${fmtPnl(pnl)}</div>
       </div>
       <div class="row-meta">
-        ${(p.qty||0).toFixed(4)} 张 @ ${(p.avg_open_price||0).toFixed(4)} · 保证金 ${fmtMoney(p.margin_usd||0)}
+        ${(p.qty||0).toFixed(4)} 个 @ ${(p.avg_open_price||0).toFixed(4)} · 保证金 ${fmtMoney(p.margin_usd||0)}
       </div>
       <div class="row-meta small">
         🛑 强平 ${(p.liq_price||0).toFixed(4)} (距 ${liqDist}%) ${p.pre_liq_armed ? '⚠️ 已减仓' : ''}
@@ -2008,7 +2008,7 @@
         <div class="swap-pnl ${upnlCls}">${fmtPnl(upnl)}<br><span style="font-size:10px;font-weight:400;">${fmtPct(pnlPct)}</span></div>
       </div>
       <div class="swap-info-grid">
-        <div class="swap-info-row"><span class="k">数量</span><span class="v">${(p.qty||0).toFixed(4)} 张</span></div>
+        <div class="swap-info-row"><span class="k">数量</span><span class="v">${(p.qty||0).toFixed(4)} 个</span></div>
         <div class="swap-info-row"><span class="k">均价</span><span class="v">${(p.avg_open_price||0).toFixed(4)}</span></div>
         <div class="swap-info-row"><span class="k">保证金</span><span class="v">${fmtMoney(p.margin_usd||0)}</span></div>
         <div class="swap-info-row"><span class="k">强平价</span><span class="v ${danger?'down':''}">${(p.liq_price||0).toFixed(4)}</span></div>
@@ -2523,7 +2523,7 @@
             </select>
             <input id="od-pos-avg" type="number" step="any" placeholder="持仓成本价"
               style="flex:1;padding:6px 8px;background:#0d1117;border:1px solid #333;border-radius:4px;color:#fff;font-size:13px;">
-            <input id="od-pos-qty" type="number" step="any" placeholder="股数/张数"
+            <input id="od-pos-qty" type="number" step="any" placeholder="股数/个数"
               style="flex:1;padding:6px 8px;background:#0d1117;border:1px solid #333;border-radius:4px;color:#fff;font-size:13px;">
           </div>
           <div style="display:flex;gap:6px;">

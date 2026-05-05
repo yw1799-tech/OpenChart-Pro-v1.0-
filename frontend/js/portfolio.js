@@ -739,7 +739,7 @@ const Portfolio = (function () {
           return `<tr>
             <td style="padding:8px;font-weight:600;">${sym}</td>
             <td style="padding:8px;">${sideHtml}</td>
-            <td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;">${fmt(p.qty,4)} 张</td>
+            <td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;">${fmt(p.qty,4)} 个</td>
             <td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;">${fmt(p.avg_open_price,4)}</td>
             <td style="padding:8px;text-align:right;font-weight:600;">${p.leverage}x</td>
             <td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;">$${fmt(p.margin_usd)}</td>

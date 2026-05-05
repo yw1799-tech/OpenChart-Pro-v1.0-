@@ -1856,7 +1856,7 @@ class AutoTrader:
                 if opp_pos:
                     opp_dict = dict(opp_pos)
                     close_side = "sell" if opposite_side == "long" else "buy"
-                    logger.info(f"[swap-route] {symbol} 反向信号检测到反向 {opposite_side} 持仓 → 先平 {opp_dict['qty']:.4f} 张")
+                    logger.info(f"[swap-route] {symbol} 反向信号检测到反向 {opposite_side} 持仓 → 先平 {opp_dict['qty']:.4f} 个")
                     await engine.place_order(
                         symbol=symbol, side=close_side, pos_side=opposite_side,
                         order_type="market", qty=opp_dict["qty"],
@@ -2575,7 +2575,7 @@ class AutoTrader:
             amount_usd=order_usd, fx=fx, side="long",
             trigger_type="diagnosis_strong_buy",
             trigger_detail={"rating": "strong_buy", "trial": True},
-            reason=f"{side_icon} {qty:.4f}{'张' if market=='crypto' else '股'} @ {price:.4f}（rating 升级为强买，无信号直通）",
+            reason=f"{side_icon} {qty:.4f}{'个' if market=='crypto' else '股'} @ {price:.4f}（rating 升级为强买，无信号直通）",
             position_id=pid, remaining_qty=qty,
         )
         logger.info(f"🎯 [trial-open] {symbol}({market}) 强买试单 qty={qty:.4f} @ {price:.4f} usd=${order_usd:.2f}")
@@ -2717,7 +2717,7 @@ class AutoTrader:
             amount_usd=usd_cost, fx=fx, side=side,
             trigger_type="signal_confirm",
             trigger_detail={"signal_id": sig["id"], "rating": rating, "ai_confidence": sig.get("ai_confidence"), "side": side},
-            reason=f"{side_icon} {qty:.4f}{'张' if market=='crypto' else '股'} @ {price:.4f} (rating={rating})",
+            reason=f"{side_icon} {qty:.4f}{'个' if market=='crypto' else '股'} @ {price:.4f} (rating={rating})",
             position_id=pid, remaining_qty=qty,
         )
         # v11.5: 预建 position_state 行（peak_price=avg_cost），让监控立刻可用
