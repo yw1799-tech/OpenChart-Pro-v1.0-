@@ -354,23 +354,49 @@ class AutoTrader:
             await conn.commit()
 
     async def _check_pool_cash_buffer(self, market: str, order_usd: float) -> tuple:
-        """v12.9 池级现金缓冲检查：扣掉本笔后，池内 cash 必须 ≥ initial × pool_cash_buffer_pct。
+        """v12.9 池级现金缓冲 + v12.23.4 单市场使用上限。
         返回 (ok: bool, reason: str)。
-        v12.11 修：
-          - FX 失败不再退化 1:1（CRITICAL：会让 CNY 池误算 USD 金额），改拒单
-          - 池不存在不再放行（防 _seed_pools 竞态），拒单要求重试
-          - cash<0（池本金透支）单独提示，不混在普通缓冲拒绝里
-        buffer 配为 0 时禁用此检查。
+
+        两层检查:
+          1) 单市场上限 (v12.23.4): 共用池 us_hk 防 美股 / 港股 互相挤占
+             — MARKET_USAGE_LIMIT_PCT[market] × pool_initial 是该市场资金天花板
+             — 仅 USD 池启用 (避免跨币换算); 独占池默认 1.0 永不触发
+          2) 现金缓冲 (v12.9): 扣本笔后池现金 ≥ initial × pool_cash_buffer_pct
+             buffer_pct=0 时禁用此层
+
+        v12.11 历史修复保留:
+          - FX 失败必拒单, 不退化 1:1
+          - 池不存在拒单 (防 _seed_pools 竞态)
+          - cash<0 单独提示根因
         """
         from backend.trading.fx import get_rate, market_to_currency
-        buffer_pct = float(self._config.get("pool_cash_buffer_pct", 0.0) or 0.0)
-        if buffer_pct <= 0:
-            return True, ""
+        from backend.config import MARKET_USAGE_LIMIT_PCT
+
         pool_id = self._pool_for(market)
         pool = await self.get_pool(pool_id)
         if not pool:
             return False, f"资金池[{pool_id}] 未就绪（_seed_pools 可能未完成），稍后重试"
         pool_ccy = (pool.get("currency") or "USD").upper()
+        sym = {"USD":"$", "CNY":"¥", "HKD":"HK$"}.get(pool_ccy, pool_ccy + " ")
+        initial = float(pool.get("initial_capital") or 0)
+
+        # ── v12.23.4: 单市场使用上限 ──
+        # 仅 USD 池启用 (us_hk); 独占池默认 1.0 不会触发
+        limit_pct = float(MARKET_USAGE_LIMIT_PCT.get(market, 1.0))
+        if 0 < limit_pct < 1.0 and pool_ccy == "USD":
+            market_used_usd = await self._market_used_usd(market)
+            market_cap_usd = initial * limit_pct
+            if market_used_usd + order_usd > market_cap_usd:
+                return False, (
+                    f"市场[{market}] 已用 ${market_used_usd:,.0f} + 本单 ${order_usd:,.0f} "
+                    f"= ${market_used_usd + order_usd:,.0f} > 单市场上限 ${market_cap_usd:,.0f}"
+                    f"（{limit_pct*100:.0f}% × 池本金 ${initial:,.0f}）"
+                )
+
+        # ── v12.9: 现金缓冲 ──
+        buffer_pct = float(self._config.get("pool_cash_buffer_pct", 0.0) or 0.0)
+        if buffer_pct <= 0:
+            return True, ""
         # USD → 池币换算（FX 失败必拒单，不退化 1:1）
         if pool_ccy == "USD":
             order_pool = order_usd
@@ -383,9 +409,7 @@ class AutoTrader:
                 return False, f"汇率异常 ({pool_ccy}→USD = {pool_to_usd})，拒单"
             order_pool = order_usd / pool_to_usd
         cash = float(pool.get("cash") or 0)
-        initial = float(pool.get("initial_capital") or 0)
         floor = initial * buffer_pct
-        sym = {"USD":"$", "CNY":"¥", "HKD":"HK$"}.get(pool_ccy, pool_ccy + " ")
         # cash<0：本金透支，单独提示根因
         if cash < 0:
             return False, (
