@@ -33,7 +33,8 @@ GROUP BY market ORDER BY market;
 "
 
 echo ""
-echo "════ 2. 门 1: 距 20 日高 < 3pct (追高, v12.24.3 阈值) — 拒后效果 ════"
+echo "════ 2. 门 1: 距 20 日高 < 5pct (追高, v12.24.4 回退到稳定阈值) — 拒后效果 ════"
+echo "(分桶细到 <3 / 3-5 / 5-10 / >10, 复盘用; 实际 v2 阈值 5pct)"
 sqlite3 -column -header $DB "
 WITH closed AS (
   SELECT position_id, market,
@@ -52,8 +53,8 @@ ctx AS (
   FROM closed c
 )
 SELECT
-  CASE WHEN (hi20-open_p)/open_p < 0.03 THEN 'A. 追高 <3pct (将拒)'
-       WHEN (hi20-open_p)/open_p < 0.05 THEN 'B. 3-5pct'
+  CASE WHEN (hi20-open_p)/open_p < 0.03 THEN 'A. 追高 <3pct (旧拒)'
+       WHEN (hi20-open_p)/open_p < 0.05 THEN 'B. 3-5pct (亏区, 当前拒)'
        WHEN (hi20-open_p)/open_p < 0.10 THEN 'C. 5-10pct'
        ELSE 'D. >10pct (保留)' END AS 距高,
   COUNT(*) AS 笔数,
@@ -96,7 +97,8 @@ GROUP BY 当日已涨 ORDER BY 当日已涨;
 "
 
 echo ""
-echo "════ 4. 门 3: R:R < 2.0 (用 AI 给的 SL/TP 算, v12.24.3 校准阈值) — 拒后效果 ════"
+echo "════ 4. 门 3: R:R < 3.0 (用 AI 给的 SL/TP 算, v12.24.4 回退稳定阈值) — 拒后效果 ════"
+echo "(分桶细到 <2 / 2-3 / 3-5 / ≥5, 复盘用; 实际 v2 阈值 3.0)"
 sqlite3 -column -header $DB "
 WITH closed AS (
   SELECT atl.position_id,
@@ -112,11 +114,11 @@ SELECT
   CASE
     WHEN s.ai_take_profit IS NULL OR s.ai_stop_loss IS NULL THEN 'X_缺SL/TP (v2 跳过, 缠论路径)'
     WHEN (s.ai_take_profit - cs.open_p) / NULLIF(cs.open_p - s.ai_stop_loss, 0) < 2.0
-      THEN 'A. R:R <2.0 (将拒)'
+      THEN 'A. R:R <2.0 (旧拒)'
     WHEN (s.ai_take_profit - cs.open_p) / NULLIF(cs.open_p - s.ai_stop_loss, 0) < 3.0
-      THEN 'B. R:R 2.0-3.0'
+      THEN 'B. R:R 2.0-3.0 (亏区, 当前拒)'
     WHEN (s.ai_take_profit - cs.open_p) / NULLIF(cs.open_p - s.ai_stop_loss, 0) < 5.0
-      THEN 'C. R:R 3.0-5.0'
+      THEN 'C. R:R 3.0-5.0 (保留)'
     ELSE 'D. R:R ≥5.0 (AI 异常高 R:R, 实测易亏)'
   END AS R_R,
   COUNT(*) AS 笔数,
@@ -216,10 +218,10 @@ ctx AS (
 )
 SELECT
   CASE
-    WHEN hi20 > 0 AND (hi20-open_p)/open_p < 0.03 THEN '门1_拒_追高 <3pct'
+    WHEN hi20 > 0 AND (hi20-open_p)/open_p < 0.05 THEN '门1_拒_追高 <5pct'
     WHEN day_open > 0 AND (open_p-day_open)/day_open > 0.04 THEN '门2_拒_当日已涨>4pct'
     WHEN ai_tp IS NOT NULL AND ai_sl IS NOT NULL
-      AND (ai_tp - open_p) / NULLIF(open_p - ai_sl, 0) < 2.0 THEN '门3_拒_R:R<2.0'
+      AND (ai_tp - open_p) / NULLIF(open_p - ai_sl, 0) < 3.0 THEN '门3_拒_R:R<3.0'
     WHEN spy_chg IS NOT NULL AND spy_chg < -2.0 THEN '门5_拒_SPY<-2pct'
     ELSE '通过'
   END AS v2_决策,
