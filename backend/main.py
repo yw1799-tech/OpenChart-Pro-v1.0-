@@ -1244,17 +1244,31 @@ async def _aged_position_advice_loop():
 async def _pending_orders_retry_loop():
     """
     v12.18.0: 待开市 4 层重验 + 重触发循环。
-      扫描近 7 天 ai_verdict='confirm' + auto_trade_log status='rejected'
+      扫描近 24h ai_verdict='confirm' + auto_trade_log status='rejected'
       且 rejected_reason 含 'pending' 的信号；当前已开市 + 未重验过 →
-        1. 走 signal_revalidator.revalidate_signal (4 层闸门)
-        2. tier='pass' → on_signal_verified (开仓)
-        3. tier='ai_error' → 不写 reval 结果，下轮再试
-        4. 其他 tier (gap/strategy/news/ai) → 写 reject log + 标记 revalidated_at
+        1. 信号过期检查 (v12.24.0): 按 interval 卡 — 1H 12h / 1D 24h / 15m 4h
+           过期信号标 'expired' tier 永久作废，停止无效重验
+        2. 走 signal_revalidator.revalidate_signal (4 层闸门)
+        3. tier='pass' → on_signal_verified (开仓)
+        4. tier='ai_error' → 不写 reval 结果，下轮再试
+        5. 其他 tier (gap/strategy/news/ai) → 写 reject log + 标记 revalidated_at
     每 60 秒扫一次。
 
-    旧版 60min hardcoded cutoff 已废弃 — 改 7 天，覆盖春节/国庆等长假；
-    时效靠 revalidator 的 4 层闸门保证（行情变了就 reject，不靠时间硬截断）。
+    v12.24.0 改动:
+      - SQL cutoff 从 7 天 → 24 小时, 减少老信号反复入队
+      - 增加 per-interval 过期检查 (1H 信号 12h 后、1D 24h 后强制作废)
+      - 老 7 天兜底由 revalidator 的 4 层闸门保护变为时间硬截断
+      - 根因: 之前 US 信号平均 5.4h 才 pass, strategy reject 平均 26.8h, ai reject 55.7h
+              系统在做大量无效重验, 信号已彻底过期但仍在反复尝试
     """
+    # 信号有效窗口 (按 K 线周期)
+    INTERVAL_VALIDITY_SEC = {
+        "15m":  4 * 3600,    # 15m 信号 4h 后失效 (16 根 15m bar)
+        "1H":  12 * 3600,    # 1H 信号 12h 后失效 (覆盖 US 隔夜 7.5h + 缓冲)
+        "1D":  24 * 3600,    # 1D 信号 24h 后失效
+    }
+    DEFAULT_VALIDITY_SEC = 12 * 3600
+
     await asyncio.sleep(120)
     while True:
         try:
@@ -1264,8 +1278,9 @@ async def _pending_orders_retry_loop():
             from backend.signals.monitor import is_market_executable
             from backend.trading.signal_revalidator import revalidate_signal
             now_ms = int(time.time() * 1000)
-            cutoff_ms = now_ms - 7 * 24 * 60 * 60 * 1000   # 7 天硬上限
-            cutoff_sec = int(time.time()) - 7 * 24 * 60 * 60
+            # v12.24.0: 7 天 → 24 小时 (老信号在 per-interval 过期检查里一并作废)
+            cutoff_ms = now_ms - 24 * 60 * 60 * 1000
+            cutoff_sec = int(time.time()) - 24 * 60 * 60
 
             # 找未重验过 + 有 pending 拒绝 + 没成功执行的 confirm 信号
             async with db.acquire() as conn:
@@ -1299,9 +1314,45 @@ async def _pending_orders_retry_loop():
             fired = 0
             rejected = 0
             ai_errors = 0
+            expired = 0
             for sig in pending:
                 if not is_market_executable(sig["market"]):
                     continue
+
+                # v12.24.0: 信号过期检查 (按 interval)
+                # 防止系统在 5.4h-55.7h 后还反复重验已过期信号 (旧版数据)
+                interval = sig.get("interval") or "1H"
+                validity_sec = INTERVAL_VALIDITY_SEC.get(interval, DEFAULT_VALIDITY_SEC)
+                age_sec = (now_ms - sig["generated_at"]) / 1000
+                if age_sec > validity_sec:
+                    expired += 1
+                    expire_msg = f"信号过期: {interval} 信号已生成 {age_sec/3600:.1f}h > {validity_sec/3600:.0f}h 有效期"
+                    try:
+                        async with db.acquire() as conn:
+                            await conn.execute(
+                                """UPDATE signals SET revalidated_at=?, revalidation_tier='expired',
+                                   revalidation_reason=? WHERE id=?""",
+                                (now_ms, expire_msg, sig["id"]),
+                            )
+                            # 同时记 reject 日志方便排查
+                            await conn.execute(
+                                """INSERT INTO auto_trade_log (symbol, market, action, quantity, price,
+                                   amount_usd, fx_rate, trigger_type, trigger_detail, reason, status,
+                                   rejected_reason, traded_at)
+                                   VALUES (?, ?, 'open', 0, 0, 0, 1, 'revalidation', ?, ?,
+                                           'rejected', ?, ?)""",
+                                (sig["symbol"], sig["market"],
+                                 json.dumps({"tier": "expired", "signal_id": sig["id"]}, ensure_ascii=False),
+                                 sig.get("reason", "") or "",
+                                 expire_msg[:500],
+                                 int(time.time())),
+                            )
+                            await conn.commit()
+                    except Exception as e:
+                        logger.debug(f"[reval-retry] {sig['symbol']} 标记 expired 失败: {e}")
+                    logger.info(f"[reval-retry] {sig['symbol']}({sig['market']}) {expire_msg}")
+                    continue
+
                 # 4 层重验
                 try:
                     tier, reason, new_conf, new_sl, new_tp = await revalidate_signal(
@@ -1394,9 +1445,9 @@ async def _pending_orders_retry_loop():
                         f"[reval-retry] {sig['symbol']}({sig['market']}) 重验失效 [{tier}]: {reason}"
                     )
 
-            if fired or rejected or ai_errors:
+            if fired or rejected or ai_errors or expired:
                 logger.info(
-                    f"[reval-retry] 本轮 pending {len(pending)} 条: 开仓 {fired} / 拒单 {rejected} / AI 失败重试 {ai_errors}"
+                    f"[reval-retry] 本轮 pending {len(pending)} 条: 开仓 {fired} / 拒单 {rejected} / AI 失败重试 {ai_errors} / 过期作废 {expired}"
                 )
         except Exception as e:
             logger.warning(f"待开市重验循环异常: {e}")
