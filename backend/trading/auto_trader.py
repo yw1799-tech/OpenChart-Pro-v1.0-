@@ -65,7 +65,11 @@ DEFAULT_CONFIG = {
     # v12.14: 按市场区分冷却 — 美股/港股 1h（QCOM 33min 二开亏 -3.58% 教训）
     "cooldown_sec_per_market": {"us": 3600, "hk": 3600, "cn": 1800, "crypto": 900},
     "max_daily_ops_per_symbol": 3,
-    "max_concurrent_positions": 15,
+    # v12.23.6: 单市场持仓数上限 (防 us 吃满 15 全局 cap 把 cn/hk 全堵死)
+    # 与 v12.23.4 资金 cap 同思路, 这里管"槽位数"不是"金额"
+    # 默认: us 10 / hk 5 / cn 8 / crypto 6 (固定 6 币种); 缺市场回退全局 cap
+    "max_concurrent_positions_by_market": {"us": 10, "hk": 5, "cn": 8, "crypto": 6},
+    "max_concurrent_positions": 25,           # 全局 cap (v12.23.6: 15→25, 给 per-market 留余量)
     # v12.13: 全局日亏熔断 → 池级冷静期（按市场独立，crypto -5% / us_hk -4% / cn -3% 触发 4h 冻结新开仓）
     # 旧 daily_loss_circuit_pct 已废弃，保留 key 但无逻辑使用
     "market_cooldown_loss_pct_crypto": 0.05,   # 加密池亏损 ≥5% 触发冷静期
@@ -1353,11 +1357,28 @@ class AutoTrader:
             await self._log_rejected(sig, "open", why)
             return
 
+        # v12.23.6: 双层并发 cap — 单市场槽位 + 全局总槽位
+        # 之前只有全局 15, us 占满后 cn/hk 任何信号都被拒 (2026-05-06 现网事故)
         async with self.db.acquire() as conn:
-            cur = await conn.execute("SELECT COUNT(*) AS n FROM positions")
-            cur_positions = (await cur.fetchone())["n"]
+            cur = await conn.execute(
+                "SELECT market, COUNT(*) AS n FROM positions GROUP BY market"
+            )
+            counts = {r["market"]: r["n"] for r in await cur.fetchall()}
+        cur_positions = sum(counts.values())
+        market_count = counts.get(market, 0)
+        per_market_caps = cfg.get("max_concurrent_positions_by_market") or {}
+        market_cap = int(per_market_caps.get(market, cfg["max_concurrent_positions"]))
+        if market_count >= market_cap:
+            await self._log_rejected(
+                sig, "open",
+                f"市场[{market}] 持仓 {market_count} 已达单市场上限 {market_cap} (其他市场分布: {dict(counts)})"
+            )
+            return
         if cur_positions >= cfg["max_concurrent_positions"]:
-            await self._log_rejected(sig, "open", "并发持仓超上限")
+            await self._log_rejected(
+                sig, "open",
+                f"全局并发持仓 {cur_positions} 已达上限 {cfg['max_concurrent_positions']} ({dict(counts)})"
+            )
             return
 
         # 仓位比例：v11.3 按市场分档取值（股票更激进，加密保守）
@@ -2509,13 +2530,20 @@ class AutoTrader:
             return
 
         # 风控：v12.13 池级冷静期 + 并发持仓上限（试单路径，silent return）
+        # v12.23.6: 改为双层 cap (单市场 + 全局), 与正路径一致
         cd_ok, _ = await self._check_pool_cooldown(market)
         if not cd_ok:
             return
         async with self.db.acquire() as conn:
-            cur = await conn.execute("SELECT COUNT(*) AS n FROM positions")
-            cur_positions = (await cur.fetchone())["n"]
-        if cur_positions >= cfg["max_concurrent_positions"]:
+            cur = await conn.execute(
+                "SELECT market, COUNT(*) AS n FROM positions GROUP BY market"
+            )
+            counts = {r["market"]: r["n"] for r in await cur.fetchall()}
+        cur_positions = sum(counts.values())
+        market_count = counts.get(market, 0)
+        per_market_caps = cfg.get("max_concurrent_positions_by_market") or {}
+        market_cap = int(per_market_caps.get(market, cfg["max_concurrent_positions"]))
+        if market_count >= market_cap or cur_positions >= cfg["max_concurrent_positions"]:
             return
 
         # 计算仓位
