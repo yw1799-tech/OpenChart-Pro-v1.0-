@@ -1191,7 +1191,45 @@
       const p = items.find(x => String(x.id) === String(id));
       if (!p) { $('#sheet-content').innerHTML = '<div class="empty">未找到</div>'; return; }
       const advice = (advices || []).find(a => String(a.position_id) === String(id));
+      // v12.25.2 Phase C: 拉持仓全生命周期 + AI 建议历史
+      const [lifecycle, allAdvices] = await Promise.all([
+        fetchJSON('/api/auto-trade/log?position_id=' + encodeURIComponent(id) + '&limit=200').catch(()=>({items:[]})),
+        fetchJSON('/api/positions/' + encodeURIComponent(id) + '/advices').catch(()=>({items:[]})),
+      ]);
+      const lifeEvents = lifecycle.items || [];
+      const adviceHistory = allAdvices.items || allAdvices || [];
       const ccy = p.cost_currency || 'USD';
+      // 时间线 HTML 构造
+      const timelineHTML = lifeEvents.length ? lifeEvents.map(ev => {
+        const action = ACTION_LABEL[ev.action] || ev.action;
+        const isExec = ev.status === 'executed';
+        const isOpen = ev.action === 'open';
+        const isClose = ev.action === 'close';
+        const isAdd = ev.action === 'add';
+        const isReduce = ev.action === 'reduce';
+        const icon = isOpen ? '🟢' : isAdd ? '➕' : isReduce ? '➖' : isClose ? '🔴' : '•';
+        const cls = isExec ? 'up' : 'warn';
+        const reason = ev.reason || ev.rejected_reason || '';
+        return `<div class="lifecycle-event ${cls}" style="border-left:3px solid ${isExec?'#10b981':'#fbbf24'};padding:6px 10px;margin:6px 0;background:var(--bg-card-2);border-radius:4px;">
+          <div style="display:flex;justify-content:space-between;font-size:12px;">
+            <span><b>${icon} ${action}</b> ${ev.quantity||0} @ ${(ev.price||0).toFixed(4)}</span>
+            <span class="small muted">${fmtTime(ev.traded_at)}</span>
+          </div>
+          ${reason ? `<div class="small muted" style="margin-top:3px;">${escape(reason).slice(0,120)}</div>` : ''}
+        </div>`;
+      }).join('') : '<div class="muted small">无历史记录</div>';
+      // AI 建议历史 HTML
+      const adviceHistHTML = adviceHistory.length ? adviceHistory.slice(0, 8).map(a => {
+        const cn = ADVICE_LABEL_CN[a.advice] || a.advice || '?';
+        const cls = (a.advice === 'close' || a.advice === 'reduce') ? 'down' : (a.advice === 'add' ? 'up' : '');
+        return `<div style="border-left:2px solid var(--border);padding:4px 8px;margin:4px 0;background:var(--bg-card-2);border-radius:4px;">
+          <div style="display:flex;justify-content:space-between;font-size:12px;">
+            <span class="${cls}">🤖 ${escape(cn)}</span>
+            <span class="small muted">${fmtRelTime(a.advised_at*1000)}</span>
+          </div>
+          ${a.reason ? `<div class="small muted" style="margin-top:3px;">${escape(a.reason).slice(0,100)}</div>` : ''}
+        </div>`;
+      }).join('') : '<div class="muted small">无历史建议</div>';
       const html = `
         <h4>基本信息</h4>
         <div class="kv-row"><span class="k">代码</span><span class="v">${escape(p.symbol)}</span></div>
@@ -1205,6 +1243,10 @@
         <div class="kv-row"><span class="k">止损 SL</span><span class="v">${p.stop_loss ? fmtMoney(p.stop_loss, ccy) : '—'}</span></div>
         <div class="kv-row"><span class="k">止盈 TP</span><span class="v">${p.take_profit ? fmtMoney(p.take_profit, ccy) : '—'}</span></div>
         <div class="kv-row"><span class="k">开仓时间</span><span class="v">${fmtTime(p.opened_at)}</span></div>
+        <h4>📊 完整时间线 (${lifeEvents.length} 事件)</h4>
+        ${timelineHTML}
+        <h4>🤖 AI 建议历史 (${adviceHistory.length} 条)</h4>
+        ${adviceHistHTML}
         <h4>🤖 最新 AI 建议</h4>
         ${advice && advice.advice
           ? `<div class="kv-row"><span class="k">建议</span><span class="v">${escape(ADVICE_LABEL_CN[advice.advice] || advice.advice)}</span></div>
