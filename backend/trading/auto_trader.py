@@ -2388,12 +2388,23 @@ class AutoTrader:
                     hit_t1 = price <= t1_price
                     hit_t2 = price <= t2_price
 
-                # T2 优先（已到 T2 也意味着早过 T1）
+                # T2 优先 (已到 T2 也意味着早过 T1)
+                # v12.24.5 修 Bug C: 价格跳级 T2 时, 合并减仓 T1+T2 应有的总量
+                # 旧行为: T2 触发只减 t2_ratio (30%), 错失 T1 锁利 30%
+                # 新行为: 若 T1 未触发过, T2 直达时一次减完 T1+T2 = 60% (cap 90% 防全清)
                 if hit_t2 and not int(st.get("tp2_hit") or 0):
-                    ratio = self._config.get("tp_partial_t2_reduce", 0.30)
+                    t2_ratio = self._config.get("tp_partial_t2_reduce", 0.30)
+                    t1_already = int(st.get("tp1_hit") or 0) == 1
+                    if t1_already:
+                        total_ratio = t2_ratio
+                        msg_prefix = f"📊 T2 止盈 减 {t2_ratio*100:.0f}%"
+                    else:
+                        t1_ratio = self._config.get("tp_partial_t1_reduce", 0.30)
+                        total_ratio = min(t1_ratio + t2_ratio, 0.90)
+                        msg_prefix = f"📊 T2 直达 跳过T1 → 合并减 {total_ratio*100:.0f}% (T1+T2)"
                     await self._save_position_state(p["id"], **updates, tp1_hit=1, tp2_hit=1, trailing_armed=1)
-                    await self._execute_reduce(p, symbol, market, ratio, "tp_partial",
-                        f"📊 T2 止盈 减 {ratio*100:.0f}% (T2={t2_price:.4f}/现价 {price:.4f}, 浮盈 {pnl_pct:+.1f}%)")
+                    await self._execute_reduce(p, symbol, market, total_ratio, "tp_partial",
+                        f"{msg_prefix} (T2={t2_price:.4f}/现价 {price:.4f}, 浮盈 {pnl_pct:+.1f}%)")
                     return
                 if hit_t1 and not int(st.get("tp1_hit") or 0):
                     ratio = self._config.get("tp_partial_t1_reduce", 0.30)
@@ -2929,6 +2940,24 @@ class AutoTrader:
             reason=f"{side_icon} {qty:.4f} @ {price:.4f}",
             position_id=row["id"], remaining_qty=new_qty,
         )
+        # v12.24.5 修 Bug D: 加仓后 reset breakeven/trailing armed flag
+        #   旧行为: 加仓后 avg 更新为新值, 但 break-even SL 仍按旧 avg 算
+        #     举例: 开仓 avg=100 +1.5% → be 激活 SL=100.5 (锁 +0.5%)
+        #          加仓后 new_avg=102, SL=100.5 仍留, 相对新 avg 是 -1.47% 而非锁 +0.5%
+        #          回踩到 100.5 → 误平 实际亏 1.47%
+        #   新行为: 清 breakeven_armed/trailing_armed, 下轮巡检按新 avg 重算
+        #          peak_price 保留 (历史峰值不变), tp1_hit/tp2_hit 保留 (防重复减仓)
+        try:
+            async with self.db.acquire() as conn:
+                await conn.execute(
+                    "UPDATE position_state SET breakeven_armed=0, trailing_armed=0 "
+                    "WHERE position_id=?",
+                    (row["id"],),
+                )
+                await conn.commit()
+            logger.info(f"[add-reset-state] {symbol}({market}) 加仓后 reset breakeven/trailing flag, 下轮巡检按新 avg={new_avg:.4f} 重新评估")
+        except Exception as e:
+            logger.debug(f"[add-reset-state] {symbol} state reset 失败: {e}")
 
     async def _execute_reduce(self, pos, symbol, market, ratio, trigger_type, reason):
         """

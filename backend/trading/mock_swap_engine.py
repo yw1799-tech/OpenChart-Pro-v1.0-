@@ -579,7 +579,10 @@ class MockSwapEngine:
                         new_nominal = new_qty * ct_val * new_avg
                         effective_leverage = new_nominal / new_margin if new_margin > 0 else pos["leverage"]
                         new_lev_int = max(1, min(config.SWAP_MAX_LEVERAGE, int(round(effective_leverage))))
-                        new_liq = self.calc_liq_price(pos["pos_side"], new_avg, effective_leverage)
+                        # v12.24.5 修 Bug E: calc_liq_price(leverage: int), 旧代码传 float 会导致
+                        # OKX 公式偏差 (1.0/5.2 ≠ 1/5), 强平价偏离 0.3-0.5%, 触发假强平/漏强平
+                        # 改传 new_lev_int (已 round 到 int) 与 stored_leverage 一致
+                        new_liq = self.calc_liq_price(pos["pos_side"], new_avg, new_lev_int)
                         await conn.execute(
                             """UPDATE swap_positions SET qty=?, avg_open_price=?, margin_usd=?,
                                leverage=?, liq_price=?, total_fee_usd=total_fee_usd+? WHERE id=?""",

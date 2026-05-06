@@ -139,8 +139,10 @@ QWEN_MODEL = os.getenv("QWEN_MODEL", "qwen-turbo")
 
 # 日预算硬上限（美元）：超过后后台任务停止 LLM 调用（force=True 路径仍可调）
 # v12.10: V4 系列价格大幅下降（Flash $0.0003/1K、Pro $0.0009/1K vs 旧 reasoner $0.0022/1K）
-# 同样 5000 次/日额度，预算可降到 10 USD；保留 15 USD 给 review/diagnose 偶发 max-effort 长链
-LLM_DAILY_BUDGET = 15.0
+# v12.24.5: 15 → 25 (现网 24h 实际 $17.7 已稳态超 15, hard_stop=True 路径在硬阻断,
+#            但 hard_stop=False 软路径(diagnose/verify backfill/reviewer)无视超支继续调,
+#            提到 25 留 ~30% 余量避免误阻; 后续优化 diagnose 7283 calls/24h 频次另开 TODO)
+LLM_DAILY_BUDGET = 25.0
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -187,7 +189,10 @@ WATCHPOOL_TIER2_MIN_SCORE = 50
 WATCHPOOL_TIER2_MAX = 200             # v12.15.5: 60 → 200（用户要求放宽，让优胜劣汰自然发生）
 WATCHPOOL_TIER3_MIN_SCORE = 40
 WATCHPOOL_TIER3_MAX = 200             # v12.15.5: 20 → 200（用户要求放宽）
-WATCHPOOL_TIER4_ARCHIVE_BELOW = 0         # v12.15.5: 0 = 禁用 Tier 4 自动归档（用户要求保留低分股观察）
+WATCHPOOL_TIER4_ARCHIVE_BELOW = 40        # v12.24.5: 0 → 40 恢复归档 (Phase 0 数据驱动)
+                                          # 现网数据显示 score<50 占池 47% (~356 只), bindings 14973 异常多
+                                          # 监控负载 + 信号噪音过大, 影响 Phase 0 回测样本质量
+                                          # 历史 v12.15.5 设 0 是保留观察, 但 47% 池被低分股占用得不偿失
 
 # v12.18.5: 按市场差异化候选池上限（替代全局共享）
 # 不同市场标的规模差异大: us 4500+ / cn 5300+ / hk 600(过滤后), 需要分别配额
