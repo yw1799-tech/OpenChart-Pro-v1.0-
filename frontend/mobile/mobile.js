@@ -115,6 +115,73 @@
     signal: 'signalFilter', pool: 'poolFilter',
     rejected: 'rejectedFilter', order: 'orderFilter', news: 'newsFilter',
   };
+  // v12.25.3 Phase D: Hash 路由
+  let _hashSyncing = false;  // 防止 hash → state → hash 循环
+  function buildHash() {
+    const parts = [_state.activeTab, _state.activeSub].filter(Boolean);
+    let hash = '#/' + parts.join('/');
+    const qs = [];
+    if (_state.symbolFilter) qs.push('s=' + encodeURIComponent(_state.symbolFilter));
+    // 把对应 filter (非 'all') 也写进 URL
+    const tabFilter = {
+      'market/signals': ['signal', 'signalFilter'],
+      'market/news': ['news', 'newsFilter'],
+      'market/pool': ['pool', 'poolFilter'],
+      'trade/rejected': ['rejected', 'rejectedFilter'],
+      'trade/orders': ['order', 'orderFilter'],
+    };
+    const f = tabFilter[`${_state.activeTab}/${_state.activeSub}`];
+    if (f && _state[f[1]] && _state[f[1]] !== 'all') qs.push('f=' + encodeURIComponent(_state[f[1]]));
+    if (qs.length) hash += '?' + qs.join('&');
+    return hash;
+  }
+  function applyHash(hash) {
+    // 解析 #/tab/sub?s=AAPL&f=confirm
+    if (!hash || hash === '#' || hash === '#/') return false;
+    let h = hash.replace(/^#\/?/, '');
+    let qs = '';
+    const qIdx = h.indexOf('?');
+    if (qIdx >= 0) { qs = h.slice(qIdx+1); h = h.slice(0, qIdx); }
+    const parts = h.split('/');
+    const tab = parts[0]; const sub = parts[1] || TAB_DEFAULT_SUB[tab];
+    if (!tab || !TAB_DEFAULT_SUB[tab]) return false;
+    // 解析 query
+    const params = new URLSearchParams(qs);
+    const sym = params.get('s');
+    const fv = params.get('f');
+    _state.symbolFilter = sym || null;
+    // 找 tab/sub 对应的 filter state key
+    const tabFilter = {
+      'market/signals': 'signalFilter',
+      'market/news': 'newsFilter',
+      'market/pool': 'poolFilter',
+      'trade/rejected': 'rejectedFilter',
+      'trade/orders': 'orderFilter',
+    };
+    const fkey = tabFilter[`${tab}/${sub}`];
+    if (fkey) _state[fkey] = fv || 'all';
+    _state.activeSub = sub;
+    return { tab, sub };
+  }
+  function syncHash() {
+    if (_hashSyncing) return;
+    const newHash = buildHash();
+    if (location.hash !== newHash) {
+      _hashSyncing = true;
+      try { history.replaceState(null, '', newHash); } catch { location.hash = newHash; }
+      setTimeout(() => { _hashSyncing = false; }, 30);
+    }
+  }
+  window.addEventListener('hashchange', () => {
+    if (_hashSyncing) return;
+    const r = applyHash(location.hash);
+    if (r) {
+      _hashSyncing = true;
+      switchTab(r.tab);
+      setTimeout(() => { _hashSyncing = false; }, 30);
+    }
+  });
+
   function navigate(tab, sub = null, opts = {}) {
     // 关闭当前抽屉
     if (typeof closeSheet === 'function') closeSheet();
@@ -137,6 +204,8 @@
         });
       }, 80);
     }
+    // v12.25.3 Phase D: 同步 hash
+    setTimeout(syncHash, 100);
   }
   // 暴露给开发者控制台调试
   window._mobileNav = navigate;
@@ -148,7 +217,10 @@
 
   function switchTab(name) {
     _state.activeTab = name;
-    _state.activeSub = TAB_DEFAULT_SUB[name] || 'home';
+    // v12.25.3: 如果 _state.activeSub 已被 navigate/applyHash 设过, 保留; 否则用 default
+    if (!_state.activeSub || !$(`.subpage[data-subpage="${_state.activeSub}"]`)) {
+      _state.activeSub = TAB_DEFAULT_SUB[name] || 'home';
+    }
     $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
     $$('.page').forEach(p => p.classList.toggle('active', p.dataset.page === name));
     // 切到 main tab 后，重置该 tab 下的 sub-tab UI 到 default
@@ -163,6 +235,7 @@
     }
     updatePageTitle();
     refresh();
+    if (typeof syncHash === 'function') setTimeout(syncHash, 50);
   }
 
   // ─── Sub-tab 切换 (segment 内部) ───
@@ -182,6 +255,7 @@
     });
     updatePageTitle();
     refresh();
+    if (typeof syncHash === 'function') setTimeout(syncHash, 50);
   }
 
   function updatePageTitle() {
@@ -3210,5 +3284,18 @@
     refresh();
   }, 30000);
 
-  refresh();
+  // v12.25.3 Phase D: 启动时尝试从 hash 恢复路由 (深链支持)
+  // URL 例: #/trade/spot, #/market/signals?s=AAPL&f=confirm
+  if (location.hash && location.hash.length > 2) {
+    const r = applyHash(location.hash);
+    if (r) {
+      _hashSyncing = true;
+      switchTab(r.tab);
+      setTimeout(() => { _hashSyncing = false; }, 100);
+    } else {
+      refresh();
+    }
+  } else {
+    refresh();
+  }
 })();
