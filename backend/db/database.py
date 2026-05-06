@@ -1719,6 +1719,16 @@ class DatabaseManager:
                     (ts, symbol, market),
                 )
                 woke_up = (cur.rowcount or 0) > 0
+                # v12.24.6 修: 唤醒标的同步启用 binding (旧 bug: 唤醒后 binding 仍 enabled=0
+                # 标的恢复监控但策略不再触发, 等于 zombie 唤醒)
+                if woke_up:
+                    try:
+                        await conn.execute(
+                            "UPDATE strategy_bindings SET enabled=1 WHERE symbol=? AND market=?",
+                            (symbol, market),
+                        )
+                    except Exception:
+                        pass
                 # v12.19.1 P3-A: event_score 立即提升 + 重算总 score
                 # 取 max(当前 event_score, boost) — 不累加避免同一波新闻反复加
                 if boost > 0:

@@ -426,7 +426,24 @@ class NewsScheduler:
         return added
 
     async def _bind_strategies_now(self, symbol: str, market: str):
-        """新闻/AI/宏观驱动入池后立即绑定策略，不等 auto_bind 循环。"""
+        """新闻/AI/宏观驱动入池后立即绑定策略，不等 auto_bind 循环。
+
+        v12.24.6: 绑定前检查 watch_pool 状态. archived 标的不绑 (旧 bug: 不检查导致
+                  archive 后 news_bind 又激活 enabled=1, 形成 1238 个僵尸 active bindings).
+        """
+        # 状态检查: archived 标的不再绑
+        try:
+            async with self.db.acquire() as conn:
+                cur = await conn.execute(
+                    "SELECT status FROM watch_pool WHERE symbol=? AND market=? LIMIT 1",
+                    (symbol, market),
+                )
+                row = await cur.fetchone()
+            if row and row["status"] == "archived":
+                logger.debug(f"[news-bind] {symbol}/{market} 标的已 archived, 跳过 bind")
+                return
+        except Exception:
+            pass  # 检查失败不阻塞 (向后兼容)
         try:
             from backend.signals.binding import StrategyBindingManager
             binder = StrategyBindingManager(self.db)
