@@ -731,10 +731,10 @@ const Portfolio = (function () {
             ? ((p.pos_side==='long' ? (1 - p.liq_price/p.avg_open_price) : (p.liq_price/p.avg_open_price - 1)) * 100).toFixed(1)
             : '?';
           const flags = [];
-          if (p.breakeven_armed) flags.push('<span style="background:rgba(88,166,255,0.18);color:#58a6ff;padding:1px 6px;border-radius:8px;font-size:10px;">🟢 BE 锁保本</span>');
-          if (p.trailing_armed) flags.push('<span style="background:rgba(188,140,255,0.18);color:#bc8cff;padding:1px 6px;border-radius:8px;font-size:10px;">📈 trailing</span>');
-          if (p.tp1_hit) flags.push('<span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:8px;font-size:10px;">T1✓</span>');
-          if (p.tp2_hit) flags.push('<span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:8px;font-size:10px;">T2✓</span>');
+          if (p.breakeven_armed) flags.push('<span style="background:rgba(88,166,255,0.18);color:#58a6ff;padding:1px 6px;border-radius:8px;font-size:10px;">🟢 已锁保本</span>');
+          if (p.trailing_armed) flags.push('<span style="background:rgba(188,140,255,0.18);color:#bc8cff;padding:1px 6px;border-radius:8px;font-size:10px;">📈 跟踪止损</span>');
+          if (p.tp1_hit) flags.push('<span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:8px;font-size:10px;">一档止盈✓</span>');
+          if (p.tp2_hit) flags.push('<span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:8px;font-size:10px;">二档止盈✓</span>');
           if (p.pre_liq_armed) flags.push('<span style="background:rgba(248,81,73,0.18);color:#f85149;padding:1px 6px;border-radius:8px;font-size:10px;">⚠️ 距强平&lt;3%</span>');
           return `<tr>
             <td style="padding:8px;font-weight:600;">${sym}</td>
@@ -790,6 +790,16 @@ const Portfolio = (function () {
       // 订单表格
       let ordHtml = '';
       if (orders.length) {
+        // v12.25.4: 翻译 status + pos_side 中文 (用户偏好: 全中文)
+        const STATUS_CN = {
+          pending: '⏳ 挂单中',
+          filled: '✅ 已成交',
+          partial: '◐ 部分成交',
+          cancelled: '⊘ 已撤单',
+          rejected: '❌ 已拒单',
+          executed: '✅ 已成交',
+        };
+        const POS_SIDE_CN = { long: '多', short: '空' };
         const orows = orders.slice(0, 15).map(o => {
           const sym = (o.symbol || '').replace('-SWAP','');
           const statusColor = {
@@ -797,16 +807,19 @@ const Portfolio = (function () {
             'filled': 'color:var(--color-up);',
             'cancelled': 'color:var(--text-tertiary);',
             'rejected': 'color:var(--color-down);',
+            'executed': 'color:var(--color-up);',
           }[o.status] || '';
           const sideHtml = o.side === 'buy'
             ? '<span style="color:var(--color-up);">买</span>'
             : '<span style="color:var(--color-down);">卖</span>';
+          const posSideCN = POS_SIDE_CN[o.pos_side] || o.pos_side || '';
+          const statusCN = STATUS_CN[o.status] || o.status;
           const t = new Date(o.created_at * 1000);
           const tstr = `${(t.getMonth()+1).toString().padStart(2,'0')}-${t.getDate().toString().padStart(2,'0')} ${t.getHours().toString().padStart(2,'0')}:${t.getMinutes().toString().padStart(2,'0')}`;
           return `<tr>
             <td style="padding:6px;font-size:11px;color:var(--text-tertiary);">${tstr}</td>
             <td style="padding:6px;font-weight:600;">${sym}</td>
-            <td style="padding:6px;">${sideHtml} ${o.pos_side}</td>
+            <td style="padding:6px;">${sideHtml} ${posSideCN}</td>
             <td style="padding:6px;">${o.order_type === 'limit' ? '限价' : '市价'}</td>
             <td style="padding:6px;text-align:right;">${fmt(o.price || o.fill_price, 4)}</td>
             <td style="padding:6px;text-align:right;">${fmt((o.qty||0) * (o.contract_size||0.01), 6)} 个</td>
@@ -818,7 +831,7 @@ const Portfolio = (function () {
                 ? `<span style="color:${o.realized_pnl_usd >= 0 ? 'var(--color-up)' : 'var(--color-down)'};">${o.realized_pnl_usd >= 0 ? '+' : ''}$${fmt(o.realized_pnl_usd, 2)}</span>`
                 : '<span style="color:var(--text-tertiary);">—</span>'
             }</td>
-            <td style="padding:6px;${statusColor}">${o.status}${o.reject_reason ? ' — '+o.reject_reason.slice(0,30) : ''}</td>
+            <td style="padding:6px;${statusColor}">${statusCN}${o.reject_reason ? ' — '+o.reject_reason.slice(0,30) : ''}</td>
           </tr>`;
         }).join('');
         ordHtml = `
