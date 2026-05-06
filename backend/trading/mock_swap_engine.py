@@ -1082,9 +1082,32 @@ class MockSwapEngine:
             rows = [dict(r) for r in await cur.fetchall()]
         # v12.23.5: 给前端补 contract_size, 让 UI 把 qty(张) × ct_val 显示成真币数(个)
         # swap_positions 自带 contract_size 字段, swap_orders 没有需要从 spec cache 拿
+        # v12.24.2: specs 拉取失败时 log warning 而非静默 fallback 到 BTC 的 0.01
+        #   DOGE ctVal=1000, XRP=100, BTC=0.01, ETH=0.01 — fallback 错就显示数偏差极大
         for r in rows:
-            specs = await self._get_specs(r["symbol"]) or {}
-            r["contract_size"] = specs.get("ctVal", 0.01)
+            specs = await self._get_specs(r["symbol"])
+            if specs and specs.get("ctVal"):
+                r["contract_size"] = specs["ctVal"]
+            else:
+                # 兜底: 优先从同 symbol 的 swap_position 取 (如有同币种持仓), 否则 0.01 + 警告
+                fallback = 0.01
+                try:
+                    async with self.db.acquire() as conn2:
+                        cur2 = await conn2.execute(
+                            "SELECT contract_size FROM swap_positions WHERE symbol=? AND status='open' LIMIT 1",
+                            (r["symbol"],),
+                        )
+                        prow = await cur2.fetchone()
+                    if prow and prow["contract_size"]:
+                        fallback = float(prow["contract_size"])
+                except Exception:
+                    pass
+                r["contract_size"] = fallback
+                if fallback == 0.01:
+                    logger.warning(
+                        f"[list_orders] {r['symbol']} specs 拉取失败且无同币种持仓兜底, "
+                        f"contract_size 用 BTC 默认 0.01 — 前端显示数可能偏差 (DOGE=1000/XRP=100 等)"
+                    )
         return rows
 
 

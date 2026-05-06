@@ -398,14 +398,17 @@ class AutoTrader:
 
         # ── v12.23.4: 单市场使用上限 ──
         # 仅 USD 池启用 (us_hk); 独占池默认 1.0 不会触发
+        # v12.24.2 修: 用 _market_cost_usd (avg_cost) 而非 _market_used_usd (mark-to-market)
+        #   旧实现浮盈时市值膨胀 → 单市场 cap 误拒, 浮亏时市值缩水 → 误放
+        #   现在与池 cap (_pool_cap_state 用 avg_cost) 同口径, 浮盈浮亏不影响 cap 阈值
         limit_pct = float(MARKET_USAGE_LIMIT_PCT.get(market, 1.0))
         if 0 < limit_pct < 1.0 and pool_ccy == "USD":
-            market_used_usd = await self._market_used_usd(market)
+            market_cost_usd = await self._market_cost_usd(market)
             market_cap_usd = initial * limit_pct
-            if market_used_usd + order_usd > market_cap_usd:
+            if market_cost_usd + order_usd > market_cap_usd:
                 return False, (
-                    f"市场[{market}] 已用 ${market_used_usd:,.0f} + 本单 ${order_usd:,.0f} "
-                    f"= ${market_used_usd + order_usd:,.0f} > 单市场上限 ${market_cap_usd:,.0f}"
+                    f"市场[{market}] 持仓成本 ${market_cost_usd:,.0f} + 本单 ${order_usd:,.0f} "
+                    f"= ${market_cost_usd + order_usd:,.0f} > 单市场上限 ${market_cap_usd:,.0f}"
                     f"（{limit_pct*100:.0f}% × 池本金 ${initial:,.0f}）"
                 )
 
@@ -808,6 +811,14 @@ class AutoTrader:
         - 涨停: 现价较昨收 ≥ 阈值 → 高位接盘无意义,拒
         - 跌停: ≤ -阈值 → 接飞刀风险高,拒
         返回 None 表示通过, 否则返回拒单原因
+
+        数据假设 (v12.24.2 注):
+          - klines_cn_1d 实时刷新今日 bar (rows[0]=today intraday close)
+          - rows[1]=昨日 final close (用作 prev_close)
+          - 边缘 case: 盘前/数据延迟时 rows[0] 可能仍是昨日 → prev_close 取到前天 close
+            → pct 计算偏差. 但开仓 gate 在 is_market_executable 之后才到这里,
+            而 is_market_executable 排除集合竞价/盘前, 实际可执行时段数据已就绪.
+          - 数据不足 (< 2 行) 直接 skip 检查 (新股或数据 bug 时不误拒)
         """
         try:
             async with self.db.acquire() as conn:
@@ -902,10 +913,45 @@ class AutoTrader:
         currency = row["cost_currency"] or market_to_currency(market)
         return await to_usd(self.db, row["quantity"] * price, currency)
 
+    async def _market_cost_usd(self, market: str) -> float:
+        """v12.24.2: 某市场持仓**成本**总和 (USD), 用于 cap 判定 (与 _pool_cap_state 同口径).
+
+        与 _market_used_usd (mark-to-market) 区别:
+          - 用 avg_cost (cap 是资金占用上限, 浮盈/浮亏不挤占新开额度)
+          - 与 v12.23.4 单市场上限语义一致 (上限是按 pool initial 算的硬阈值)
+          - 与 v12.13 池 cap 同口径, 避免浮盈时单市场误拒/浮亏时单市场误放
+        FX fallback 与 _market_used_usd 一致: 失败用 FALLBACK_RATES 兜底.
+        """
+        from backend.trading.fx import FALLBACK_RATES
+        async with self.db.acquire() as conn:
+            cur = await conn.execute(
+                "SELECT symbol, quantity, avg_cost, cost_currency FROM positions WHERE market=? AND quantity > 0",
+                (market,),
+            )
+            rows = await cur.fetchall()
+        total = 0.0
+        for r in rows:
+            ccy = (r["cost_currency"] or market_to_currency(market) or "USD").upper()
+            try:
+                fx = await get_rate(self.db, ccy)
+                if fx <= 0:
+                    raise ValueError(f"fx={fx}")
+            except Exception as e:
+                fx = FALLBACK_RATES.get(ccy, 1.0)
+                if fx == 1.0 and ccy != "USD":
+                    logger.error(f"[_market_cost_usd] {ccy} 汇率不可用且无兜底, 金额会被低估! symbol={r['symbol']}: {e}")
+                else:
+                    logger.warning(f"[_market_cost_usd] {ccy} fx 失败用兜底 {fx}: {e}")
+            total += (r["quantity"] or 0) * (r["avg_cost"] or 0) * fx
+        return total
+
     async def _market_used_usd(self, market: str) -> float:
-        """某市场当前已占用的 USD（所有 long 按市值；short 按保证金）。
-        v12.11 修：fx 拉取失败时不再退化 1.0（HKD/CNY 直接当 USD 累加 → daily_loss_circuit 基准被严重高估，熔断永不触发）；
-        改为 fallback 到 fx 模块的硬编码兜底（HKD=0.128 / CNY=0.14），永远不退化为 1.0。
+        """某市场当前已占用的 USD（所有 long 按市值；short 按保证金）— mark-to-market 口径.
+
+        用途: 风控指标 (如 daily_loss_circuit), 不用于 cap 判定 (那个用 _market_cost_usd).
+
+        v12.11 修: fx 拉取失败时不再退化 1.0 (HKD/CNY 直接当 USD 累加 → 熔断基准被严重高估);
+                  改为 fallback 到 fx 模块硬编码兜底 (HKD=0.128 / CNY=0.14), 永远不退化 1.0.
         """
         from backend.trading.fx import FALLBACK_RATES
         async with self.db.acquire() as conn:
@@ -1435,7 +1481,7 @@ class AutoTrader:
             placeholders = ",".join("?" * len(pool_markets))
             async with self.db.acquire() as conn:
                 cur = await conn.execute(
-                    f"SELECT COUNT(*) AS n FROM positions WHERE market IN ({placeholders})",
+                    f"SELECT COUNT(*) AS n FROM positions WHERE market IN ({placeholders}) AND quantity > 0",
                     pool_markets,
                 )
                 pool_count = (await cur.fetchone())["n"]
@@ -2608,7 +2654,7 @@ class AutoTrader:
             placeholders = ",".join("?" * len(pool_markets))
             async with self.db.acquire() as conn:
                 cur = await conn.execute(
-                    f"SELECT COUNT(*) AS n FROM positions WHERE market IN ({placeholders})",
+                    f"SELECT COUNT(*) AS n FROM positions WHERE market IN ({placeholders}) AND quantity > 0",
                     pool_markets,
                 )
                 pool_count = (await cur.fetchone())["n"]

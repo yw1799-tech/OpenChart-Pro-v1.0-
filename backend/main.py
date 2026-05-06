@@ -1262,12 +1262,16 @@ async def _pending_orders_retry_loop():
               系统在做大量无效重验, 信号已彻底过期但仍在反复尝试
     """
     # 信号有效窗口 (按 K 线周期)
+    # v12.24.2 修: 1H 12h → 18h
+    #   US 闭市窗口实际是 04:00-21:30 CST = 17.5h, 12h 不够
+    #   信号在 03:00 CST (US 收盘前 1h) 生成 → 次日 21:30 重验 age=18.5h
+    #   → 12h 会被误 expire, 应给到 18h 才能覆盖隔夜
     INTERVAL_VALIDITY_SEC = {
-        "15m":  4 * 3600,    # 15m 信号 4h 后失效 (16 根 15m bar)
-        "1H":  12 * 3600,    # 1H 信号 12h 后失效 (覆盖 US 隔夜 7.5h + 缓冲)
-        "1D":  24 * 3600,    # 1D 信号 24h 后失效
+        "15m":  4 * 3600,    # 15m 信号 4h 后失效 (16 根 15m bar, 不跨夜)
+        "1H":  18 * 3600,    # 1H 信号 18h 后失效 (覆盖 US 隔夜 17.5h + 0.5h 缓冲)
+        "1D":  48 * 3600,    # 1D 信号 48h 后失效 (覆盖周末)
     }
-    DEFAULT_VALIDITY_SEC = 12 * 3600
+    DEFAULT_VALIDITY_SEC = 18 * 3600
 
     await asyncio.sleep(120)
     while True:
@@ -1278,9 +1282,11 @@ async def _pending_orders_retry_loop():
             from backend.signals.monitor import is_market_executable
             from backend.trading.signal_revalidator import revalidate_signal
             now_ms = int(time.time() * 1000)
-            # v12.24.0: 7 天 → 24 小时 (老信号在 per-interval 过期检查里一并作废)
-            cutoff_ms = now_ms - 24 * 60 * 60 * 1000
-            cutoff_sec = int(time.time()) - 24 * 60 * 60
+            # v12.24.0/.2: 7 天 → 48 小时 (匹配 1D 信号最长 validity)
+            #   老信号在 per-interval 过期检查里一并作废 (1H 18h / 15m 4h / 1D 48h)
+            #   48h cutoff 确保 1D 信号在过期前能被 SQL 选中并标 expired
+            cutoff_ms = now_ms - 48 * 60 * 60 * 1000
+            cutoff_sec = int(time.time()) - 48 * 60 * 60
 
             # 找未重验过 + 有 pending 拒绝 + 没成功执行的 confirm 信号
             async with db.acquire() as conn:
