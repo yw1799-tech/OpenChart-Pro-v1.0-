@@ -1040,22 +1040,30 @@
       const [log] = await Promise.all([loadHistory()]);
       const allRejected = (log.items || []).filter(t => t.status === 'rejected');
       const filterMkt = _state.rejectedFilter;
-      const items = filterMkt === 'all'
+      let items = filterMkt === 'all'
         ? allRejected
         : allRejected.filter(t => t.market === filterMkt);
+      // v12.25.0: 跨页 symbol 锁定
+      if (_state.symbolFilter) {
+        items = items.filter(t => t.symbol === _state.symbolFilter);
+      }
+      const hintHTML = _state.symbolFilter
+        ? `<div class="filter-hint">🔗 仅显示 <b>${escape(_state.symbolFilter)}</b> 的拒单 <span class="clear-hint" style="cursor:pointer;color:#5b9eff;">× 清除</span></div>`
+        : '';
 
       if (!items.length) {
-        $('#rejected-list').innerHTML = `<div class="empty">
+        $('#rejected-list').innerHTML = hintHTML + `<div class="empty">
           <div class="empty-icon">⊘</div>
           <div>无拒单记录</div>
           <div class="small" style="margin-top:6px;">${filterMkt === 'all' ? '系统未拒过单' : '该市场无拒单'}</div>
         </div>`;
         return;
       }
-      $('#rejected-list').innerHTML = items.slice(0, 80).map(t => {
+      // v12.25.0 Phase B: 拒单卡可点击 → 详情抽屉
+      $('#rejected-list').innerHTML = hintHTML + items.slice(0, 80).map((t, idx) => {
         const action = ACTION_LABEL[t.action] || t.action;
         const reason = t.rejected_reason || t.reason || '';
-        return `<div class="row warn">
+        return `<div class="row warn rejected-row" data-idx="${idx}" style="cursor:pointer;">
           <div class="row-title">
             <div class="row-symbol">${escape(t.symbol)} <span class="small muted">${MARKET_LABEL[t.market]||t.market}</span></div>
             <div class="row-time">${fmtRelTime(t.traded_at*1000)}</div>
@@ -1064,9 +1072,71 @@
           <div class="row-reason">⊘ ${escape(reason)}</div>
         </div>`;
       }).join('');
+      // 缓存 items 给 openRejectedDetail 用 (避免重新过滤)
+      _state._rejectedSnapshot = items.slice(0, 80);
+      $$('#rejected-list .rejected-row').forEach(r => {
+        r.addEventListener('click', () => openRejectedDetail(parseInt(r.dataset.idx)));
+      });
+      const clearH = $('#rejected-list .clear-hint');
+      if (clearH) clearH.addEventListener('click', () => { _state.symbolFilter = null; renderRejected(); });
     } catch (e) {
       console.error(e);
       $('#rejected-list').innerHTML = '<div class="empty">加载失败</div>';
+    }
+  }
+
+  // v12.25.0 Phase B: 拒单详情抽屉
+  // 显示: 完整拒单原因 + 关联信号 (如 trigger_detail.signal_id) + 同 symbol 24h 同类拒单趋势
+  async function openRejectedDetail(idx) {
+    openSheet('拒单详情', '<div class="empty">加载中…</div>');
+    try {
+      const items = _state._rejectedSnapshot || [];
+      const t = items[idx];
+      if (!t) { $('#sheet-content').innerHTML = '<div class="empty">未找到</div>'; return; }
+      // 解析 trigger_detail (可能是 JSON string 或 object)
+      let trig = t.trigger_detail;
+      if (typeof trig === 'string') { try { trig = JSON.parse(trig); } catch { trig = {}; } }
+      trig = trig || {};
+      const sigId = trig.signal_id || trig.sig_id;
+      // 同 symbol 24h 拒单数
+      const log = await loadHistory();
+      const cutoff = (Date.now()/1000) - 86400;
+      const sameSymRejects = (log.items||[]).filter(x =>
+        x.status === 'rejected' && x.symbol === t.symbol && x.traded_at >= cutoff
+      );
+      const action = ACTION_LABEL[t.action] || t.action;
+      const reason = t.rejected_reason || t.reason || '';
+      const html = `
+        <h4>拒单基本信息</h4>
+        <div class="kv-row"><span class="k">代码 / 市场</span><span class="v">${escape(t.symbol)} · ${MARKET_LABEL[t.market]||t.market}</span></div>
+        <div class="kv-row"><span class="k">尝试动作</span><span class="v">${action}</span></div>
+        <div class="kv-row"><span class="k">时间</span><span class="v">${fmtTime(t.traded_at)}</span></div>
+        <div class="kv-row"><span class="k">触发类型</span><span class="v small">${escape(t.trigger_type || '')}</span></div>
+        <h4>⊘ 拒单原因</h4>
+        <div style="background:rgba(239,68,68,0.08);border-left:3px solid var(--down);padding:8px 10px;border-radius:4px;">${escape(reason)}</div>
+        ${trig && Object.keys(trig).length ? `<h4>触发上下文</h4>
+        <pre style="white-space:pre-wrap;font-size:11px;background:var(--bg-card-2);padding:8px;border-radius:6px;">${escape(JSON.stringify(trig, null, 2))}</pre>` : ''}
+        <h4>📊 该股 24h 拒单趋势</h4>
+        <div class="kv-row"><span class="k">同 symbol 拒单数</span><span class="v ${sameSymRejects.length>=3?'down':''}">${sameSymRejects.length}</span></div>
+        ${sameSymRejects.length >= 3 ? `<div class="muted small">⚠️ 该股 24h 内被拒 ${sameSymRejects.length} 次, 信号质量可能存在系统性问题</div>` : ''}
+        <div class="sheet-actions" style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${sigId ? `<button class="btn btn-link" data-go-rj-signal>🎯 查看信号详情</button>` : ''}
+          <button class="btn btn-link" data-go-rj-news>📰 该股新闻</button>
+          <button class="btn btn-link" data-go-rj-pool>🎯 候选池</button>
+        </div>
+      `;
+      $('#sheet-content').innerHTML = html;
+      const goSig = $('#sheet-content [data-go-rj-signal]');
+      if (goSig && sigId) goSig.addEventListener('click', () => {
+        closeSheet();
+        setTimeout(() => openSignalDetail(sigId), 100);
+      });
+      const goN = $('#sheet-content [data-go-rj-news]');
+      if (goN) goN.addEventListener('click', () => navigate('market', 'news', { symbolFilter: t.symbol }));
+      const goP = $('#sheet-content [data-go-rj-pool]');
+      if (goP) goP.addEventListener('click', () => navigate('market', 'pool', { symbolFilter: t.symbol }));
+    } catch (e) {
+      $('#sheet-content').innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
     }
   }
 
@@ -1393,9 +1463,75 @@
           openLessonAdopt(btn.dataset.id);
         });
       });
+      // v12.25.0 Phase B: 教训卡可点击 → 详情
+      _state._lessonsSnapshot = items;
+      $$('#lessons-list .lesson-card').forEach((card, i) => {
+        card.style.cursor = 'pointer';
+        card.addEventListener('click', (e) => {
+          if (e.target.classList.contains('lesson-adopt-btn')) return;  // 已绑 stopPropagation
+          openLessonDetail(items[i] && items[i].id);
+        });
+      });
     } catch (e) {
       console.error(e);
       $('#lessons-list').innerHTML = '<div class="empty">加载失败</div>';
+    }
+  }
+
+  // v12.25.0 Phase B: 教训详情抽屉
+  async function openLessonDetail(lessonId) {
+    openSheet('教训详情', '<div class="empty">加载中…</div>');
+    try {
+      const items = _state._lessonsSnapshot || [];
+      const l = items.find(x => String(x.id) === String(lessonId));
+      if (!l) { $('#sheet-content').innerHTML = '<div class="empty">未找到</div>'; return; }
+      // 找该教训关联的复盘 (从最近 reviews 里搜 lessons 数组含本 pattern)
+      const reviewsData = await loadReviews().catch(() => ({items: []}));
+      const matchingReviews = (reviewsData.items || []).filter(r => {
+        const ls = Array.isArray(r.lessons) ? r.lessons : [];
+        return ls.some(x => String(x).includes(String(l.pattern || l.summary || '').slice(0,30)));
+      }).slice(0, 10);
+      const status = l.status || 'active';
+      const score = parseFloat(l.adoption_score || 0);
+      const hasParams = l.has_specific_params == 1 || l.has_specific_params === true;
+      const showAdoptBtn = (status === 'active' && hasParams);
+      const html = `
+        <h4>📌 教训内容</h4>
+        <div style="background:var(--bg-card-2);padding:10px;border-radius:6px;margin-bottom:10px;">${escape(l.pattern || l.summary || '—')}</div>
+        <h4>统计</h4>
+        <div class="kv-row"><span class="k">状态</span><span class="v">${POOL_STATUS_LABEL[status]||status}</span></div>
+        <div class="kv-row"><span class="k">出现次数</span><span class="v">${l.occurrences||0}</span></div>
+        <div class="kv-row"><span class="k">采纳分</span><span class="v">${score.toFixed(1)}</span></div>
+        ${l.pool_id ? `<div class="kv-row"><span class="k">作用池</span><span class="v">${escape(l.pool_id)}</span></div>` : ''}
+        ${l.worst_pnl_pct != null ? `<div class="kv-row"><span class="k">最差 PnL</span><span class="v down">${fmtPct(l.worst_pnl_pct)}</span></div>` : ''}
+        ${l.first_seen_at ? `<div class="kv-row"><span class="k">首次出现</span><span class="v">${fmtTime(l.first_seen_at)}</span></div>` : ''}
+        ${l.last_seen_at ? `<div class="kv-row"><span class="k">最近出现</span><span class="v">${fmtTime(l.last_seen_at)}</span></div>` : ''}
+        <h4>能否转化为风控规则</h4>
+        <div class="kv-row"><span class="k">含具体参数</span><span class="v">${hasParams?'✅ 是':'❌ 否 (仅 prompt 软规则)'}</span></div>
+        ${matchingReviews.length ? `<h4>📊 触发的复盘 (${matchingReviews.length})</h4>
+          <div id="lesson-rev-list">${matchingReviews.map((r, i) =>
+            `<div class="row warn lesson-rev-item" data-pid="${r.position_id||r.id}" style="cursor:pointer;">
+              <div class="row-symbol">${escape(r.symbol)} <span class="grade-pill ${(r.grade||'').toUpperCase()}">${(r.grade||'?').toUpperCase()}</span></div>
+              <div class="row-meta small">${fmtPnl(r.realized_pnl_usd||0)} · ${fmtTime(r.close_at)}</div>
+            </div>`).join('')}</div>` : '<div class="muted small">尚未在复盘中查到</div>'}
+        <div class="sheet-actions" style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${showAdoptBtn ? `<button class="btn" id="lesson-detail-adopt">📥 采纳为风控规则</button>` : ''}
+          ${status === 'adopted' ? `<button class="btn btn-link" data-go-rules>🛡️ 查看已生成规则</button>` : ''}
+        </div>
+      `;
+      $('#sheet-content').innerHTML = html;
+      const adoptBtn = $('#lesson-detail-adopt');
+      if (adoptBtn) adoptBtn.addEventListener('click', () => openLessonAdopt(l.id));
+      const goRules = $('#sheet-content [data-go-rules]');
+      if (goRules) goRules.addEventListener('click', () => navigate('learn', 'rules'));
+      $$('#sheet-content .lesson-rev-item').forEach(el => {
+        el.addEventListener('click', () => {
+          closeSheet();
+          setTimeout(() => openReviewDetail(el.dataset.pid), 100);
+        });
+      });
+    } catch (e) {
+      $('#sheet-content').innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
     }
   }
 
@@ -1469,17 +1605,74 @@
       $('#combos-list').innerHTML = `
         <div class="card section">
           <div class="section-title">🌟 黄金共振组合（${COMBOS.length} 个）</div>
-          <div class="muted small" style="margin-bottom:10px;">命中即 conf=100，仓位 ×1.5</div>
+          <div class="muted small" style="margin-bottom:10px;">命中即 conf=100，仓位 ×1.5 · 点击卡片查看详情</div>
         </div>
-        ${COMBOS.map(c => `<div class="combo-card">
+        ${COMBOS.map((c, i) => `<div class="combo-card combo-clickable" data-idx="${i}" style="cursor:pointer;">
           <div class="combo-name">${escape(c.name)}</div>
           <div class="combo-meta">${c.market}</div>
           <div class="combo-strats">${c.cn_strategies.map(s => `<span class="combo-chip">${escape(s)}</span>`).join('')}</div>
         </div>`).join('')}
       `;
+      // v12.25.0 Phase B: 共振组合卡可点击 → 详情
+      _state._combosSnapshot = COMBOS;
+      $$('#combos-list .combo-clickable').forEach(c => {
+        c.addEventListener('click', () => openComboDetail(parseInt(c.dataset.idx)));
+      });
     } catch (e) {
       console.error(e);
       $('#combos-list').innerHTML = '<div class="empty">加载失败</div>';
+    }
+  }
+
+  // v12.25.0 Phase B: 共振组合详情 — 显示策略列表 + 该组合命中过的最近信号 + 历史胜率
+  async function openComboDetail(idx) {
+    openSheet('共振组合详情', '<div class="empty">加载中…</div>');
+    try {
+      const c = (_state._combosSnapshot || [])[idx];
+      if (!c) { $('#sheet-content').innerHTML = '<div class="empty">未找到</div>'; return; }
+      // 从信号列表里找该组合命中过的 (ai_reason 含组合名)
+      const sigData = await loadSignals().catch(() => ({items:[]}));
+      const matching = (sigData.items || []).filter(s => {
+        const reason = (s.ai_reason || s.reason || '').toString();
+        return reason.includes(c.name);
+      }).slice(0, 20);
+      // 找该组合相关 closed reviews 计算胜率
+      const reviewsData = await loadReviews().catch(() => ({items:[]}));
+      const relReviews = (reviewsData.items || []).filter(r => {
+        const reason = (r.summary || r.entry_analysis || '').toString();
+        return reason.includes(c.name);
+      });
+      const winRate = relReviews.length
+        ? (relReviews.filter(r => (r.realized_pnl_usd||0) > 0).length / relReviews.length * 100).toFixed(0)
+        : null;
+      const html = `
+        <h4>${escape(c.name)}</h4>
+        <div class="kv-row"><span class="k">市场</span><span class="v">${escape(c.market)}</span></div>
+        <div class="kv-row"><span class="k">策略数</span><span class="v">${c.cn_strategies.length}</span></div>
+        <div class="kv-row"><span class="k">命中 conf</span><span class="v">100</span></div>
+        <div class="kv-row"><span class="k">仓位倍数</span><span class="v">×1.5</span></div>
+        <h4>📡 包含策略</h4>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${c.cn_strategies.map(s => `<span class="combo-chip" style="background:var(--bg-card-2);padding:4px 10px;border-radius:12px;font-size:12px;">${escape(s)}</span>`).join('')}
+        </div>
+        <h4>📊 历史表现</h4>
+        ${winRate !== null ? `<div class="kv-row"><span class="k">胜率(${relReviews.length} 笔闭环)</span><span class="v ${parseInt(winRate)>=60?'up':parseInt(winRate)<40?'down':''}">${winRate}%</span></div>` : '<div class="muted small">尚无闭环数据</div>'}
+        ${matching.length ? `<h4>🎯 最近命中信号 (${matching.length})</h4>
+          <div>${matching.slice(0,10).map(s =>
+            `<div class="row combo-sig-item" data-id="${s.id}" style="cursor:pointer;">
+              <div class="row-symbol">${escape(s.symbol)} <span class="small muted">${MARKET_LABEL[s.market]||s.market}</span></div>
+              <div class="row-meta small">${VERDICT_LABEL[s.ai_verdict]||'⏳'} · conf ${s.ai_confidence||0} · ${fmtRelTime(s.generated_at)}</div>
+            </div>`).join('')}</div>` : '<div class="muted small">尚未命中过</div>'}
+      `;
+      $('#sheet-content').innerHTML = html;
+      $$('#sheet-content .combo-sig-item').forEach(el => {
+        el.addEventListener('click', () => {
+          closeSheet();
+          setTimeout(() => openSignalDetail(el.dataset.id), 100);
+        });
+      });
+    } catch (e) {
+      $('#sheet-content').innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
     }
   }
 
@@ -2249,16 +2442,33 @@
 
       // 应用 filter
       const f = _state.orderFilter || 'all';
-      const filtered = f === 'all' ? items : items.filter(i => i.status === f);
+      let filtered = f === 'all' ? items : items.filter(i => i.status === f);
+      // v12.25.0: 跨页 symbol 锁定
+      if (_state.symbolFilter) {
+        filtered = filtered.filter(i => i.symbol === _state.symbolFilter);
+      }
+      const hintHTML = _state.symbolFilter
+        ? `<div class="filter-hint">🔗 仅显示 <b>${escape(_state.symbolFilter)}</b> 的订单 <span class="clear-hint" style="cursor:pointer;color:#5b9eff;">× 清除</span></div>`
+        : '';
 
       if (!filtered.length) {
-        $('#order-flow-list').innerHTML = `<div class="empty">
+        $('#order-flow-list').innerHTML = hintHTML + `<div class="empty">
           <div class="empty-icon">📋</div>
           <div>无订单记录</div>
         </div>`;
         return;
       }
-      $('#order-flow-list').innerHTML = filtered.slice(0, 80).map(renderOrderRow).join('');
+      const toShow = filtered.slice(0, 80);
+      $('#order-flow-list').innerHTML = hintHTML + toShow.map((o, idx) => {
+        const html = renderOrderRow(o);
+        return html.replace('<div class="order-row', `<div class="order-row order-clickable" data-idx="${idx}" style="cursor:pointer;"`).replace(/style="cursor:pointer;"\s*style="cursor:pointer;"/, 'style="cursor:pointer;"');
+      }).join('');
+      _state._orderSnapshot = toShow;
+      $$('#order-flow-list .order-clickable').forEach(r => {
+        r.addEventListener('click', () => openOrderDetail(parseInt(r.dataset.idx)));
+      });
+      const clearH = $('#order-flow-list .clear-hint');
+      if (clearH) clearH.addEventListener('click', () => { _state.symbolFilter = null; renderOrderFlow(); });
     } catch (e) {
       console.error('[order-flow]', e);
       $('#order-flow-list').innerHTML = '<div class="empty">加载失败</div>';
@@ -2289,6 +2499,52 @@
       </div>
       ${o.reason && o.status !== 'filled' && o.status !== 'executed' ? `<div class="order-meta small" style="color:var(--down);margin-top:4px;">${escape(o.reason).slice(0, 80)}</div>` : ''}
     </div>`;
+  }
+
+  // v12.25.0 Phase B: 订单详情抽屉
+  async function openOrderDetail(idx) {
+    openSheet('订单详情', '<div class="empty">加载中…</div>');
+    try {
+      const items = _state._orderSnapshot || [];
+      const o = items[idx];
+      if (!o) { $('#sheet-content').innerHTML = '<div class="empty">未找到</div>'; return; }
+      const statusLabel = {
+        pending: '⏳ 挂单中', filled: '✅ 已成交', cancelled: '⊘ 已撤单',
+        rejected: '❌ 已拒单', executed: '✅ 已成交',
+      }[o.status] || o.status;
+      const intentTxt = ACTION_LABEL[o.intent] || o.intent || '?';
+      const pnl = o.realized_pnl_usd;
+      const isSwap = !!o.isSwap;
+      const realQty = isSwap ? (o.qty||0) * (o.contract_size||0.01) : (o.qty||0);
+      const html = `
+        <h4>订单信息</h4>
+        <div class="kv-row"><span class="k">代码</span><span class="v">${escape(o.symbol)}${isSwap ? ' ⚡合约 ' + (o.leverage||'?') + 'x' : ''}</span></div>
+        <div class="kv-row"><span class="k">动作 / 方向</span><span class="v">${intentTxt} ${o.pos_side ? (o.pos_side==='long'?'多':'空') : (o.side||'')}</span></div>
+        <div class="kv-row"><span class="k">状态</span><span class="v">${statusLabel}</span></div>
+        <div class="kv-row"><span class="k">价格</span><span class="v">${(o.price||0).toFixed(4)}</span></div>
+        <div class="kv-row"><span class="k">${isSwap?'数量(张/真币)':'数量'}</span>
+          <span class="v">${isSwap ? `${(o.qty||0).toFixed(4)} 张 / ${realQty.toFixed(6)} 个` : realQty.toFixed(4)}</span></div>
+        ${o.fee ? `<div class="kv-row"><span class="k">手续费</span><span class="v">${fmtMoney(o.fee)}</span></div>` : ''}
+        ${pnl !== null && pnl !== undefined ? `<div class="kv-row"><span class="k">单笔已实现 PnL</span><span class="v ${pnl>=0?'up':'down'}">${pnl>=0?'+':''}$${Number(pnl).toFixed(2)}</span></div>` : ''}
+        <div class="kv-row"><span class="k">时间</span><span class="v">${fmtTime(o.ts)}</span></div>
+        ${o.reason ? `<h4>${o.status==='rejected'?'⊘ 拒单原因':'备注'}</h4>
+          <div style="background:var(--bg-card-2);padding:8px;border-radius:6px;font-size:12px;">${escape(o.reason)}</div>` : ''}
+        <div class="sheet-actions" style="display:flex;flex-wrap:wrap;gap:6px;">
+          <button class="btn btn-link" data-go-od-news>📰 该股新闻</button>
+          <button class="btn btn-link" data-go-od-reviews>📊 历史复盘</button>
+          <button class="btn btn-link" data-go-od-signals>🎯 历史信号</button>
+        </div>
+      `;
+      $('#sheet-content').innerHTML = html;
+      const goN = $('#sheet-content [data-go-od-news]');
+      if (goN) goN.addEventListener('click', () => navigate('market', 'news', { symbolFilter: o.symbol }));
+      const goR = $('#sheet-content [data-go-od-reviews]');
+      if (goR) goR.addEventListener('click', () => navigate('learn', 'reviews', { symbolFilter: o.symbol }));
+      const goS = $('#sheet-content [data-go-od-signals]');
+      if (goS) goS.addEventListener('click', () => navigate('market', 'signals', { symbolFilter: o.symbol }));
+    } catch (e) {
+      $('#sheet-content').innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
+    }
   }
 
   // ─── 自动交易控制 ───
