@@ -786,6 +786,52 @@ class AutoTrader:
         except Exception:
             return None
 
+    @staticmethod
+    def _zhangting_threshold(symbol: str) -> float:
+        """A 股涨跌停阈值 (按板块)
+        - 主板/中小板 (60xxxx, 00xxxx): ±10% → 9.5% 临界
+        - 创业板 (300xxx): ±20% → 19.5%
+        - 科创板 (688xxx): ±20% → 19.5%
+        - 北交所 (8/4 开头): ±30% → 29.5%
+        - ST 已被池过滤 (POOL_CN_EXCLUDE_ST=True), 这里不处理 5%
+        """
+        if not symbol:
+            return 9.5
+        if symbol.startswith("300") or symbol.startswith("688"):
+            return 19.5
+        if symbol.startswith("8") or symbol.startswith("4"):
+            return 29.5
+        return 9.5
+
+    async def _check_zhangting(self, symbol: str, fresh_price: float) -> Optional[str]:
+        """v12.24.1: A 股涨停/跌停过滤
+        - 涨停: 现价较昨收 ≥ 阈值 → 高位接盘无意义,拒
+        - 跌停: ≤ -阈值 → 接飞刀风险高,拒
+        返回 None 表示通过, 否则返回拒单原因
+        """
+        try:
+            async with self.db.acquire() as conn:
+                cur = await conn.execute(
+                    "SELECT close FROM [klines_cn_1d] WHERE symbol=? ORDER BY timestamp DESC LIMIT 2",
+                    (symbol,),
+                )
+                rows = await cur.fetchall()
+            if not rows or len(rows) < 2:
+                return None  # 数据不足跳过 (新股 / 数据延迟)
+            # rows[0] 最新一日 close, rows[1] 前一日 close
+            prev_close = float(rows[1]["close"] or 0)
+            if prev_close <= 0:
+                return None
+            pct = (fresh_price - prev_close) / prev_close * 100
+            threshold = self._zhangting_threshold(symbol)
+            if pct >= threshold:
+                return f"A股临近涨停 (现价 {fresh_price:.2f} vs 昨收 {prev_close:.2f} = +{pct:.2f}% ≥ {threshold:.1f}%, 高位接盘无意义)"
+            if pct <= -threshold:
+                return f"A股临近跌停 (现价 {fresh_price:.2f} vs 昨收 {prev_close:.2f} = {pct:.2f}% ≤ -{threshold:.1f}%, 接飞刀风险高)"
+        except Exception as e:
+            logger.debug(f"[zhangting] {symbol} 检查异常: {e}")
+        return None
+
     async def _get_fresh_price(self, symbol: str, market: str, max_age_min: int = 30) -> Optional[float]:
         """v12.18.3 修复: 解决 30-60 min 死区 bug
           - 加密优先 OKX ticker API (毫秒级实时价)
@@ -1172,7 +1218,7 @@ class AutoTrader:
             return
 
         # v12.14 (A2 修复): 开仓/加仓必须用近实时价（15m K 线），不能用 sig.price（来自上一根 1H 收盘价）
-        # 让 fresh price 决定真实成交价；信号价用作"必须 ≤ sig.price + 1.5%"的滑点保护
+        # 让 fresh price 决定真实成交价；信号价用作"必须 ≤ sig.price + N%"的滑点保护
         sig_price = float(sig["price"])
         fresh_price = await self._get_fresh_price(symbol, market, max_age_min=30)
         if fresh_price is None:
@@ -1181,14 +1227,23 @@ class AutoTrader:
                 f"实时价不可用（30 min 内无 K 线），跳过本次开仓避免错价"
             )
             return
-        # 滑点保护：实时价较 sig 价偏离 > 1.5% 拒绝（信号已经不新鲜，市场已跑动）
+        # v12.24.1: 滑点保护按 market 差异化 (旧 1.5% 一刀切对高 beta US 太严)
+        # us 2.0% / hk 2.5% (盘口宽) / cn 1.5% (T+1 + 涨跌停) / crypto 3% (本身高波动)
+        SLIP_MAX_PCT = {"us": 2.0, "hk": 2.5, "cn": 1.5, "crypto": 3.0}
+        slip_max = SLIP_MAX_PCT.get(market, 1.5)
         slip_pct = abs(fresh_price - sig_price) / sig_price * 100 if sig_price > 0 else 0
-        if slip_pct > 1.5:
+        if slip_pct > slip_max:
             await self._log_rejected(
                 sig, "open" if not pos else "add",
-                f"信号价 {sig_price:.4f} vs 实时价 {fresh_price:.4f} 滑点 {slip_pct:.2f}%>1.5%，已不新鲜"
+                f"信号价 {sig_price:.4f} vs 实时价 {fresh_price:.4f} 滑点 {slip_pct:.2f}%>{slip_max:.1f}%，已不新鲜"
             )
             return
+        # v12.24.1: A 股涨停/跌停过滤 (涨停后开仓只会被动接盘高位; 跌停接刀有反弹风险)
+        if market == "cn":
+            zt_reason = await self._check_zhangting(symbol, fresh_price)
+            if zt_reason:
+                await self._log_rejected(sig, "open" if not pos else "add", zt_reason)
+                return
         price = fresh_price
         if pos:
             pos_dict = dict(pos)
