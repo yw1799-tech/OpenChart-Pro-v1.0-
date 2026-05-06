@@ -95,7 +95,7 @@ GROUP BY 当日已涨 ORDER BY 当日已涨;
 "
 
 echo ""
-echo "════ 4. 门 3: R:R < 1.5 (用 AI 给的 SL/TP 算) — 拒后效果 ════"
+echo "════ 4. 门 3: R:R < 3.0 (用 AI 给的 SL/TP 算, v12.23.1 阈值) — 拒后效果 ════"
 sqlite3 -column -header $DB "
 WITH closed AS (
   SELECT atl.position_id,
@@ -110,11 +110,11 @@ WITH closed AS (
 SELECT
   CASE
     WHEN s.ai_take_profit IS NULL OR s.ai_stop_loss IS NULL THEN 'X_缺SL/TP'
-    WHEN (s.ai_take_profit - cs.open_p) / NULLIF(cs.open_p - s.ai_stop_loss, 0) < 1.5
-      THEN 'A. R:R <1.5 (将拒)'
-    WHEN (s.ai_take_profit - cs.open_p) / NULLIF(cs.open_p - s.ai_stop_loss, 0) < 2.5
-      THEN 'B. R:R 1.5-2.5'
-    ELSE 'C. R:R ≥2.5 (保留)'
+    WHEN (s.ai_take_profit - cs.open_p) / NULLIF(cs.open_p - s.ai_stop_loss, 0) < 3.0
+      THEN 'A. R:R <3.0 (将拒)'
+    WHEN (s.ai_take_profit - cs.open_p) / NULLIF(cs.open_p - s.ai_stop_loss, 0) < 5.0
+      THEN 'B. R:R 3.0-5.0'
+    ELSE 'C. R:R ≥5.0 (保留)'
   END AS R_R,
   COUNT(*) AS 笔数,
   printf('%.2f', AVG((cs.close_p-cs.open_p)/cs.open_p*100)) AS 均PnLpct,
@@ -123,6 +123,36 @@ FROM closed cs
 LEFT JOIN signals s ON s.id = cs.sig_id
 WHERE cs.open_p > 0
 GROUP BY R_R ORDER BY R_R;
+"
+
+echo ""
+echo "════ 4b. 门 5: 美股 SPY 当日跌幅 > -2.0pct → 美股 BUY 全部拒 ════"
+sqlite3 -column -header $DB "
+WITH closed AS (
+  SELECT atl.position_id,
+    MAX(CASE WHEN atl.action='open' THEN atl.price END) AS open_p,
+    MAX(CASE WHEN atl.action='close' THEN atl.price END) AS close_p,
+    MAX(CASE WHEN atl.action='open' THEN atl.traded_at END) AS open_at
+  FROM auto_trade_log atl
+  WHERE atl.market='us' AND atl.traded_at > strftime('%s','now') - 30*86400
+  GROUP BY atl.position_id HAVING close_p IS NOT NULL
+),
+ctx AS (
+  SELECT c.*,
+    (SELECT (close-open)/open*100 FROM [klines_us_1d] k
+     WHERE k.symbol='SPY' AND k.timestamp/1000 <= c.open_at
+     ORDER BY k.timestamp DESC LIMIT 1) AS spy_chg
+  FROM closed c
+)
+SELECT
+  CASE WHEN spy_chg < -2.0 THEN 'A. SPY 当日 <-2pct (将拒 美股 BUY)'
+       WHEN spy_chg < -1.0 THEN 'B. SPY -1 ~ -2pct'
+       ELSE 'C. SPY > -1pct (保留)' END AS SPY_regime,
+  COUNT(*) AS 笔数,
+  printf('%.2f', AVG((close_p-open_p)/open_p*100)) AS 均PnLpct,
+  printf('%.2f', SUM((close_p-open_p)/open_p*100)) AS 总PnLpct
+FROM ctx WHERE open_p > 0 AND spy_chg IS NOT NULL
+GROUP BY SPY_regime ORDER BY SPY_regime;
 "
 
 echo ""
@@ -176,15 +206,18 @@ ctx AS (
        AND k.timestamp BETWEEN (c.open_at-20*86400)*1000 AND c.open_at*1000) AS hi20,
     (SELECT open FROM [klines_us_1d] k WHERE k.symbol=c.sym
        AND k.timestamp/1000 <= c.open_at ORDER BY k.timestamp DESC LIMIT 1) AS day_open,
+    (SELECT (close-open)/open*100 FROM [klines_us_1d] k WHERE k.symbol='SPY'
+       AND k.timestamp/1000 <= c.open_at ORDER BY k.timestamp DESC LIMIT 1) AS spy_chg,
     s.ai_take_profit AS ai_tp, s.ai_stop_loss AS ai_sl
   FROM closed c LEFT JOIN signals s ON s.id = c.sig_id
 )
 SELECT
   CASE
-    WHEN hi20 > 0 AND (hi20-open_p)/open_p < 0.05 THEN '门1_拒_追高'
+    WHEN hi20 > 0 AND (hi20-open_p)/open_p < 0.05 THEN '门1_拒_追高 <5pct'
     WHEN day_open > 0 AND (open_p-day_open)/day_open > 0.04 THEN '门2_拒_当日已涨>4pct'
     WHEN ai_tp IS NOT NULL AND ai_sl IS NOT NULL
-      AND (ai_tp - open_p) / NULLIF(open_p - ai_sl, 0) < 1.5 THEN '门3_拒_R:R<1.5'
+      AND (ai_tp - open_p) / NULLIF(open_p - ai_sl, 0) < 3.0 THEN '门3_拒_R:R<3.0'
+    WHEN spy_chg IS NOT NULL AND spy_chg < -2.0 THEN '门5_拒_SPY<-2pct'
     ELSE '通过'
   END AS v2_决策,
   COUNT(*) AS 笔数,
