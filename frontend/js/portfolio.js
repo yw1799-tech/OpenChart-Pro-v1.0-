@@ -739,7 +739,7 @@ const Portfolio = (function () {
           return `<tr>
             <td style="padding:8px;font-weight:600;">${sym}</td>
             <td style="padding:8px;">${sideHtml}</td>
-            <td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;">${fmt(p.qty,4)} 个</td>
+            <td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;">${fmt((p.qty||0) * (p.contract_size||0.01), 6)} 个</td>
             <td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;">${fmt(p.avg_open_price,4)}</td>
             <td style="padding:8px;text-align:right;font-weight:600;">${p.leverage}x</td>
             <td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;">$${fmt(p.margin_usd)}</td>
@@ -809,7 +809,7 @@ const Portfolio = (function () {
             <td style="padding:6px;">${sideHtml} ${o.pos_side}</td>
             <td style="padding:6px;">${o.order_type === 'limit' ? '限价' : '市价'}</td>
             <td style="padding:6px;text-align:right;">${fmt(o.price || o.fill_price, 4)}</td>
-            <td style="padding:6px;text-align:right;">${fmt(o.qty, 4)}</td>
+            <td style="padding:6px;text-align:right;">${fmt((o.qty||0) * (o.contract_size||0.01), 6)} 个</td>
             <td style="padding:6px;text-align:right;">${o.leverage}x</td>
             <td style="padding:6px;text-align:right;">${o.is_maker ? 'M 0.02%' : 'T 0.05%'}</td>
             <td style="padding:6px;text-align:right;">$${fmt(o.fee_usd, 4)}</td>

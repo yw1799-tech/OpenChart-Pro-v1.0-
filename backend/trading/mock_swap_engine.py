@@ -1079,7 +1079,13 @@ class MockSwapEngine:
                 cur = await conn.execute(
                     "SELECT * FROM swap_orders ORDER BY created_at DESC LIMIT ?", (limit,),
                 )
-            return [dict(r) for r in await cur.fetchall()]
+            rows = [dict(r) for r in await cur.fetchall()]
+        # v12.23.5: 给前端补 contract_size, 让 UI 把 qty(张) × ct_val 显示成真币数(个)
+        # swap_positions 自带 contract_size 字段, swap_orders 没有需要从 spec cache 拿
+        for r in rows:
+            specs = await self._get_specs(r["symbol"]) or {}
+            r["contract_size"] = specs.get("ctVal", 0.01)
+        return rows
 
 
 # 全局单例 (由 main.py 启动时实例化)

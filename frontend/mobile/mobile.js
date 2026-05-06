@@ -913,7 +913,7 @@
         <div class="row-pnl ${cls}">${fmtPnl(pnl)}</div>
       </div>
       <div class="row-meta">
-        ${(p.qty||0).toFixed(4)} 个 @ ${(p.avg_open_price||0).toFixed(4)} · 保证金 ${fmtMoney(p.margin_usd||0)}
+        ${((p.qty||0) * (p.contract_size||0.01)).toFixed(6)} 个 @ ${(p.avg_open_price||0).toFixed(4)} · 保证金 ${fmtMoney(p.margin_usd||0)}
       </div>
       <div class="row-meta small">
         🛑 强平 ${(p.liq_price||0).toFixed(4)} (距 ${liqDist}%) ${p.pre_liq_armed ? '⚠️ 已减仓' : ''}
@@ -2008,7 +2008,7 @@
         <div class="swap-pnl ${upnlCls}">${fmtPnl(upnl)}<br><span style="font-size:10px;font-weight:400;">${fmtPct(pnlPct)}</span></div>
       </div>
       <div class="swap-info-grid">
-        <div class="swap-info-row"><span class="k">数量</span><span class="v">${(p.qty||0).toFixed(4)} 个</span></div>
+        <div class="swap-info-row"><span class="k">数量</span><span class="v">${((p.qty||0) * (p.contract_size||0.01)).toFixed(6)} 个</span></div>
         <div class="swap-info-row"><span class="k">均价</span><span class="v">${(p.avg_open_price||0).toFixed(4)}</span></div>
         <div class="swap-info-row"><span class="k">保证金</span><span class="v">${fmtMoney(p.margin_usd||0)}</span></div>
         <div class="swap-info-row"><span class="k">强平价</span><span class="v ${danger?'down':''}">${(p.liq_price||0).toFixed(4)}</span></div>
@@ -2063,6 +2063,8 @@
           fee: o.fee_usd || 0,
           leverage: o.leverage,
           isSwap: true,
+          // v12.23.5: contract_size 让 renderOrderRow 把张×ctVal 显示成真币
+          contract_size: o.contract_size || 0.01,
           reason: o.reject_reason || '',
           // v12.23.2: 单笔已实现 PnL (仅 close/reduce 订单填, 其他为 null)
           realized_pnl_usd: o.realized_pnl_usd,
@@ -2121,7 +2123,7 @@
         <span class="order-status">${statusLabel}</span>
       </div>
       <div class="order-meta">
-        ${(o.qty||0).toFixed(4)} @ ${(o.price||0).toFixed(4)}
+        ${o.isSwap ? `${((o.qty||0) * (o.contract_size||0.01)).toFixed(6)} 个` : `${(o.qty||0).toFixed(4)}`} @ ${(o.price||0).toFixed(4)}
         ${o.fee ? ` · 手续费 ${fmtMoney(o.fee)}` : ''}${pnlHtml}
         · ${fmtRelTime(o.ts * 1000)}
       </div>

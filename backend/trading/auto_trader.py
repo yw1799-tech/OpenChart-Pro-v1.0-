@@ -1880,7 +1880,7 @@ class AutoTrader:
                 if opp_pos:
                     opp_dict = dict(opp_pos)
                     close_side = "sell" if opposite_side == "long" else "buy"
-                    logger.info(f"[swap-route] {symbol} 反向信号检测到反向 {opposite_side} 持仓 → 先平 {opp_dict['qty']:.4f} 个")
+                    logger.info(f"[swap-route] {symbol} 反向信号检测到反向 {opposite_side} 持仓 → 先平 {opp_dict['qty']:.4f} 张")
                     await engine.place_order(
                         symbol=symbol, side=close_side, pos_side=opposite_side,
                         order_type="market", qty=opp_dict["qty"],
