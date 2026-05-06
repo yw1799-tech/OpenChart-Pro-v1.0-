@@ -65,13 +65,23 @@ DEFAULT_CONFIG = {
     # v12.14: 按市场区分冷却 — 美股/港股 1h（QCOM 33min 二开亏 -3.58% 教训）
     "cooldown_sec_per_market": {"us": 3600, "hk": 3600, "cn": 1800, "crypto": 900},
     "max_daily_ops_per_symbol": 3,
-    # v12.23.6: 单市场持仓数上限 — 与资金分池(us_hk/cn/crypto)语义一致
-    # v12.23.7: 移除全局 cap (3 池资金/币种/冷静期全独立, 全局总数无意义)
-    #   - 旧: 全局 max_concurrent_positions=15 一刀切, us 占满 → cn/hk 全堵 (现网事故)
-    #   - 新: 只看 per-market, us 10 / hk 5 / cn 8 / crypto 6 各管各
-    #   - 兜底: 若 market 不在表里, 不限制 (信任策略层和池资金 cap)
-    "max_concurrent_positions_by_market": {"us": 10, "hk": 5, "cn": 8, "crypto": 6},
-    "max_concurrent_positions": 25,           # DEPRECATED v12.23.7: 不再用作 gate, 仅做老代码兼容键
+    # v12.23.8: 持仓数上限按**池**为单位 — 与资金分池架构对齐
+    #   池才是独立单元 (us_hk USD 共用 / cn CNY 独占 / crypto USD 独占)
+    #   池内 us/hk 公平已由 v12.23.4 的 70/30 现金 cap 处理 (单市场不会吃满池金)
+    #   故槽位 cap 在池层面足矣, 无需再按 market 切第二刀
+    # 数值哲学: 槽位 cap 是**安全上限**, 不是日常门槛
+    #   - 主约束应是 v12.23.4 现金 cap + 池 cap (80%); 现金先没就先停
+    #   - 槽位 cap 只防"上千笔小单失控"的极端 case, 故给得宽松
+    #   - us_hk: $10K 池, 典型仓 $500-1000 → 满载 10-20 单, cap=25 留余量
+    #   - cn:    ¥100K 池, 典型仓 ¥3K-8K → 满载 12-30 单, cap=30
+    #   - crypto: 固定 6 币种 × 双向 = 最多 12, cap=12
+    # 设计回顾:
+    #   v12.23.6 加 per-market cap (us=10/hk=5/...) → 与池架构错位
+    #   v12.23.7 砍全局 cap, 仍 per-market         → 仍错位
+    #   v12.23.8 改 per-pool, 与 POOLS 一一对应     ← 当前
+    "max_concurrent_positions_by_pool": {"us_hk": 25, "cn": 30, "crypto": 12},
+    "max_concurrent_positions_by_market": {},     # DEPRECATED v12.23.8: 保留键避免破坏外部读取
+    "max_concurrent_positions": 25,               # DEPRECATED v12.23.7
     # v12.13: 全局日亏熔断 → 池级冷静期（按市场独立，crypto -5% / us_hk -4% / cn -3% 触发 4h 冻结新开仓）
     # 旧 daily_loss_circuit_pct 已废弃，保留 key 但无逻辑使用
     "market_cooldown_loss_pct_crypto": 0.05,   # 加密池亏损 ≥5% 触发冷静期
@@ -1359,20 +1369,26 @@ class AutoTrader:
             await self._log_rejected(sig, "open", why)
             return
 
-        # v12.23.7: 只看本市场槽位 — 三池资金/币种/冷静期全独立, 全局 cap 无意义
-        # 该市场没配 cap = 不限 (信任策略层 + 池资金 cap 兜底)
-        per_market_caps = cfg.get("max_concurrent_positions_by_market") or {}
-        market_cap = per_market_caps.get(market)
-        if market_cap is not None:
+        # v12.23.8: 池级槽位上限 (与资金池一一对应)
+        # 池内 us/hk 由 v12.23.4 的 70/30 现金 cap 保证公平, 槽位无需再分市场
+        pool_id = self._pool_for(market)
+        pool_caps = cfg.get("max_concurrent_positions_by_pool") or {}
+        pool_cap = pool_caps.get(pool_id)
+        if pool_cap is not None:
+            pool_cfg = next((p for p in self.POOLS if p["pool_id"] == pool_id), None)
+            pool_markets = pool_cfg["markets"] if pool_cfg else (market,)
+            placeholders = ",".join("?" * len(pool_markets))
             async with self.db.acquire() as conn:
                 cur = await conn.execute(
-                    "SELECT COUNT(*) AS n FROM positions WHERE market=?", (market,)
+                    f"SELECT COUNT(*) AS n FROM positions WHERE market IN ({placeholders})",
+                    pool_markets,
                 )
-                market_count = (await cur.fetchone())["n"]
-            if market_count >= int(market_cap):
+                pool_count = (await cur.fetchone())["n"]
+            if pool_count >= int(pool_cap):
                 await self._log_rejected(
                     sig, "open",
-                    f"市场[{market}] 持仓 {market_count} 已达上限 {market_cap}"
+                    f"池[{pool_id}] 持仓 {pool_count} 已达上限 {pool_cap}"
+                    + (f" (含 {'+'.join(pool_markets)})" if len(pool_markets) > 1 else "")
                 )
                 return
 
@@ -2524,19 +2540,24 @@ class AutoTrader:
             logger.debug(f"[trial] {symbol} 质量门检查异常: {e}")
             return
 
-        # 风控：v12.13 池级冷静期 + v12.23.7 单市场持仓 cap (试单路径, silent return)
+        # 风控：v12.13 池级冷静期 + v12.23.8 池级持仓 cap (试单路径, silent return)
         cd_ok, _ = await self._check_pool_cooldown(market)
         if not cd_ok:
             return
-        per_market_caps = cfg.get("max_concurrent_positions_by_market") or {}
-        market_cap = per_market_caps.get(market)
-        if market_cap is not None:
+        pool_id = self._pool_for(market)
+        pool_caps = cfg.get("max_concurrent_positions_by_pool") or {}
+        pool_cap = pool_caps.get(pool_id)
+        if pool_cap is not None:
+            pool_cfg = next((p for p in self.POOLS if p["pool_id"] == pool_id), None)
+            pool_markets = pool_cfg["markets"] if pool_cfg else (market,)
+            placeholders = ",".join("?" * len(pool_markets))
             async with self.db.acquire() as conn:
                 cur = await conn.execute(
-                    "SELECT COUNT(*) AS n FROM positions WHERE market=?", (market,)
+                    f"SELECT COUNT(*) AS n FROM positions WHERE market IN ({placeholders})",
+                    pool_markets,
                 )
-                market_count = (await cur.fetchone())["n"]
-            if market_count >= int(market_cap):
+                pool_count = (await cur.fetchone())["n"]
+            if pool_count >= int(pool_cap):
                 return
 
         # 计算仓位
