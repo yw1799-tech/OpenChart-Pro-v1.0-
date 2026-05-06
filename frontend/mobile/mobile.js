@@ -84,6 +84,8 @@
     poolFilter: 'all',
     rejectedFilter: 'all',
     orderFilter: 'all',        // v12.21.0: 订单流水 filter (pending/filled/cancelled)
+    // v12.25.0: 跨页联动 — 跳转后可设的临时过滤
+    symbolFilter: null,        // 跨 tab 跳转时锁定 symbol (e.g. AAPL)
     cache: {
       status: null, positions: null, signals: null, history: null,
       news: null, pool: null, reviews: null, lessons: null,
@@ -93,6 +95,51 @@
     },
     lastUpdate: 0,
   };
+
+  // ═══════════════════════════════════════════════════════════
+  // v12.25.0: 全局跨页联动 — navigate(tab, sub?, opts?)
+  // opts: {
+  //   filter: { key: 'signal'|'pool'|'rejected'|'order'|'news', value: 'all'|... },
+  //   symbolFilter: 'AAPL',  // 跨 tab 锁定 symbol (持仓→历史信号场景)
+  // }
+  // 用途: 总览 stats 可点击, 持仓抽屉跳新闻/复盘/信号, 复盘跳教训等
+  // ═══════════════════════════════════════════════════════════
+  const FILTER_CHIP_ATTR = {
+    signal: 'data-vfilter',
+    pool: 'data-pfilter',
+    rejected: 'data-rjfilter',
+    order: 'data-ofilter',
+    news: 'data-nfilter',
+  };
+  const FILTER_STATE_KEY = {
+    signal: 'signalFilter', pool: 'poolFilter',
+    rejected: 'rejectedFilter', order: 'orderFilter', news: 'newsFilter',
+  };
+  function navigate(tab, sub = null, opts = {}) {
+    // 关闭当前抽屉
+    if (typeof closeSheet === 'function') closeSheet();
+    // 应用 symbolFilter (跨页锁定 symbol)
+    _state.symbolFilter = opts.symbolFilter || null;
+    // 应用 chip filter
+    if (opts.filter && opts.filter.key && opts.filter.value) {
+      const stateKey = FILTER_STATE_KEY[opts.filter.key];
+      if (stateKey) _state[stateKey] = opts.filter.value;
+    }
+    // 设 sub (在 switchTab 之前, switchTab 会用 _state.activeSub)
+    if (sub) _state.activeSub = sub;
+    switchTab(tab);
+    // chip UI active 状态同步 (要等 DOM 切完)
+    if (opts.filter && opts.filter.key && opts.filter.value) {
+      const attr = FILTER_CHIP_ATTR[opts.filter.key];
+      setTimeout(() => {
+        document.querySelectorAll(`.chip[${attr}]`).forEach(c => {
+          c.classList.toggle('active', c.getAttribute(attr) === opts.filter.value);
+        });
+      }, 80);
+    }
+  }
+  // 暴露给开发者控制台调试
+  window._mobileNav = navigate;
 
   // ─── Main tab 切换 (5 个底部 tab) ───
   $$('.tab').forEach(tab => {
@@ -475,15 +522,29 @@
   async function renderNews() {
     try {
       const data = await loadNews();
-      const items = data.items || [];
-      if (!items.length) {
-        $('#news-list').innerHTML = '<div class="empty"><div class="empty-icon">📰</div><div>暂无新闻</div></div>';
-        return;
+      let items = data.items || [];
+      // v12.25.0: 跨页 symbol 锁定 — 在标题/symbols 字段里搜
+      if (_state.symbolFilter) {
+        const sf = _state.symbolFilter.toUpperCase();
+        items = items.filter(n => {
+          const t = (n.title || '').toUpperCase();
+          const s = (n.symbols || []).map(x => String(x).toUpperCase());
+          return t.includes(sf) || s.includes(sf);
+        });
       }
-      $('#news-list').innerHTML = items.map(renderNewsCard).join('');
+      const hintHTML = _state.symbolFilter
+        ? `<div class="filter-hint">🔗 仅显示 <b>${escape(_state.symbolFilter)}</b> 的新闻 <span class="clear-hint" style="cursor:pointer;color:#5b9eff;">× 清除</span></div>`
+        : '';
+      if (!items.length) {
+        $('#news-list').innerHTML = hintHTML + '<div class="empty"><div class="empty-icon">📰</div><div>暂无新闻</div></div>';
+      } else {
+        $('#news-list').innerHTML = hintHTML + items.map(renderNewsCard).join('');
+      }
       $$('#news-list .news-card').forEach(card => {
         card.addEventListener('click', () => openNewsDetail(card.dataset.id));
       });
+      const clearH = $('#news-list .clear-hint');
+      if (clearH) clearH.addEventListener('click', () => { _state.symbolFilter = null; renderNews(); });
     } catch (e) {
       console.error(e);
       $('#news-list').innerHTML = '<div class="empty">加载失败</div>';
@@ -584,15 +645,24 @@
       if (f === 'active') items = items.filter(p => p.status === 'active');
       else if (f === 'cooling') items = items.filter(p => p.status === 'cooling');
       else if (['us','hk','cn'].includes(f)) items = items.filter(p => p.market === f);
+      // v12.25.0: 跨页 symbol 锁定
+      if (_state.symbolFilter) {
+        items = items.filter(p => p.symbol === _state.symbolFilter);
+      }
       $('#pool-count').textContent = items.length;
+      const hintHTML = _state.symbolFilter
+        ? `<div class="filter-hint">🔗 仅显示 <b>${escape(_state.symbolFilter)}</b> <span class="clear-hint" style="cursor:pointer;color:#5b9eff;">× 清除</span></div>`
+        : '';
       if (!items.length) {
-        $('#pool-list').innerHTML = '<div class="empty"><div class="empty-icon">🎯</div><div>无候选池条目</div></div>';
+        $('#pool-list').innerHTML = hintHTML + '<div class="empty"><div class="empty-icon">🎯</div><div>无候选池条目</div></div>';
         return;
       }
-      $('#pool-list').innerHTML = items.map(renderPoolRow).join('');
+      $('#pool-list').innerHTML = hintHTML + items.map(renderPoolRow).join('');
       $$('#pool-list .pool-row').forEach(r => {
         r.addEventListener('click', () => openPoolDetail(r.dataset.id));
       });
+      const clearH = $('#pool-list .clear-hint');
+      if (clearH) clearH.addEventListener('click', () => { _state.symbolFilter = null; renderPool(); });
     } catch (e) {
       console.error(e);
       $('#pool-list').innerHTML = '<div class="empty">加载失败</div>';
@@ -644,8 +714,21 @@
         <div class="kv-row"><span class="k">入池时间</span><span class="v">${fmtTime(item.added_at)}</span></div>
         <div class="kv-row"><span class="k">入池原因</span><span class="v small">${escape(item.reason || '')}</span></div>
         ${diag ? renderPoolDiagnosis(diag) : '<h4>🤖 AI 诊断</h4><div class="muted">尚无诊断</div>'}
+        <div class="sheet-actions" style="display:flex;flex-wrap:wrap;gap:6px;">
+          <button class="btn btn-link" data-go-pool-news>📰 该股新闻</button>
+          <button class="btn btn-link" data-go-pool-signals>🎯 历史信号</button>
+          <button class="btn btn-link" data-go-pool-reviews>📊 历史复盘</button>
+        </div>
       `;
       $('#sheet-content').innerHTML = html;
+      // v12.25.0: 候选池详情跳转
+      const sym = item.symbol;
+      const goPN = $('#sheet-content [data-go-pool-news]');
+      if (goPN) goPN.addEventListener('click', () => navigate('market', 'news', { symbolFilter: sym }));
+      const goPS = $('#sheet-content [data-go-pool-signals]');
+      if (goPS) goPS.addEventListener('click', () => navigate('market', 'signals', { symbolFilter: sym }));
+      const goPR = $('#sheet-content [data-go-pool-reviews]');
+      if (goPR) goPR.addEventListener('click', () => navigate('learn', 'reviews', { symbolFilter: sym }));
     } catch (e) {
       $('#sheet-content').innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
     }
@@ -676,16 +759,27 @@
       const f = _state.signalFilter;
       if (f && f !== 'all') {
         if (f === '') items = items.filter(s => !s.ai_verdict);
+        else if (f === 'verifying') items = items.filter(s => !s.ai_verdict || (s.ai_verdict === 'confirm' && (!s.revalidated_at || s.revalidated_at == 0)));
         else items = items.filter(s => s.ai_verdict === f);
       }
-      if (!items.length) {
-        $('#signals-list').innerHTML = '<div class="empty"><div class="empty-icon">📡</div><div>无信号</div></div>';
-        return;
+      // v12.25.0: 跨页 symbol 锁定
+      if (_state.symbolFilter) {
+        items = items.filter(s => s.symbol === _state.symbolFilter);
       }
-      $('#signals-list').innerHTML = items.slice(0, 100).map(renderSignalRow).join('');
+      // 顶部 symbolFilter 提示条
+      const hintHTML = _state.symbolFilter
+        ? `<div class="filter-hint">🔗 仅显示 <b>${escape(_state.symbolFilter)}</b> 的信号 <span class="clear-hint" style="cursor:pointer;color:#5b9eff;">× 清除</span></div>`
+        : '';
+      if (!items.length) {
+        $('#signals-list').innerHTML = hintHTML + '<div class="empty"><div class="empty-icon">📡</div><div>无信号</div></div>';
+      } else {
+        $('#signals-list').innerHTML = hintHTML + items.slice(0, 100).map(renderSignalRow).join('');
+      }
       $$('#signals-list .row').forEach(r => {
         r.addEventListener('click', () => openSignalDetail(r.dataset.id));
       });
+      const clearH = $('#signals-list .clear-hint');
+      if (clearH) clearH.addEventListener('click', () => { _state.symbolFilter = null; renderSignals(); });
     } catch (e) {
       console.error(e);
       $('#signals-list').innerHTML = '<div class="empty">加载失败</div>';
@@ -744,8 +838,24 @@
           <div class="kv-row"><span class="k">${stars(n.importance||1)}</span><span class="v small">${escape((n.title||'').slice(0,80))}</span></div>
         `).join('') : ''}
         ${pool ? renderPoolContextInSignal(pool) : ''}
+        <div class="sheet-actions" style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${pool ? `<button class="btn btn-link" data-go-pool>🎯 候选池档案</button>` : ''}
+          <button class="btn btn-link" data-go-news-sig>📰 该股新闻</button>
+          <button class="btn btn-link" data-go-reviews-sig>📊 历史复盘</button>
+        </div>
       `;
       $('#sheet-content').innerHTML = html;
+      // v12.25.0: 跳转按钮
+      const goPool = $('#sheet-content [data-go-pool]');
+      if (goPool && pool) goPool.addEventListener('click', () => {
+        navigate('market', 'pool', { symbolFilter: s.symbol });
+        // 自动打开该 symbol 的池详情 (如有 id)
+        if (pool && pool.id) setTimeout(() => openPoolDetail(pool.id), 200);
+      });
+      const goNewsSig = $('#sheet-content [data-go-news-sig]');
+      if (goNewsSig) goNewsSig.addEventListener('click', () => navigate('market', 'news', { symbolFilter: s.symbol }));
+      const goRevSig = $('#sheet-content [data-go-reviews-sig]');
+      if (goRevSig) goRevSig.addEventListener('click', () => navigate('learn', 'reviews', { symbolFilter: s.symbol }));
     } catch (e) {
       $('#sheet-content').innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
     }
@@ -1031,8 +1141,11 @@
              ${advice.reason ? `<div style="margin:4px 0;">${escape(advice.reason)}</div>` : ''}
              <div class="kv-row"><span class="k">时间</span><span class="v small">${fmtTime(advice.advised_at)}</span></div>`
           : '<div class="muted">暂无建议</div>'}
-        <div class="sheet-actions">
+        <div class="sheet-actions" style="display:flex;flex-wrap:wrap;gap:6px;">
           <button class="btn" id="advise-now-btn">🤖 重新分析</button>
+          <button class="btn btn-link" data-go-news>📰 该股新闻</button>
+          <button class="btn btn-link" data-go-reviews>📊 历史复盘</button>
+          <button class="btn btn-link" data-go-signals>🎯 历史信号</button>
         </div>
       `;
       $('#sheet-content').innerHTML = html;
@@ -1055,6 +1168,14 @@
           btn.disabled = false; btn.textContent = '🤖 重试';
         }
       });
+      // v12.25.0: 跨页跳转按钮
+      const sym = p.symbol;
+      const goNews = $('#sheet-content [data-go-news]');
+      if (goNews) goNews.addEventListener('click', () => navigate('market', 'news', { symbolFilter: sym }));
+      const goReviews = $('#sheet-content [data-go-reviews]');
+      if (goReviews) goReviews.addEventListener('click', () => navigate('learn', 'reviews', { symbolFilter: sym }));
+      const goSignals = $('#sheet-content [data-go-signals]');
+      if (goSignals) goSignals.addEventListener('click', () => navigate('market', 'signals', { symbolFilter: sym }));
     } catch (e) {
       $('#sheet-content').innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
     }
@@ -1068,15 +1189,24 @@
   async function renderReviewList() {
     try {
       const data = await loadReviews();
-      const items = data.items || [];
-      if (!items.length) {
-        $('#review-list').innerHTML = '<div class="empty"><div class="empty-icon">🔍</div><div>暂无复盘</div><div class="small" style="margin-top:6px;">闭环交易后台自动生成</div></div>';
-        return;
+      let items = data.items || [];
+      // v12.25.0: 跨页 symbol 锁定
+      if (_state.symbolFilter) {
+        items = items.filter(r => r.symbol === _state.symbolFilter);
       }
-      $('#review-list').innerHTML = items.map(renderReviewRow).join('');
+      const hintHTML = _state.symbolFilter
+        ? `<div class="filter-hint">🔗 仅显示 <b>${escape(_state.symbolFilter)}</b> 的复盘 <span class="clear-hint" style="cursor:pointer;color:#5b9eff;">× 清除</span></div>`
+        : '';
+      if (!items.length) {
+        $('#review-list').innerHTML = hintHTML + '<div class="empty"><div class="empty-icon">🔍</div><div>暂无复盘</div><div class="small" style="margin-top:6px;">闭环交易后台自动生成</div></div>';
+      } else {
+        $('#review-list').innerHTML = hintHTML + items.map(renderReviewRow).join('');
+      }
       $$('#review-list .row').forEach(r => {
         r.addEventListener('click', () => openReviewDetail(r.dataset.pid));
       });
+      const clearH = $('#review-list .clear-hint');
+      if (clearH) clearH.addEventListener('click', () => { _state.symbolFilter = null; renderReviewList(); });
     } catch (e) {
       console.error(e);
       $('#review-list').innerHTML = '<div class="empty">加载失败</div>';
@@ -1158,11 +1288,25 @@
             const t = typeof x === 'object' ? `${escape(x.time||'')} ${escape(x.event||x.note||'')}` : escape(x);
             return `<li>${t}</li>`;
           }).join('')}</ul>` : ''}
-        ${lessons.length ? `<h4>📌 教训</h4><ul>${lessons.map(x=>`<li>${escape(x)}</li>`).join('')}</ul>` : ''}
+        ${lessons.length ? `<h4>📌 教训</h4><ul style="cursor:pointer;" data-go-lessons>${lessons.map(x=>`<li>${escape(x)}</li>`).join('')}</ul><div class="small muted" style="margin-top:-6px;">💡 点击教训列表可跳到教训库查看完整收录</div>` : ''}
         ${r.improvements ? `<h4>💡 改进建议</h4><div>${escape(r.improvements)}</div>` : ''}
         ${renderStrategyParamAnalysis(r.strategy_param_analysis)}
+        <div class="sheet-actions" style="display:flex;flex-wrap:wrap;gap:6px;">
+          <button class="btn btn-link" data-go-rev-news>📰 该股新闻</button>
+          <button class="btn btn-link" data-go-rev-signals>🎯 历史信号</button>
+          ${lessons.length ? `<button class="btn btn-link" data-go-rev-lessons>📌 教训库</button>` : ''}
+        </div>
       `;
       $('#sheet-content').innerHTML = html;
+      // v12.25.0: 跳转按钮
+      const goRN = $('#sheet-content [data-go-rev-news]');
+      if (goRN) goRN.addEventListener('click', () => navigate('market', 'news', { symbolFilter: r.symbol }));
+      const goRS = $('#sheet-content [data-go-rev-signals]');
+      if (goRS) goRS.addEventListener('click', () => navigate('market', 'signals', { symbolFilter: r.symbol }));
+      const goRL = $('#sheet-content [data-go-rev-lessons]');
+      if (goRL) goRL.addEventListener('click', () => navigate('learn', 'lessons'));
+      const goLessonsList = $('#sheet-content [data-go-lessons]');
+      if (goLessonsList) goLessonsList.addEventListener('click', () => navigate('learn', 'lessons'));
     } catch (e) {
       $('#sheet-content').innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
     }
@@ -1733,12 +1877,28 @@
         && (now - (s.generated_at || 0)) < 24 * 3600 * 1000
       ).length;
       const todayCost = (llmCost && llmCost.today_total_usd) || 0;
+      // v12.25.0: quick-stats 可点击跳转
       $('#home-stats').innerHTML = `
-        <div class="stat-card"><div class="stat-label">📊 总持仓</div><div class="stat-value">${posCount}</div></div>
-        <div class="stat-card"><div class="stat-label">📥 今日成交</div><div class="stat-value">${todayTrades}</div></div>
-        <div class="stat-card"><div class="stat-label">⏳ 待重验</div><div class="stat-value ${pendingReval>0?'warn':''}">${pendingReval}</div></div>
-        <div class="stat-card"><div class="stat-label">💰 今日 AI</div><div class="stat-value">$${todayCost.toFixed(3)}</div></div>
+        <div class="stat-card clickable" data-go="trade/spot" style="cursor:pointer;">
+          <div class="stat-label">📊 总持仓 ›</div><div class="stat-value">${posCount}</div></div>
+        <div class="stat-card clickable" data-go="trade/orders" data-go-filter="order:filled" style="cursor:pointer;">
+          <div class="stat-label">📥 今日成交 ›</div><div class="stat-value">${todayTrades}</div></div>
+        <div class="stat-card clickable" data-go="market/signals" data-go-filter="signal:verifying" style="cursor:pointer;">
+          <div class="stat-label">⏳ 待重验 ›</div><div class="stat-value ${pendingReval>0?'warn':''}">${pendingReval}</div></div>
+        <div class="stat-card clickable" data-go="settings/llm" style="cursor:pointer;">
+          <div class="stat-label">💰 今日 AI ›</div><div class="stat-value">$${todayCost.toFixed(3)}</div></div>
       `;
+      $$('#home-stats .stat-card.clickable').forEach(c => {
+        c.addEventListener('click', () => {
+          const [tab, sub] = (c.dataset.go || '').split('/');
+          let opts = {};
+          if (c.dataset.goFilter) {
+            const [k, v] = c.dataset.goFilter.split(':');
+            opts.filter = { key: k, value: v };
+          }
+          navigate(tab, sub, opts);
+        });
+      });
 
       // ─ 4 池横滑卡 (含 ⚡合约) ─
       const stockCards = pools.sort((a,b)=> {

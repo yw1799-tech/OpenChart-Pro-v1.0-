@@ -250,6 +250,35 @@ button {
 }
 .btn:active { background: #4090e0; }
 .btn-secondary { background: var(--bg-card-2); color: var(--text); }
+/* v12.25.0: 跳转链接按钮 (轻量, 用于 detail 抽屉的"跳到关联页") */
+.btn-link {
+  padding: 6px 12px;
+  background: rgba(91,158,255,0.12);
+  color: #5b9eff;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid rgba(91,158,255,0.2);
+}
+.btn-link:active { background: rgba(91,158,255,0.22); }
+/* v12.25.0: 跨页跳转后的 symbol 过滤提示条 */
+.filter-hint {
+  background: rgba(91,158,255,0.08);
+  border-left: 3px solid #5b9eff;
+  padding: 6px 10px;
+  margin: 8px 0;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.filter-hint .clear-hint { font-size: 12px; opacity: 0.85; }
+.filter-hint .clear-hint:active { opacity: 0.5; }
+/* v12.25.0: 可点击 stat-card 加 hover 暗示 */
+.stat-card.clickable { transition: background 0.15s; }
+.stat-card.clickable:active { background: var(--bg-card-2); }
 
 .kv-list { display: grid; gap: 8px; }
 .kv-row {
