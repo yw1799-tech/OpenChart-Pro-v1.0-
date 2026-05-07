@@ -4,355 +4,342 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>OpenChart Pro</title>
-  <!-- iOS PWA -->
   <link rel="manifest" href="/mobile/manifest.json">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="OC Pro">
   <meta name="theme-color" content="#0d1117">
   <link rel="apple-touch-icon" href="/mobile/icon-192.png">
-  <!-- v12.21.3: cache-busting via version query (避免浏览器/PWA Service Worker 缓存旧版) -->
-  <link rel="stylesheet" href="/mobile/mobile.css?v=12.26.3">
+  <!-- v12.27.0 cache-busting: 大改 v3 设计 -->
+  <link rel="stylesheet" href="/mobile/mobile.css?v=12.27.0">
 </head>
 <body>
-  <!-- 顶部状态栏 -->
-  <header class="hdr" id="hdr">
-    <div class="hdr-title">
-      <span id="page-title">总览</span>
-      <span id="enabled-badge" class="badge"></span>
+
+<!-- ============= v12.27.0 全局状态条 (固顶) ============= -->
+<div class="statusbar">
+  <span class="sb-item"><span class="sb-dot" id="sb-status-dot"></span><span id="sb-status-text">运行中</span></span>
+  <span class="sb-item" id="sb-auto-trade">⚡ 自动开</span>
+  <span class="sb-item" id="sb-llm-budget">💰 —</span>
+  <span class="sb-spacer"></span>
+  <span class="sb-icon" id="refresh-btn" title="刷新">↻</span>
+  <span class="sb-icon" id="settings-icon" title="设置">⚙</span>
+</div>
+
+<!-- ============= 内容区域: 4 主 tab ============= -->
+<main class="content">
+
+  <!-- ════════════ 1. 🏠 现在 (Now) ════════════ -->
+  <section class="page active" data-page="now">
+
+    <!-- Hero: 总权益 + 30 天 sparkline -->
+    <div class="hero">
+      <div class="hero-label">总账户权益 (含合约)</div>
+      <div class="hero-equity" id="hero-equity">—</div>
+      <div class="hero-pnl-row" id="hero-pnl-row"></div>
+      <svg class="hero-spark" id="hero-spark" viewBox="0 0 400 36" preserveAspectRatio="none"></svg>
+      <div class="hero-spark-label">
+        <span>30 天前</span><span>今日</span>
+      </div>
     </div>
-    <div class="hdr-actions">
-      <span class="hdr-time" id="last-update">—</span>
-      <button class="hdr-refresh" id="refresh-btn" aria-label="刷新">↻</button>
+
+    <!-- 三层 inbox -->
+    <div class="section">
+      <div class="section-title"><span>📥 收件箱</span><span class="section-title-r">点击展开</span></div>
+      <div class="inbox-block urgent" id="inbox-urgent" hidden>
+        <div class="inbox-hdr">
+          <span class="inbox-title">🔴 紧急 — 必须立刻处理</span>
+          <span class="inbox-cnt" id="inbox-urgent-cnt">0</span>
+        </div>
+        <div id="inbox-urgent-list"></div>
+      </div>
+      <div class="inbox-block attention" id="inbox-attention" hidden>
+        <div class="inbox-hdr">
+          <span class="inbox-title">🟡 关注 — 1 小时内</span>
+          <span class="inbox-cnt" id="inbox-attention-cnt">0</span>
+        </div>
+        <div id="inbox-attention-list"></div>
+      </div>
+      <div class="inbox-block info" id="inbox-info" hidden>
+        <div class="inbox-hdr">
+          <span class="inbox-title">🔵 提醒 — 有空再看</span>
+          <span class="inbox-cnt" id="inbox-info-cnt">0</span>
+        </div>
+        <div id="inbox-info-list"></div>
+      </div>
+      <div class="inbox-empty" id="inbox-empty" hidden>
+        <span class="muted small">✓ 当前无待处理事项</span>
+      </div>
     </div>
-  </header>
 
-  <!-- 内容区域:5 tab × 21 sub -->
-  <main class="content">
-
-    <!-- ════════════════ 1. 🏠 总览 (单页, 无 sub) ════════════════ -->
-    <section class="page active" data-page="home">
-      <!-- 总权益 hero -->
-      <div class="card hero">
-        <div class="hero-label">总权益 (USD 等值)</div>
-        <div class="hero-value" id="ov-equity">—</div>
-        <div class="hero-pnl" id="ov-pnl">—</div>
-      </div>
-
-      <!-- 4 quick-stats: 持仓数 / 今日成交 / 待重验 / AI 成本 -->
-      <div class="quick-stats" id="home-stats">—</div>
-
-      <!-- 4 池横滑卡(美/A/港/⚡合约) -->
-      <div class="card-grid" id="ov-pools"><!-- pool cards 动态注入 --></div>
-
-      <!-- 实时告警 (强平/SL 即将/待确认信号) -->
-      <div class="card section alert-card" id="ov-alerts-card" hidden>
-        <div class="section-title">🚨 实时告警</div>
-        <div id="ov-alerts" class="list">—</div>
-      </div>
-
-      <!-- 24h 重点信号 (Top 5,按 AI 分排序) -->
-      <div class="card section">
-        <div class="section-title">📡 24h 重点信号</div>
-        <div id="ov-recent-signals-list" class="list">—</div>
-      </div>
-
-      <!-- 最近成交 -->
-      <div class="card section">
-        <div class="section-title">📥 最近成交</div>
-        <div id="ov-recent-trades-list" class="list">—</div>
-      </div>
-    </section>
-
-    <!-- ════════════════ 2. 📈 行情 [新闻 | 候选池 | 信号 | 策略 | 共振] ════════════════ -->
-    <section class="page" data-page="market">
-      <div class="segment seg-scroll">
-        <button class="seg active" data-sub="news">📰 新闻</button>
-        <button class="seg" data-sub="pool">🎯 候选池</button>
-        <button class="seg" data-sub="signals">📡 信号</button>
-        <button class="seg" data-sub="library">📚 策略</button>
-        <button class="seg" data-sub="combos">⭐ 共振</button>
-      </div>
-
-      <!-- 新闻 -->
-      <div class="subpage" data-subpage="news">
-        <div class="filter-bar">
-          <button class="chip active" data-nfilter="all">全部</button>
-          <button class="chip" data-nfilter="important">⭐ 重要</button>
-          <button class="chip" data-nfilter="crypto">加密</button>
-          <button class="chip" data-nfilter="us">美股</button>
-          <button class="chip" data-nfilter="hk">港股</button>
-          <button class="chip" data-nfilter="cn">A股</button>
-          <button class="chip" data-nfilter="macro">宏观</button>
-        </div>
-        <div id="news-list" class="list">—</div>
-      </div>
-
-      <!-- 候选池(按市场分组顶部 + 列表) -->
-      <div class="subpage" data-subpage="pool" hidden>
-        <div id="pool-market-summary" class="card section"></div>
-        <div class="filter-bar">
-          <button class="chip active" data-pfilter="all">全部</button>
-          <button class="chip" data-pfilter="us">美股</button>
-          <button class="chip" data-pfilter="cn">A股</button>
-          <button class="chip" data-pfilter="hk">港股</button>
-          <button class="chip" data-pfilter="active">活跃</button>
-          <button class="chip" data-pfilter="cooling">冷却</button>
-        </div>
-        <div class="page-actions">
-          <span class="muted small">显示 <span id="pool-count">0</span> 只</span>
-        </div>
-        <div id="pool-list" class="list">—</div>
-      </div>
-
-      <!-- 信号 -->
-      <div class="subpage" data-subpage="signals" hidden>
-        <div class="filter-bar">
-          <button class="chip active" data-vfilter="all">全部</button>
-          <button class="chip" data-vfilter="confirm">✅ 已确认</button>
-          <button class="chip" data-vfilter="warn">⚠️ 警示</button>
-          <button class="chip" data-vfilter="reject">❌ 已拒绝</button>
-          <button class="chip" data-vfilter="skipped">⊘ 跳过</button>
-          <button class="chip" data-vfilter="">⏳ 验证中</button>
-        </div>
-        <div id="signals-list" class="list">—</div>
-      </div>
-
-      <!-- 策略库 -->
-      <div class="subpage" data-subpage="library" hidden>
-        <div id="library-list" class="list">—</div>
-      </div>
-
-      <!-- 共振组合 -->
-      <div class="subpage" data-subpage="combos" hidden>
-        <div id="combos-list" class="list">—</div>
-      </div>
-    </section>
-
-    <!-- ════════════════ 3. 💼 交易 [现货 | ⚡合约 | 订单 | 拒单 | 自动控制] ★★★ ════════════════ -->
-    <section class="page" data-page="trade">
-      <div class="segment seg-scroll">
-        <button class="seg active" data-sub="spot">🪙 现货</button>
-        <button class="seg" data-sub="swap">⚡ 合约</button>
-        <button class="seg" data-sub="ondemand">🔍 按需</button>
-        <button class="seg" data-sub="orders">📋 订单</button>
-        <button class="seg" data-sub="rejected">⊘ 拒单</button>
-        <button class="seg" data-sub="control">⚙️ 自动</button>
-      </div>
-
-      <!-- 现货持仓 -->
-      <div class="subpage" data-subpage="spot">
-        <div class="page-summary" id="positions-summary">—</div>
-        <div id="positions-list" class="list">—</div>
-      </div>
-
-      <!-- ⚡ 合约持仓 (PR1 核心新模块) -->
-      <div class="subpage" data-subpage="swap" hidden>
-        <!-- swap 账户 hero -->
-        <div class="card swap-hero" id="swap-account-hero">—</div>
-
-        <!-- swap 持仓汇总 -->
-        <div class="page-summary" id="swap-positions-summary"></div>
-
-        <!-- swap 持仓列表 -->
-        <div id="swap-positions-list" class="list">—</div>
-      </div>
-
-      <!-- 🔍 按需分析 (v12.22.0) -->
-      <div class="subpage" data-subpage="ondemand" hidden>
-        <div id="ondemand-form" class="card section">—</div>
-        <div id="ondemand-result" class="list">—</div>
-      </div>
-
-      <!-- 订单流水 (合约 + 现货成交合并) -->
-      <div class="subpage" data-subpage="orders" hidden>
-        <div class="filter-bar">
-          <button class="chip active" data-ofilter="all">全部</button>
-          <button class="chip" data-ofilter="pending">⏳ 挂单中</button>
-          <button class="chip" data-ofilter="filled">✅ 已成交</button>
-          <button class="chip" data-ofilter="cancelled">⊘ 已撤单</button>
-        </div>
-        <div id="order-flow-list" class="list">—</div>
-      </div>
-
-      <!-- 拒单 -->
-      <div class="subpage" data-subpage="rejected" hidden>
-        <div class="filter-bar">
-          <button class="chip active" data-rjfilter="all">全部</button>
-          <button class="chip" data-rjfilter="us">美股</button>
-          <button class="chip" data-rjfilter="hk">港股</button>
-          <button class="chip" data-rjfilter="cn">A股</button>
-          <button class="chip" data-rjfilter="crypto">加密</button>
-        </div>
-        <div id="rejected-list" class="list">—</div>
-      </div>
-
-      <!-- 自动交易控制 -->
-      <div class="subpage" data-subpage="control" hidden>
-        <!-- 总开关 -->
-        <div class="card setting-row">
-          <div>
-            <div class="setting-title">🤖 自动交易总开关</div>
-            <div class="setting-sub muted small">关闭后系统不再自动开仓</div>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" id="auto-trade-toggle">
-            <span class="slider"></span>
-          </label>
-        </div>
-
-        <!-- 加密交易模式 -->
-        <div class="card section">
-          <div class="section-title">⚡ 加密交易模式</div>
-          <div id="crypto-mode-radio" class="radio-list">—</div>
-        </div>
-
-        <!-- 系统配置 -->
-        <div class="card section">
-          <div class="section-title">📊 当前配置</div>
-          <div class="kv-list" id="trade-config-info">—</div>
-        </div>
-
-        <!-- 操作按钮 -->
-        <div class="card setting-row">
-          <div>
-            <div class="setting-title">📲 立即推送持仓简报</div>
-            <div class="setting-sub muted small">不等 4h 周期</div>
-          </div>
-          <button class="btn" id="summary-now-btn">推送</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- ════════════════ 4. 🧠 学习 [复盘 | 教训 | 规则 | 周报] ════════════════ -->
-    <section class="page" data-page="learn">
-      <div class="segment seg-scroll">
-        <button class="seg active" data-sub="reviews">🔍 复盘</button>
-        <button class="seg" data-sub="lessons">📚 教训</button>
-        <button class="seg" data-sub="rules">🛡️ 规则</button>
-        <button class="seg" data-sub="weekly">📊 周报</button>
-      </div>
-
-      <!-- 复盘 -->
-      <div class="subpage" data-subpage="reviews">
-        <div id="review-list" class="list">—</div>
-      </div>
-
-      <!-- 教训库 -->
-      <div class="subpage" data-subpage="lessons" hidden>
-        <div id="review-actions" class="page-actions" style="display:none;">
-          <span class="muted small" id="lesson-stats">—</span>
-          <button class="btn" id="lesson-merge-btn" style="padding:4px 12px;font-size:12px;">🔄 LLM 合并</button>
-        </div>
-        <div id="lessons-list" class="list">—</div>
-      </div>
-
-      <!-- 风控规则 -->
-      <div class="subpage" data-subpage="rules" hidden>
-        <div id="rules-list" class="list">—</div>
-      </div>
-
-      <!-- 周报 (PR2 实现, PR1 占位) -->
-      <div class="subpage" data-subpage="weekly" hidden>
-        <div class="empty">
-          <div class="empty-icon">📊</div>
-          <div>周报功能开发中 (PR2)</div>
-          <div class="small muted" style="margin-top:6px;">将显示本周胜率/总盈亏/Top 3 盈亏/反复错误</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ════════════════ 5. ⚙️ 设置 [通知 | 新闻源 | LLM | 系统] ════════════════ -->
-    <section class="page" data-page="settings">
-      <div class="segment seg-scroll">
-        <button class="seg active" data-sub="notify">🔔 通知</button>
-        <button class="seg" data-sub="sources">📰 新闻源</button>
-        <button class="seg" data-sub="llm">💰 LLM</button>
-        <button class="seg" data-sub="system">📊 系统</button>
-      </div>
-
-      <!-- 通知 -->
-      <div class="subpage" data-subpage="notify">
-        <div class="card setting-row">
-          <div>
-            <div class="setting-title">✈️ Telegram 测试</div>
-            <div class="setting-sub muted small">立即发送一条测试消息</div>
-          </div>
-          <button class="btn" id="tg-test-btn">发送</button>
-        </div>
-        <div class="card section">
-          <div class="section-title">推送渠道</div>
-          <div class="kv-list" id="settings-channels">—</div>
-        </div>
-      </div>
-
-      <!-- 新闻源 (PR3 实现, PR1 占位) -->
-      <div class="subpage" data-subpage="sources" hidden>
-        <div class="empty">
-          <div class="empty-icon">📰</div>
-          <div>新闻源管理 (PR3)</div>
-          <div class="small muted" style="margin-top:6px;">将列出 28 个源 + enable/disable + 失败统计</div>
-        </div>
-      </div>
-
-      <!-- LLM 配额 -->
-      <div class="subpage" data-subpage="llm" hidden>
-        <div id="llm-detail-card" class="card section">—</div>
-      </div>
-
-      <!-- 系统状态 -->
-      <div class="subpage" data-subpage="system" hidden>
-        <div class="card section">
-          <div class="section-title">系统状态</div>
-          <div class="kv-list" id="settings-status">—</div>
-        </div>
-        <div class="muted small center" style="padding:20px;">
-          OpenChart Pro · v12.21.4 mobile (PR1+2+3 + 审计 hotfix)
-        </div>
-      </div>
-    </section>
-
-  </main>
-
-  <!-- 底部 5-tab bar(新结构) -->
-  <nav class="tabbar">
-    <button class="tab active" data-tab="home">
-      <div class="tab-icon">🏠</div>
-      <div class="tab-label">总览</div>
-    </button>
-    <button class="tab" data-tab="market">
-      <div class="tab-icon">📈</div>
-      <div class="tab-label">行情</div>
-    </button>
-    <button class="tab" data-tab="trade">
-      <div class="tab-icon">💼</div>
-      <div class="tab-label">交易</div>
-    </button>
-    <button class="tab" data-tab="learn">
-      <div class="tab-icon">🧠</div>
-      <div class="tab-label">学习</div>
-    </button>
-    <button class="tab" data-tab="settings">
-      <div class="tab-icon">⚙️</div>
-      <div class="tab-label">设置</div>
-    </button>
-  </nav>
-
-  <!-- Toast 提示 -->
-  <div id="toast" class="toast"></div>
-
-  <!-- 详情抽屉 -->
-  <div id="sheet" class="sheet" hidden>
-    <div class="sheet-mask"></div>
-    <div class="sheet-body">
-      <div class="sheet-hdr">
-        <div class="sheet-title" id="sheet-title">详情</div>
-        <button class="sheet-close" id="sheet-close" aria-label="关闭">×</button>
-      </div>
-      <div class="sheet-content" id="sheet-content">—</div>
+    <!-- 4 池 grid -->
+    <div class="section">
+      <div class="section-title"><span>📊 资金池</span><span class="section-title-r">点击进入</span></div>
+      <div class="pools" id="pools-grid">—</div>
     </div>
+
+    <!-- 24h 关键事件 -->
+    <div class="section">
+      <div class="section-title"><span>⏱️ 24h 关键事件</span></div>
+      <div id="events-list">—</div>
+    </div>
+
+  </section>
+
+  <!-- ════════════ 2. 💼 持仓 (Holdings) ════════════ -->
+  <section class="page" data-page="holdings">
+    <div class="page-title-row">
+      <div>
+        <div class="page-h1" id="holdings-title">💼 持仓</div>
+        <div class="page-sub" id="holdings-sub">—</div>
+      </div>
+    </div>
+
+    <!-- 按市场环形饼图 -->
+    <div class="pie-card" id="holdings-pie-card" hidden>
+      <svg class="pie-svg" id="holdings-pie" width="100" height="100" viewBox="0 0 36 36"></svg>
+      <div class="pie-legend" id="holdings-pie-legend">—</div>
+    </div>
+
+    <!-- chip 切换 -->
+    <div class="chips chips-holdings">
+      <button class="chip active" data-h-filter="all">所有</button>
+      <button class="chip" data-h-filter="us">🇺🇸 美股</button>
+      <button class="chip" data-h-filter="hk">🇭🇰 港股</button>
+      <button class="chip" data-h-filter="cn">🇨🇳 A股</button>
+      <button class="chip" data-h-filter="crypto">🪙 加密</button>
+      <button class="chip" data-h-filter="swap">⚡ 合约</button>
+      <button class="chip" data-h-filter="risk">🚨 风险榜</button>
+    </div>
+
+    <div id="holdings-list">—</div>
+  </section>
+
+  <!-- ════════════ 3. 🎯 机会 (Opportunities) ════════════ -->
+  <section class="page" data-page="opp">
+    <div class="page-title-row">
+      <div>
+        <div class="page-h1">🎯 机会</div>
+        <div class="page-sub">最近 24h 信号 · 候选池 · 拒单</div>
+      </div>
+    </div>
+
+    <!-- 顶部 3 stat -->
+    <div class="opp-stats" id="opp-stats">—</div>
+
+    <!-- 子 tab -->
+    <div class="segment seg-scroll">
+      <button class="seg active" data-sub="signals">🌟 机会</button>
+      <button class="seg" data-sub="pool">🎯 候选池</button>
+      <button class="seg" data-sub="news">📰 新闻</button>
+      <button class="seg" data-sub="library">📚 策略</button>
+      <button class="seg" data-sub="combos">⭐ 共振</button>
+      <button class="seg" data-sub="rejected">⊘ 拒单</button>
+      <button class="seg" data-sub="ondemand">🔍 按需</button>
+      <button class="seg" data-sub="orders">📋 订单</button>
+    </div>
+
+    <!-- 信号(机会) -->
+    <div class="subpage" data-subpage="signals">
+      <div class="filter-bar">
+        <button class="chip active" data-vfilter="all">全部</button>
+        <button class="chip" data-vfilter="confirm">✅ 已确认</button>
+        <button class="chip" data-vfilter="warn">⚠️ 警示</button>
+        <button class="chip" data-vfilter="reject">❌ 已拒</button>
+        <button class="chip" data-vfilter="skipped">⊘ 跳过</button>
+        <button class="chip" data-vfilter="">⏳ 验证中</button>
+      </div>
+      <div id="signals-list">—</div>
+    </div>
+
+    <!-- 候选池 -->
+    <div class="subpage" data-subpage="pool" hidden>
+      <div id="pool-market-summary"></div>
+      <div class="filter-bar">
+        <button class="chip active" data-pfilter="all">全部</button>
+        <button class="chip" data-pfilter="us">美股</button>
+        <button class="chip" data-pfilter="cn">A股</button>
+        <button class="chip" data-pfilter="hk">港股</button>
+        <button class="chip" data-pfilter="active">活跃</button>
+        <button class="chip" data-pfilter="cooling">冷却</button>
+      </div>
+      <div class="page-actions"><span class="muted small">显示 <span id="pool-count">0</span> 只</span></div>
+      <div id="pool-list">—</div>
+    </div>
+
+    <!-- 新闻 -->
+    <div class="subpage" data-subpage="news" hidden>
+      <div class="filter-bar">
+        <button class="chip active" data-nfilter="all">全部</button>
+        <button class="chip" data-nfilter="important">⭐ 重要</button>
+        <button class="chip" data-nfilter="crypto">加密</button>
+        <button class="chip" data-nfilter="us">美股</button>
+        <button class="chip" data-nfilter="hk">港股</button>
+        <button class="chip" data-nfilter="cn">A股</button>
+        <button class="chip" data-nfilter="macro">宏观</button>
+      </div>
+      <div id="news-list">—</div>
+    </div>
+
+    <!-- 策略库 -->
+    <div class="subpage" data-subpage="library" hidden>
+      <div id="library-list">—</div>
+    </div>
+
+    <!-- 共振组合 -->
+    <div class="subpage" data-subpage="combos" hidden>
+      <div id="combos-list">—</div>
+    </div>
+
+    <!-- 拒单 -->
+    <div class="subpage" data-subpage="rejected" hidden>
+      <div class="filter-bar">
+        <button class="chip active" data-rjfilter="all">全部</button>
+        <button class="chip" data-rjfilter="us">美股</button>
+        <button class="chip" data-rjfilter="hk">港股</button>
+        <button class="chip" data-rjfilter="cn">A股</button>
+        <button class="chip" data-rjfilter="crypto">加密</button>
+      </div>
+      <div id="rejected-list">—</div>
+    </div>
+
+    <!-- 按需分析 -->
+    <div class="subpage" data-subpage="ondemand" hidden>
+      <div id="ondemand-form" class="card section">—</div>
+      <div id="ondemand-result">—</div>
+    </div>
+
+    <!-- 订单流水 -->
+    <div class="subpage" data-subpage="orders" hidden>
+      <div class="filter-bar">
+        <button class="chip active" data-ofilter="all">全部</button>
+        <button class="chip" data-ofilter="pending">⏳ 挂单中</button>
+        <button class="chip" data-ofilter="filled">✅ 已成交</button>
+        <button class="chip" data-ofilter="cancelled">⊘ 已撤单</button>
+      </div>
+      <div id="order-flow-list">—</div>
+    </div>
+
+  </section>
+
+  <!-- ════════════ 4. 🧠 复盘 (Insights) ════════════ -->
+  <section class="page" data-page="insights">
+    <div class="page-title-row">
+      <div>
+        <div class="page-h1">🧠 复盘</div>
+        <div class="page-sub">30 天表现 · 教训 · 策略</div>
+      </div>
+    </div>
+
+    <!-- 健康度卡 -->
+    <div class="health-card" id="health-card" hidden>
+      <div class="health-title">⚠️ 30 天系统健康度</div>
+      <div class="health-row">
+        <div class="health-num" id="health-pnl">—</div>
+        <div class="health-warn-text" id="health-warn">—</div>
+      </div>
+      <div class="health-detail" id="health-detail">—</div>
+      <div class="health-stats" id="health-stats"></div>
+    </div>
+
+    <!-- 30 天权益曲线 -->
+    <div class="big-chart-card">
+      <div class="detail-card-title">📈 30 天总权益曲线</div>
+      <svg class="big-chart" id="equity-30d" viewBox="0 0 320 140" preserveAspectRatio="none"></svg>
+      <div class="chart-x-label">
+        <span>30 天前</span><span>今日</span>
+      </div>
+    </div>
+
+    <!-- 子 tab -->
+    <div class="segment seg-scroll">
+      <button class="seg active" data-sub="reviews">🔍 复盘</button>
+      <button class="seg" data-sub="lessons">📌 教训</button>
+      <button class="seg" data-sub="strategies">🎯 策略表现</button>
+      <button class="seg" data-sub="rules">🛡️ 规则</button>
+      <button class="seg" data-sub="weekly">📊 周报</button>
+    </div>
+
+    <div class="subpage" data-subpage="reviews">
+      <div id="review-list">—</div>
+    </div>
+
+    <div class="subpage" data-subpage="lessons" hidden>
+      <div id="review-actions" class="page-actions" style="display:none;">
+        <span class="muted small" id="lesson-stats">—</span>
+        <button class="btn" id="lesson-merge-btn" style="padding:4px 12px;font-size:12px;">🔄 LLM 合并</button>
+      </div>
+      <div id="lessons-list">—</div>
+    </div>
+
+    <div class="subpage" data-subpage="strategies" hidden>
+      <div class="big-chart-card">
+        <div class="detail-card-title">🎯 30 天 策略 PnL Top 10</div>
+        <div id="strategy-bars">—</div>
+      </div>
+      <div class="big-chart-card">
+        <div class="detail-card-title">📅 30 天日 PnL 热图</div>
+        <div class="heatmap" id="pnl-heatmap"></div>
+        <div class="heatmap-legend">
+          <span>少</span>
+          <span class="heat-legend-cell"></span>
+          <span class="heat-legend-cell d1"></span>
+          <span class="heat-legend-cell d4"></span>
+          <span class="heat-legend-cell u1"></span>
+          <span class="heat-legend-cell u4"></span>
+          <span>多</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="subpage" data-subpage="rules" hidden>
+      <div id="rules-list">—</div>
+    </div>
+
+    <div class="subpage" data-subpage="weekly" hidden>
+      <div class="empty">
+        <div class="empty-icon">📊</div>
+        <div>周报开发中</div>
+        <div class="small muted" style="margin-top:6px;">本周胜率/总盈亏/Top 3 盈亏/反复错误</div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ============= 浮动 ⚡ 按钮 (任何 tab 都能调出按需分析) ============= -->
+<div class="fab" id="fab" title="快速按需分析">⚡</div>
+
+<!-- ============= 底部 4 tab ============= -->
+<nav class="tabbar">
+  <button class="tab active" data-tab="now">
+    <div class="tab-icon">🏠</div><div class="tab-label">现在</div>
+  </button>
+  <button class="tab" data-tab="holdings">
+    <div class="tab-icon">💼</div><div class="tab-label">持仓</div>
+  </button>
+  <button class="tab" data-tab="opp">
+    <div class="tab-icon">🎯</div><div class="tab-label">机会</div>
+  </button>
+  <button class="tab" data-tab="insights">
+    <div class="tab-icon">🧠</div><div class="tab-label">复盘</div>
+  </button>
+</nav>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<!-- 详情抽屉 (复用旧设计) -->
+<div id="sheet" class="sheet" hidden>
+  <div class="sheet-mask"></div>
+  <div class="sheet-body">
+    <div class="sheet-hdr">
+      <div class="sheet-title" id="sheet-title">详情</div>
+      <button class="sheet-close" id="sheet-close" aria-label="关闭">×</button>
+    </div>
+    <div class="sheet-content" id="sheet-content">—</div>
   </div>
+</div>
 
-  <script src="/mobile/mobile.js?v=12.26.3"></script>
+<script src="/mobile/mobile.js?v=12.27.0"></script>
 </body>
 </html>

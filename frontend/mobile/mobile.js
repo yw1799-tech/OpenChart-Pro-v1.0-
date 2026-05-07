@@ -67,23 +67,50 @@
   };
   const GRADE_LABEL = { A: '优', B: '良', C: '一般', D: '差' };
 
-  // v12.21.0 PR1: 5 main tab × N sub-tab 默认路由
+  // v12.27.0: v3 4 tab 任务驱动路由
+  //   旧 5 tab × N sub → 新 4 tab × N sub + 设置移右上 ⚙
+  //   now (无 sub) / holdings (chip 切换) / opp (含 8 sub) / insights (含 5 sub)
   const TAB_DEFAULT_SUB = {
-    home: 'home',
-    market: 'news',
-    trade: 'spot',
-    learn: 'reviews',
+    now: 'now',           // 主页一屏
+    holdings: 'all',      // chip 切换
+    opp: 'signals',       // 默认机会
+    insights: 'reviews',  // 默认复盘
+    // 兼容旧路径 (重定向)
+    home: 'now',
+    market: 'opp',
+    trade: 'holdings',
+    learn: 'insights',
     settings: 'notify',
+  };
+  // 旧 sub → 新 sub 映射 (Hash 路由兼容)
+  const LEGACY_TAB_REDIRECT = {
+    'home/home': ['now', 'now'],
+    'market/news': ['opp', 'news'],
+    'market/pool': ['opp', 'pool'],
+    'market/signals': ['opp', 'signals'],
+    'market/library': ['opp', 'library'],
+    'market/combos': ['opp', 'combos'],
+    'trade/spot': ['holdings', 'all'],
+    'trade/swap': ['holdings', 'swap'],
+    'trade/ondemand': ['opp', 'ondemand'],
+    'trade/orders': ['opp', 'orders'],
+    'trade/rejected': ['opp', 'rejected'],
+    'trade/control': ['settings', 'auto'],   // 设置 sheet
+    'learn/reviews': ['insights', 'reviews'],
+    'learn/lessons': ['insights', 'lessons'],
+    'learn/rules': ['insights', 'rules'],
+    'learn/weekly': ['insights', 'weekly'],
   };
 
   let _state = {
-    activeTab: 'home',
+    activeTab: 'now',
     activeSub: 'home',         // 'home/home' / 'market/news' 等的右半
     signalFilter: 'all',
     newsFilter: 'all',
     poolFilter: 'all',
     rejectedFilter: 'all',
     orderFilter: 'all',        // v12.21.0: 订单流水 filter (pending/filled/cancelled)
+    holdingsFilter: 'all',     // v12.27.0: 持仓页 chip (all/us/hk/cn/crypto/swap/risk)
     // v12.25.0: 跨页联动 — 跳转后可设的临时过滤
     symbolFilter: null,        // 跨 tab 跳转时锁定 symbol (e.g. AAPL)
     cache: {
@@ -352,6 +379,86 @@
     btn.classList.add('spinning');
     setTimeout(() => btn.classList.remove('spinning'), 600);
     refresh();
+  });
+
+  // ─── v12.27.0 浮动 ⚡ 按钮 (任何 tab 都能调出按需分析) ───
+  const fabBtn = $('#fab');
+  if (fabBtn) fabBtn.addEventListener('click', () => {
+    // Phase 6 改为 sheet 弹按需分析表单; 现在跳转到 opp/ondemand
+    if (typeof navigate === 'function') navigate('opp', 'ondemand');
+  });
+
+  // ─── v12.27.0 设置图标 ⚙ (右上) ───
+  const settingsIcon = $('#settings-icon');
+  if (settingsIcon) settingsIcon.addEventListener('click', () => {
+    // Phase 6 改为完整 sheet; 现在简单弹一个选项 sheet
+    if (typeof openSheet !== 'function') return;
+    openSheet('设置', `
+      <div class="kv-list">
+        <div class="kv-row" data-go-set="auto"><span class="k">⚙️ 自动交易控制</span><span class="v">›</span></div>
+        <div class="kv-row" data-go-set="notify"><span class="k">🔔 通知 (Telegram)</span><span class="v">›</span></div>
+        <div class="kv-row" data-go-set="llm"><span class="k">💰 LLM 配额</span><span class="v">›</span></div>
+        <div class="kv-row" data-go-set="system"><span class="k">📊 系统状态</span><span class="v">›</span></div>
+      </div>
+    `);
+    // 设置子项点击 → 跳到旧 settings/* 路由 (Phase 6 改为完整 sheet 内容)
+    setTimeout(() => {
+      $$('#sheet-content [data-go-set]').forEach(el => {
+        el.style.cursor = 'pointer';
+        el.style.padding = '10px';
+        el.style.borderBottom = '1px solid var(--bd)';
+        el.addEventListener('click', () => {
+          const target = el.dataset.goSet;
+          if (target === 'auto' && typeof navigate === 'function') {
+            closeSheet();
+            // 旧 trade/control 路径仍然可用
+            _state.activeTab = 'trade';
+            _state.activeSub = 'control';
+            // 强制走旧路由
+            if (TAB_RENDERERS['trade/control']) TAB_RENDERERS['trade/control']();
+          } else if (target && typeof navigate === 'function') {
+            closeSheet();
+            _state.activeTab = 'settings';
+            _state.activeSub = target;
+            if (TAB_RENDERERS['settings/' + target]) TAB_RENDERERS['settings/' + target]();
+          }
+        });
+      });
+    }, 100);
+  });
+
+  // ─── v12.27.0 状态条 数据填充 ───
+  function updateStatusBar() {
+    // status (running/error)
+    const dot = $('#sb-status-dot');
+    const text = $('#sb-status-text');
+    // auto trade state
+    const auto = $('#sb-auto-trade');
+    if (auto && _state.cache.status) {
+      const enabled = _state.cache.status.enabled;
+      auto.textContent = enabled ? '⚡ 自动开' : '🔴 自动关';
+      auto.className = 'sb-item' + (enabled ? '' : ' warn');
+    }
+    // llm budget
+    const budget = $('#sb-llm-budget');
+    if (budget && _state.cache.llmCost) {
+      const used = _state.cache.llmCost.today_total_usd || 0;
+      const total = _state.cache.llmCost.daily_budget || 25;
+      const pct = (used / total * 100);
+      budget.textContent = `💰 $${used.toFixed(2)} / $${total}`;
+      budget.className = 'sb-item' + (pct > 80 ? ' warn' : '');
+    }
+  }
+  // 每次 refresh 后更新
+  setInterval(updateStatusBar, 3000);
+
+  // ─── v12.27.0 持仓 chip 切换 ───
+  $$('.chip[data-h-filter]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      _state.holdingsFilter = chip.dataset.hFilter;
+      $$('.chip[data-h-filter]').forEach(c => c.classList.toggle('active', c === chip));
+      if (typeof renderHoldings === 'function') renderHoldings();
+    });
   });
 
   // ─── Sheet 抽屉 ───
@@ -2116,32 +2223,94 @@
   // 注:renderOverview / renderSwapDashboard / renderOrderFlow / renderTradeControl /
   //    renderSettingsNotify / renderSettingsLLM / renderSettingsSystem 等新函数在文件末尾定义
   TAB_RENDERERS = {
-    // 总览 (单页)
+    // v12.27.0: v3 4 tab 路由表
+    'now/now':             renderNow,                    // 主页 v3 (Phase 2 实现)
+    // 持仓页 (内部 chip 切换, 共一个 render)
+    'holdings/all':        renderHoldings,
+    'holdings/us':         renderHoldings,
+    'holdings/hk':         renderHoldings,
+    'holdings/cn':         renderHoldings,
+    'holdings/crypto':     renderHoldings,
+    'holdings/swap':       renderHoldings,
+    'holdings/risk':       renderHoldings,
+    // 机会页 (复用旧 render)
+    'opp/signals':         renderSignals,
+    'opp/pool':            renderPoolWithMarketSummary,
+    'opp/news':            renderNews,
+    'opp/library':         renderStrategyLibrary,
+    'opp/combos':          renderCombos,
+    'opp/rejected':        renderRejected,
+    'opp/ondemand':        renderOnDemandPage,
+    'opp/orders':          renderOrderFlow,
+    // 复盘页 (新增 strategies sub)
+    'insights/reviews':    renderInsightsWithCharts,    // 顶部健康度 + 30天权益曲线 + reviews
+    'insights/lessons':    renderInsightsWithCharts,
+    'insights/strategies': renderInsightsWithCharts,
+    'insights/rules':      renderInsightsWithCharts,
+    'insights/weekly':     renderInsightsWithCharts,
+    // 旧路径 兼容 (会被 hash redirect 到新路径)
     'home/home':           renderOverview,
-    // 行情 (5 sub) — 复用旧 render
     'market/news':         renderNews,
-    'market/pool':         renderPoolWithMarketSummary,  // v12.21.0: 包装旧 renderPool 加市场汇总条
+    'market/pool':         renderPoolWithMarketSummary,
     'market/signals':      renderSignals,
     'market/library':      renderStrategyLibrary,
     'market/combos':       renderCombos,
-    // 交易 (6 sub) — 含全新 ⚡合约 + 🔍 按需分析 + 订单流水 + 自动控制
-    'trade/spot':          renderPositions,             // 复用,但只显示现货
-    'trade/swap':          renderSwapDashboard,         // 全新,合约专属页
-    'trade/ondemand':      renderOnDemandPage,          // v12.22.0 按需分析
-    'trade/orders':        renderOrderFlow,             // 全新,合约+现货订单合并
+    'trade/spot':          renderPositions,
+    'trade/swap':          renderSwapDashboard,
+    'trade/ondemand':      renderOnDemandPage,
+    'trade/orders':        renderOrderFlow,
     'trade/rejected':      renderRejected,
-    'trade/control':       renderTradeControl,          // 全新,自动交易控制
-    // 学习 (4 sub) — reviews / weekly 占位
+    'trade/control':       renderTradeControl,
     'learn/reviews':       renderReviewList,
     'learn/lessons':       renderLessons,
     'learn/rules':         renderRulesOnly,
     'learn/weekly':        () => renderWeekly(),
-    // 设置 (4 sub) — 拆出 4 sub
     'settings/notify':     renderSettingsNotify,
     'settings/sources':    () => renderSources(),
     'settings/llm':        renderSettingsLLM,
     'settings/system':     renderSettingsSystem,
   };
+
+  // v12.27.0 占位实现: Phase 2-5 才完整实现
+  // 现在先用旧 renderOverview / renderPositions / renderReviewList 兜底, 让框架能跑
+  async function renderNow() {
+    // Phase 2 完整实现; 现暂时 fallback 旧 overview 内的关键数据 + 加新框架
+    try { await renderOverview_v3(); }
+    catch (e) { console.error('[renderNow]', e); }
+  }
+  async function renderHoldings() {
+    // Phase 3 完整实现; 现暂时复用 renderPositions
+    try { await renderPositions(); }
+    catch (e) { console.error('[renderHoldings]', e); }
+  }
+  async function renderInsightsWithCharts() {
+    // Phase 5 完整实现; 现根据 sub 调对应 render
+    const sub = _state.activeSub;
+    try {
+      if (sub === 'reviews') await renderReviewList();
+      else if (sub === 'lessons') await renderLessons();
+      else if (sub === 'rules') await renderRulesOnly();
+      else if (sub === 'weekly') await renderWeekly();
+      else if (sub === 'strategies') {
+        // Phase 5 实现; 现暂时空显示
+        const el = $('#strategy-bars');
+        if (el) el.innerHTML = '<div class="muted small" style="padding:14px;">📊 策略 PnL 图表 — Phase 5 实施</div>';
+      }
+    } catch (e) { console.error('[renderInsightsWithCharts]', e); }
+  }
+  // Phase 2 子: renderOverview_v3 — 主页 v3 (基于现有 renderOverview 的数据 + 新结构)
+  async function renderOverview_v3() {
+    // 暂时调用旧 renderOverview, Phase 2 重写
+    // 但要避免旧函数操作不存在的元素 (如 #ov-equity)
+    if ($('#ov-equity')) {
+      try { await renderOverview(); } catch {}
+    } else {
+      // 新 v3 主页元素: #hero-equity / #hero-spark / #inbox-* / #pools-grid / #events-list
+      // Phase 2 完整实现, 现先填占位
+      const heq = $('#hero-equity');
+      if (heq) heq.textContent = '加载中…';
+    }
+  }
 
   // ═══════════════════════════════════════════════════════════
   // v12.21.0 PR1: 新增 render 函数 (总览 + 交易 5 sub + 设置 4 sub)
