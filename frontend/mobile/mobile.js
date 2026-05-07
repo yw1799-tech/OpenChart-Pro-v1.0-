@@ -286,8 +286,11 @@
   }
 
   function updatePageTitle() {
+    // v12.27.0: 旧 hdr 已隐藏, 此函数在 v3 框架下 noop
+    const el = $('#page-title');
+    if (!el) return;
     const key = `${_state.activeTab}/${_state.activeSub}`;
-    $('#page-title').textContent = SUB_TITLES[key] || PAGE_TITLES[_state.activeTab] || _state.activeTab;
+    el.textContent = SUB_TITLES[key] || PAGE_TITLES[_state.activeTab] || _state.activeTab;
   }
 
   // ─── Filter chips ───
@@ -2192,6 +2195,7 @@
   // ─── 主刷新 ───
   async function refresh() {
     const key = `${_state.activeTab}/${_state.activeSub}`;
+    console.log(`[refresh] 路由: ${key}`);
     const renderFn = TAB_RENDERERS[key];
     if (renderFn) {
       try { await renderFn(); }
@@ -2273,6 +2277,7 @@
 
   // v12.27.0 Phase 2: Now 主页完整实现
   async function renderNow() {
+    console.log('[renderNow] 开始渲染主页...');
     try {
       const [status, log, signals, positions, llmCost, swapAcct, swapPos, advices] = await Promise.all([
         loadStatus(), loadHistory(), loadSignals(), loadPositions(),
