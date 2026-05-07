@@ -2518,7 +2518,20 @@
     } catch (e) {
       console.error('[renderNow]', e);
       const heq = $('#hero-equity');
-      if (heq) heq.textContent = '加载失败';
+      if (heq) {
+        heq.textContent = '加载失败';
+        heq.style.fontSize = '14px';
+        heq.style.color = '#f85149';
+      }
+      // v12.27.2: 错误显示在屏幕上 (不依赖 console)
+      const evList = $('#events-list');
+      if (evList) {
+        evList.innerHTML = `<div style="padding:14px;background:#2a1010;border:1px solid #f85149;border-radius:8px;margin:14px;color:#f85149;font-size:11px;word-break:break-all;">
+          <div style="font-weight:700;margin-bottom:6px;">⚠️ renderNow 报错 (调试信息)</div>
+          <div style="color:#fff;">${(e && e.message) || String(e)}</div>
+          <div style="margin-top:8px;color:#9ba8b8;">${(e && e.stack) ? String(e.stack).slice(0,400) : ''}</div>
+        </div>`;
+      }
     }
   }
 
