@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>OpenChart Pro v2 设计稿</title>
+  <style>
+    /* ========= 设计 Token ========= */
+    :root {
+      --bg: #0d1117;
+      --bg-2: #161b22;
+      --bg-3: #1f242c;
+      --bg-card: #1a1f29;
+      --bg-card-2: #232a36;
+      --border: #2c3340;
+      --border-2: #3a4150;
+      --text: #e6edf3;
+      --text-2: #9ba8b8;
+      --text-3: #6c7686;
+      --up: #3fb950;
+      --down: #f85149;
+      --warn: #d29922;
+      --info: #58a6ff;
+      --accent: #58a6ff;
+      --purple: #bc8cff;
+      --tab-bg: rgba(13,17,23,0.95);
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      padding-bottom: 70px;  /* 底部 tab 留白 */
+    }
+
+    /* ========= 全局状态条 (固顶, 新增) ========= */
+    .status-bar {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(13,17,23,0.95);
+      backdrop-filter: blur(8px);
+      padding: 8px 14px;
+      display: flex; align-items: center; gap: 10px;
+      font-size: 11px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sb-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--up); margin-right: 4px; }
+    .sb-item { color: var(--text-2); display: flex; align-items: center; }
+    .sb-item.warn { color: var(--warn); }
+    .sb-spacer { flex: 1; }
+    .sb-icon { font-size: 16px; cursor: pointer; opacity: 0.7; }
+
+    /* ========= Hero (Now 主页顶部) ========= */
+    .hero {
+      padding: 20px 16px 18px;
+      background: linear-gradient(135deg, #1a1f29 0%, #161b22 100%);
+    }
+    .hero-label { font-size: 11px; color: var(--text-3); margin-bottom: 4px; }
+    .hero-equity { font-size: 32px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+    .hero-pnl { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 14px; font-variant-numeric: tabular-nums; }
+    .hero-pnl .pct { padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+    .pct.up { background: rgba(63,185,80,0.15); color: var(--up); }
+    .pct.down { background: rgba(248,81,73,0.15); color: var(--down); }
+    .hero-vs { color: var(--text-3); font-size: 12px; margin-left: 4px; }
+
+    /* ========= Inbox 三层 ========= */
+    .inbox-section { padding: 0 14px; }
+    .inbox-block {
+      background: var(--bg-card);
+      border-radius: 10px;
+      margin-top: 12px;
+      overflow: hidden;
+    }
+    .inbox-header {
+      padding: 10px 14px;
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+    }
+    .inbox-title { font-weight: 600; font-size: 14px; }
+    .inbox-count { background: var(--bg-3); padding: 2px 8px; border-radius: 10px; font-size: 11px; color: var(--text-2); }
+    .inbox-block.urgent { border-left: 3px solid var(--down); }
+    .inbox-block.urgent .inbox-title::before { content: "🔴 "; }
+    .inbox-block.attention { border-left: 3px solid var(--warn); }
+    .inbox-block.attention .inbox-title::before { content: "🟡 "; }
+    .inbox-block.info { border-left: 3px solid var(--info); }
+    .inbox-block.info .inbox-title::before { content: "🔵 "; }
+
+    .inbox-row {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px;
+    }
+    .inbox-row:last-child { border-bottom: none; }
+    .inbox-row .left { flex: 1; min-width: 0; }
+    .inbox-row .symbol { font-weight: 600; font-size: 13px; }
+    .inbox-row .desc { color: var(--text-2); font-size: 12px; margin-top: 2px; }
+    .inbox-row .arrow { color: var(--text-3); font-size: 16px; }
+
+    /* 进度条 (距 SL 视觉化) */
+    .progress {
+      height: 4px;
+      background: var(--bg-3);
+      border-radius: 2px;
+      margin-top: 4px;
+      overflow: hidden;
+    }
+    .progress-fill { height: 100%; transition: width 0.3s; }
+    .progress-fill.danger { background: var(--down); }
+    .progress-fill.warn { background: var(--warn); }
+    .progress-fill.safe { background: var(--up); }
+
+    /* ========= 4 池 Grid ========= */
+    .pools-grid {
+      padding: 0 14px;
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .pool-card {
+      background: var(--bg-card);
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+    }
+    .pool-card.crypto-swap { background: linear-gradient(135deg, #1f1530, #1a1f29); border-color: rgba(188,140,255,0.3); }
+    .pool-name { font-size: 12px; color: var(--text-2); margin-bottom: 6px; }
+    .pool-equity { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .pool-pnl { font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+    .pool-pnl.up { color: var(--up); }
+    .pool-pnl.down { color: var(--down); }
+    .pool-meta { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+    /* ========= Section Title ========= */
+    .section-title {
+      padding: 16px 14px 8px;
+      font-size: 13px;
+      color: var(--text-2);
+      font-weight: 600;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+
+    /* ========= Page Title ========= */
+    .page-title { padding: 14px 16px 4px; }
+    .page-title-row { display: flex; align-items: center; justify-content: space-between; }
+    .page-title-h1 { font-size: 22px; font-weight: 700; }
+    .page-title-sub { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+
+    /* ========= Chip 切换 ========= */
+    .chip-row {
+      padding: 0 14px;
+      display: flex; gap: 6px; overflow-x: auto;
+      margin-top: 10px; padding-bottom: 4px;
+    }
+    .chip-row::-webkit-scrollbar { display: none; }
+    .chip {
+      padding: 6px 12px;
+      background: var(--bg-card);
+      border-radius: 16px;
+      font-size: 12px;
+      color: var(--text-2);
+      white-space: nowrap;
+      border: 1px solid var(--border);
+    }
+    .chip.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+    /* ========= Holdings 持仓卡 (新设计) ========= */
+    .holding-card {
+      background: var(--bg-card);
+      margin: 8px 14px;
+      border-radius: 10px;
+      padding: 12px;
+      border-left: 3px solid var(--up);
+      cursor: pointer;
+    }
+    .holding-card.danger { border-left-color: var(--down); }
+    .holding-card.warn { border-left-color: var(--warn); }
+    .holding-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .holding-hdr-left {
+      display: flex; align-items: center; gap: 8px;
+    }
+    .holding-symbol { font-weight: 700; font-size: 16px; }
+    .holding-side {
+      font-size: 11px; padding: 2px 6px;
+      background: var(--bg-3); border-radius: 4px; color: var(--text-2);
+    }
+    .holding-pnl { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .holding-pnl.up { color: var(--up); }
+    .holding-pnl.down { color: var(--down); }
+    .holding-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-2); margin: 4px 0; }
+    .holding-row .v { color: var(--text); font-variant-numeric: tabular-nums; }
+    .sl-tp-bar {
+      margin: 8px 0 4px;
+      display: flex; align-items: center; gap: 8px;
+      font-size: 11px;
+    }
+    .sl-tp-bar .label { color: var(--text-3); min-width: 40px; }
+    .sl-tp-bar .progress { flex: 1; }
+    .sl-tp-bar .pct { color: var(--text-2); font-weight: 600; min-width: 40px; text-align: right; }
+    .sl-tp-bar.danger .pct { color: var(--down); }
+    .sl-tp-bar.warn .pct { color: var(--warn); }
+    .sl-tp-bar.safe .pct { color: var(--up); }
+
+    .ai-advice {
+      background: rgba(88,166,255,0.08);
+      border-left: 2px solid var(--info);
+      padding: 6px 10px;
+      margin-top: 8px;
+      border-radius: 0 4px 4px 0;
+      font-size: 12px;
+    }
+    .ai-advice .role { color: var(--info); font-weight: 600; margin-right: 4px; }
+    .ai-advice .conf { color: var(--text-3); font-size: 11px; }
+    .ai-advice.reduce { background: rgba(217,153,34,0.1); border-color: var(--warn); }
+    .ai-advice.reduce .role { color: var(--warn); }
+    .ai-advice.close { background: rgba(248,81,73,0.1); border-color: var(--down); }
+    .ai-advice.close .role { color: var(--down); }
+
+    .holding-actions {
+      display: flex; gap: 6px;
+      margin-top: 10px;
+    }
+    .action-btn {
+      flex: 1;
+      padding: 6px 8px;
+      background: var(--bg-3);
+      border-radius: 6px;
+      font-size: 11px;
+      text-align: center;
+      color: var(--text-2);
+      border: 1px solid var(--border);
+    }
+
+    /* ========= Opportunities 机会 ========= */
+    .opp-summary {
+      padding: 14px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .opp-stat {
+      background: var(--bg-card);
+      padding: 12px 8px;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .opp-stat-num { font-size: 22px; font-weight: 700; }
+    .opp-stat-label { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+
+    .signal-card {
+      background: var(--bg-card);
+      margin: 8px 14px;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+    .signal-card.resonance { border-color: rgba(188,140,255,0.4); background: linear-gradient(135deg, #1f1830, #1a1f29); }
+    .signal-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .signal-symbol { font-weight: 700; font-size: 15px; }
+    .signal-tag {
+      font-size: 10px; padding: 2px 6px;
+      border-radius: 4px; font-weight: 600;
+    }
+    .signal-tag.resonance { background: rgba(188,140,255,0.2); color: var(--purple); }
+    .signal-tag.high-conf { background: rgba(88,166,255,0.2); color: var(--info); }
+    .signal-meta { font-size: 12px; color: var(--text-2); margin: 4px 0; }
+    .signal-strategies { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+    .strategy-chip {
+      font-size: 10px; padding: 2px 6px;
+      background: var(--bg-3); border-radius: 8px; color: var(--text-2);
+    }
+
+    /* ========= Insights 复盘 ========= */
+    .health-card {
+      margin: 14px;
+      background: linear-gradient(135deg, #2a1a1a, #1a1f29);
+      padding: 16px;
+      border-radius: 10px;
+      border: 1px solid rgba(248,81,73,0.3);
+    }
+    .health-title { font-size: 12px; color: var(--text-2); margin-bottom: 6px; }
+    .health-metric { display: flex; justify-content: space-between; align-items: baseline; }
+    .health-num { font-size: 24px; font-weight: 700; }
+    .health-num.warn { color: var(--down); }
+    .health-warn-label { font-size: 11px; color: var(--down); font-weight: 600; }
+    .health-detail { font-size: 12px; color: var(--text-2); margin-top: 8px; }
+    .health-stat-row {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 8px; margin-top: 12px;
+    }
+    .health-stat { text-align: center; padding: 8px; background: var(--bg-card-2); border-radius: 6px; }
+    .health-stat-num { font-size: 16px; font-weight: 700; }
+    .health-stat-label { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+    .review-card {
+      background: var(--bg-card);
+      margin: 8px 14px;
+      padding: 12px;
+      border-radius: 10px;
+    }
+    .review-hdr { display: flex; justify-content: space-between; align-items: center; }
+    .grade-pill {
+      padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700;
+    }
+    .grade-pill.A { background: rgba(63,185,80,0.2); color: var(--up); }
+    .grade-pill.B { background: rgba(88,166,255,0.2); color: var(--info); }
+    .grade-pill.C { background: rgba(217,153,34,0.2); color: var(--warn); }
+    .grade-pill.D { background: rgba(248,81,73,0.2); color: var(--down); }
+    .review-pnl { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .review-meta { font-size: 12px; color: var(--text-2); margin-top: 4px; }
+    .review-lesson {
+      margin-top: 8px;
+      background: var(--bg-card-2);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      border-left: 2px solid var(--warn);
+    }
+
+    /* ========= 时间线事件 (24h 关键事件) ========= */
+    .event-row {
+      padding: 8px 14px;
+      display: flex; gap: 10px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .event-time { color: var(--text-3); min-width: 60px; }
+    .event-icon { width: 16px; }
+    .event-text { flex: 1; color: var(--text-2); }
+    .event-text strong { color: var(--text); }
+
+    /* ========= 底部 4 Tab ========= */
+    .tabbar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: var(--tab-bg);
+      backdrop-filter: blur(10px);
+      display: flex;
+      border-top: 1px solid var(--border);
+      z-index: 100;
+    }
+    .tab {
+      flex: 1;
+      padding: 10px 0 calc(10px + env(safe-area-inset-bottom));
+      text-align: center;
+      cursor: pointer;
+      color: var(--text-3);
+      font-size: 11px;
+      transition: color 0.15s;
+    }
+    .tab.active { color: var(--accent); }
+    .tab-icon { font-size: 18px; display: block; margin-bottom: 2px; }
+
+    /* ========= 浮动按钮 (快速分析) ========= */
+    .fab {
+      position: fixed; right: 16px; bottom: 80px;
+      width: 48px; height: 48px;
+      background: var(--accent);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-size: 20px;
+      box-shadow: 0 4px 16px rgba(88,166,255,0.4);
+      cursor: pointer;
+      z-index: 99;
+    }
+
+    /* 页面切换 */
+    .page { display: none; }
+    .page.active { display: block; }
+  </style>
+</head>
+<body>
+
+<!-- ============ 全局状态条 (固顶) ============ -->
+<div class="status-bar">
+  <span class="sb-item"><span class="sb-dot"></span>服务运行</span>
+  <span class="sb-item">⚡ 自动交易开</span>
+  <span class="sb-item warn">💰 LLM $14.32 / $25</span>
+  <span class="sb-spacer"></span>
+  <span class="sb-icon">🔄</span>
+  <span class="sb-icon">⚙</span>
+</div>
+
+<!-- ============ Tab 1: Now 现在 ============ -->
+<div class="page active" data-tab="now">
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-label">总账户权益 (含合约)</div>
+    <div class="hero-equity">$24,386</div>
+    <div class="hero-pnl">
+      <span class="pct up">+$486 +2.04%</span>
+      <span class="hero-vs">↑ 今日 vs 昨日</span>
+    </div>
+  </div>
+
+  <!-- 三层 Inbox -->
+  <div class="inbox-section">
+
+    <!-- 紧急 -->
+    <div class="inbox-block urgent">
+      <div class="inbox-header">
+        <span class="inbox-title">紧急 — 必须立刻处理</span>
+        <span class="inbox-count">2</span>
+      </div>
+      <div class="inbox-row">
+        <div class="left">
+          <div class="symbol">NEE.us 距 SL 0.3%</div>
+          <div class="desc">浮亏 -7.7% · 100 股 · 距 SL $0.13</div>
+          <div class="progress"><div class="progress-fill danger" style="width:96%;"></div></div>
+        </div>
+        <div class="arrow">›</div>
+      </div>
+      <div class="inbox-row">
+        <div class="left">
+          <div class="symbol">⚡ ETH-USDT 距强平 4.2%</div>
+          <div class="desc">浮亏 -23% · 8x 杠杆 · 距强平 $148</div>
+          <div class="progress"><div class="progress-fill danger" style="width:96%;"></div></div>
+        </div>
+        <div class="arrow">›</div>
+      </div>
+    </div>
+
+    <!-- 关注 -->
+    <div class="inbox-block attention">
+      <div class="inbox-header">
+        <span class="inbox-title">关注 — 1 小时内看一眼</span>
+        <span class="inbox-count">4</span>
+      </div>
+      <div class="inbox-row">
+        <div class="left">
+          <div class="symbol">SMCI.us 距 SL 1.8%</div>
+          <div class="desc">浮亏 -3.2% · AI: 减仓 conf 75</div>
+        </div>
+        <div class="arrow">›</div>
+      </div>
+      <div class="inbox-row">
+        <div class="left">
+          <div class="symbol">AAPL.us AI 建议: 减仓</div>
+          <div class="desc">浮盈 +0.8% · 30min 内 2 条 reduce 共识</div>
+        </div>
+        <div class="arrow">›</div>
+      </div>
+      <div class="inbox-row">
+        <div class="left">
+          <div class="symbol">000002 待重验信号</div>
+          <div class="desc">A 股开市 30min 后 force verify</div>
+        </div>
+        <div class="arrow">›</div>
+      </div>
+      <div class="inbox-row">
+        <div class="left">
+          <div class="symbol">🌟 COIN.us 共振 L2 信号</div>
+          <div class="desc">3 策略一致 · AI conf 88 · 等开仓</div>
+        </div>
+        <div class="arrow">›</div>
+      </div>
+    </div>
+
+    <!-- 提醒 -->
+    <div class="inbox-block info">
+      <div class="inbox-header">
+        <span class="inbox-title">提醒 — 有空再看</span>
+        <span class="inbox-count">8</span>
+      </div>
+      <div class="inbox-row">
+        <div class="left">
+          <div class="symbol">5 条新教训 · 2 笔复盘 · 1 个新风控规则</div>
+          <div class="desc">最近 24h LLM 学习产出</div>
+        </div>
+        <div class="arrow">›</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4 池 Grid -->
+  <div class="section-title"><span>📊 资金池</span><span style="color:var(--text-3);font-weight:normal;">点击进入</span></div>
+  <div class="pools-grid">
+    <div class="pool-card">
+      <div class="pool-name">🇺🇸🇭🇰 美股+港股 (USD)</div>
+      <div class="pool-equity">$7,800</div>
+      <div class="pool-pnl up">+$280 (+3.6%)</div>
+      <div class="pool-meta">14 仓 · 现金 $3,440</div>
+    </div>
+    <div class="pool-card">
+      <div class="pool-name">🇨🇳 A 股 (CNY)</div>
+      <div class="pool-equity">¥98,500</div>
+      <div class="pool-pnl up">+¥1,500 (+1.5%)</div>
+      <div class="pool-meta">3 仓 · 现金 ¥98,500</div>
+    </div>
+    <div class="pool-card">
+      <div class="pool-name">🪙 加密现货 (USD)</div>
+      <div class="pool-equity">$2,100</div>
+      <div class="pool-pnl up">+$45 (+2.2%)</div>
+      <div class="pool-meta">0 仓 · 现金 $2,100</div>
+    </div>
+    <div class="pool-card crypto-swap">
+      <div class="pool-name">⚡ 加密合约 (USD)</div>
+      <div class="pool-equity">$9,086</div>
+      <div class="pool-pnl down">-$855 (-8.6%)</div>
+      <div class="pool-meta">2 仓 · 8x 杠杆 · 距强平 12%</div>
+    </div>
+  </div>
+
+  <!-- 24h 关键事件 -->
+  <div class="section-title">⏱️ 24h 关键事件</div>
+  <div class="event-row">
+    <span class="event-time">2分钟前</span>
+    <span class="event-icon">🟢</span>
+    <span class="event-text"><strong>SOL-USDT</strong> 限价单已成交 @ $88.31 · +41 张</span>
+  </div>
+  <div class="event-row">
+    <span class="event-time">15分钟前</span>
+    <span class="event-icon">🤖</span>
+    <span class="event-text"><strong>AAPL.us</strong> AI 建议: 减仓 conf 75</span>
+  </div>
+  <div class="event-row">
+    <span class="event-time">42分钟前</span>
+    <span class="event-icon">⊘</span>
+    <span class="event-text"><strong>MSTR.us</strong> 滑点拒单 信号 vs 实时价 2.1%</span>
+  </div>
+  <div class="event-row">
+    <span class="event-time">1小时前</span>
+    <span class="event-icon">📌</span>
+    <span class="event-text">新教训: <strong>"加仓后 SL 未及时重算"</strong> 可采纳为风控规则</span>
+  </div>
+  <div class="event-row">
+    <span class="event-time">3小时前</span>
+    <span class="event-icon">🔴</span>
+    <span class="event-text"><strong>NEE.us</strong> 触发 SL 平仓 · -$87 (-3.2%)</span>
+  </div>
+</div>
+
+<!-- ============ Tab 2: Holdings 持仓 ============ -->
+<div class="page" data-tab="holdings">
+  <div class="page-title">
+    <div class="page-title-row">
+      <div>
+        <div class="page-title-h1">💼 持仓 19 笔</div>
+        <div class="page-title-sub">总浮盈 -$245 · 距 SL <2% 共 2 笔 ⚠️</div>
+      </div>
+      <div style="font-size:11px;color:var(--text-2);">按 距SL 排序 ↑</div>
+    </div>
+  </div>
+
+  <div class="chip-row">
+    <span class="chip active">所有 19</span>
+    <span class="chip">🇺🇸 美股 14</span>
+    <span class="chip">🇭🇰 港股 0</span>
+    <span class="chip">🇨🇳 A 股 3</span>
+    <span class="chip">⚡ 合约 2</span>
+    <span class="chip">🚨 风险榜</span>
+  </div>
+
+  <!-- 持仓卡 1: 高风险 -->
+  <div class="holding-card danger">
+    <div class="holding-hdr">
+      <div class="holding-hdr-left">
+        <span class="holding-symbol">NEE.us</span>
+        <span class="holding-side">多</span>
+      </div>
+      <div class="holding-pnl down">-7.7%</div>
+    </div>
+    <div class="holding-row">
+      <span>100 股 @ $48.50</span>
+      <span class="v">→ $44.76 · -$374</span>
+    </div>
+    <div class="sl-tp-bar danger">
+      <span class="label">距 SL</span>
+      <div class="progress"><div class="progress-fill danger" style="width:97%;"></div></div>
+      <span class="pct">0.3%</span>
+    </div>
+    <div class="sl-tp-bar safe">
+      <span class="label">距 TP</span>
+      <div class="progress"><div class="progress-fill safe" style="width:15%;"></div></div>
+      <span class="pct">52%</span>
+    </div>
+    <div class="ai-advice reduce">
+      <span class="role">🤖 AI 建议</span>
+      减仓 50% — 距 SL 太近, 浮亏已 -7.7% 应止损
+      <span class="conf">conf 75 · 5min 前</span>
+    </div>
+    <div class="holding-actions">
+      <span class="action-btn">📊 时间线</span>
+      <span class="action-btn">📰 新闻</span>
+      <span class="action-btn">📈 历史</span>
+      <span class="action-btn" style="color:var(--down);background:rgba(248,81,73,0.1);">🛑 平仓</span>
+    </div>
+  </div>
+
+  <!-- 持仓卡 2: 中风险 -->
+  <div class="holding-card warn">
+    <div class="holding-hdr">
+      <div class="holding-hdr-left">
+        <span class="holding-symbol">SMCI.us</span>
+        <span class="holding-side">多</span>
+      </div>
+      <div class="holding-pnl down">-3.2%</div>
+    </div>
+    <div class="holding-row">
+      <span>50 股 @ $32.10</span>
+      <span class="v">→ $31.06 · -$52</span>
+    </div>
+    <div class="sl-tp-bar warn">
+      <span class="label">距 SL</span>
+      <div class="progress"><div class="progress-fill warn" style="width:78%;"></div></div>
+      <span class="pct">1.8%</span>
+    </div>
+    <div class="ai-advice">
+      <span class="role">🤖 AI 建议</span>
+      持有 — 短期回调, 大盘趋势仍多
+      <span class="conf">conf 70</span>
+    </div>
+  </div>
+
+  <!-- 持仓卡 3: 健康 -->
+  <div class="holding-card">
+    <div class="holding-hdr">
+      <div class="holding-hdr-left">
+        <span class="holding-symbol">COIN.us</span>
+        <span class="holding-side">多</span>
+        <span class="signal-tag high-conf" style="font-size:9px;">强买</span>
+      </div>
+      <div class="holding-pnl up">+12.4%</div>
+    </div>
+    <div class="holding-row">
+      <span>30 股 @ $185.20</span>
+      <span class="v">→ $208.18 · +$689</span>
+    </div>
+    <div class="sl-tp-bar safe">
+      <span class="label">距 SL</span>
+      <div class="progress"><div class="progress-fill safe" style="width:22%;"></div></div>
+      <span class="pct">8.5%</span>
+    </div>
+    <div class="sl-tp-bar safe">
+      <span class="label">距 TP</span>
+      <div class="progress"><div class="progress-fill safe" style="width:65%;"></div></div>
+      <span class="pct">12%</span>
+    </div>
+    <div class="ai-advice">
+      <span class="role">🤖 AI 建议</span>
+      持有, 已激活跟踪止损
+      <span class="conf">conf 82 · 已锁保本</span>
+    </div>
+  </div>
+
+  <!-- 合约持仓 -->
+  <div class="holding-card danger" style="background: linear-gradient(135deg, #1f1530, #1a1f29); border-left-color: var(--purple);">
+    <div class="holding-hdr">
+      <div class="holding-hdr-left">
+        <span class="holding-symbol">⚡ ETH-USDT</span>
+        <span class="holding-side">多 8x</span>
+      </div>
+      <div class="holding-pnl down">-23%</div>
+    </div>
+    <div class="holding-row">
+      <span>0.85 个 @ $3,420</span>
+      <span class="v">→ $3,260 · -$136</span>
+    </div>
+    <div class="sl-tp-bar danger">
+      <span class="label">距强平</span>
+      <div class="progress"><div class="progress-fill danger" style="width:96%;"></div></div>
+      <span class="pct">4.2%</span>
+    </div>
+    <div class="ai-advice close">
+      <span class="role">🤖 AI 建议</span>
+      减仓 50% — 距强平已 <5%, 必须降杠杆敞口
+      <span class="conf">conf 90 · 11min 前</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Tab 3: Opportunities 机会 ============ -->
+<div class="page" data-tab="opp">
+  <div class="page-title">
+    <div class="page-title-h1">🎯 机会</div>
+    <div class="page-title-sub">最近 24h 信号 + 候选池 + 拒单</div>
+  </div>
+
+  <!-- 顶部 stat -->
+  <div class="opp-summary">
+    <div class="opp-stat">
+      <div class="opp-stat-num" style="color:var(--purple);">3</div>
+      <div class="opp-stat-label">🌟 共振信号</div>
+    </div>
+    <div class="opp-stat">
+      <div class="opp-stat-num" style="color:var(--info);">8</div>
+      <div class="opp-stat-label">🟢 高 conf</div>
+    </div>
+    <div class="opp-stat">
+      <div class="opp-stat-num" style="color:var(--warn);">12</div>
+      <div class="opp-stat-label">⏳ 待审</div>
+    </div>
+  </div>
+
+  <div class="chip-row">
+    <span class="chip active">开仓机会 23</span>
+    <span class="chip">候选池 566</span>
+    <span class="chip">📰 新闻</span>
+    <span class="chip">📚 策略库</span>
+    <span class="chip">⊘ 拒单 45</span>
+  </div>
+
+  <div class="section-title"><span>🌟 共振信号 — 多策略一致</span></div>
+
+  <div class="signal-card resonance">
+    <div class="signal-hdr">
+      <div>
+        <span class="signal-symbol">COIN.us</span>
+        <span class="signal-tag resonance" style="margin-left:6px;">L2 共振</span>
+      </div>
+      <span class="holding-pnl up" style="font-size:13px;">conf 88</span>
+    </div>
+    <div class="signal-meta">距 20 日高 8.2% · 当日已涨 1.2% · ATR 4.1</div>
+    <div class="signal-strategies">
+      <span class="strategy-chip">ADX 趋势跟随</span>
+      <span class="strategy-chip">布林挤压突破</span>
+      <span class="strategy-chip">MACD 金叉</span>
+    </div>
+    <div class="signal-meta" style="margin-top:8px;">
+      🤖 AI: 突破型信号, 多策略一致, 建议入场区 $208-210, SL $200
+    </div>
+    <div class="holding-actions">
+      <span class="action-btn" style="background:rgba(63,185,80,0.15);color:var(--up);">🟢 立即开仓</span>
+      <span class="action-btn">📋 加自选</span>
+      <span class="action-btn">⊘ 忽略</span>
+    </div>
+  </div>
+
+  <div class="signal-card">
+    <div class="signal-hdr">
+      <div>
+        <span class="signal-symbol">PLTR.us</span>
+        <span class="signal-tag high-conf" style="margin-left:6px;">高 conf</span>
+      </div>
+      <span class="holding-pnl up" style="font-size:13px;">conf 82</span>
+    </div>
+    <div class="signal-meta">缠论二买 · 1H 周期 · 入场区 $26.80-27.20</div>
+    <div class="signal-strategies">
+      <span class="strategy-chip">缠论笔级二买</span>
+    </div>
+  </div>
+
+  <div class="section-title">⊘ 24h 拒单 (近 5)</div>
+
+  <div class="signal-card" style="opacity:0.7;">
+    <div class="signal-hdr">
+      <div>
+        <span class="signal-symbol">MSTR.us</span>
+        <span class="signal-tag" style="background:var(--bg-3);color:var(--text-2);margin-left:6px;">滑点拒</span>
+      </div>
+      <span style="font-size:11px;color:var(--text-3);">42min 前</span>
+    </div>
+    <div class="signal-meta">信号 $355 vs 实时 $362 滑点 1.97% > 2%</div>
+  </div>
+
+  <div class="signal-card" style="opacity:0.7;">
+    <div class="signal-hdr">
+      <div>
+        <span class="signal-symbol">002290</span>
+        <span class="signal-tag" style="background:var(--bg-3);color:var(--text-2);margin-left:6px;">涨停拒</span>
+      </div>
+      <span style="font-size:11px;color:var(--text-3);">3h 前</span>
+    </div>
+    <div class="signal-meta">A 股临近涨停 (+10%) · 高位接盘无意义</div>
+  </div>
+</div>
+
+<!-- ============ Tab 4: Insights 复盘 ============ -->
+<div class="page" data-tab="insights">
+  <div class="page-title">
+    <div class="page-title-h1">🧠 复盘</div>
+    <div class="page-title-sub">30 天表现 + 教训库 + 策略评分</div>
+  </div>
+
+  <!-- 健康度卡 -->
+  <div class="health-card">
+    <div class="health-title">⚠️ 30 天系统健康度</div>
+    <div class="health-metric">
+      <div class="health-num warn">-$469</div>
+      <div class="health-warn-label">总 PnL · 赢小亏大</div>
+    </div>
+    <div class="health-detail">
+      胜率 68% 但平均亏 -0.98%/笔 — 赢均 +1.2% / 亏均 -4.5% = 0.27 (健康指标 >1)
+    </div>
+    <div class="health-stat-row">
+      <div class="health-stat">
+        <div class="health-stat-num">68%</div>
+        <div class="health-stat-label">胜率</div>
+      </div>
+      <div class="health-stat">
+        <div class="health-stat-num" style="color:var(--down);">0.27</div>
+        <div class="health-stat-label">盈亏比</div>
+      </div>
+      <div class="health-stat">
+        <div class="health-stat-num">42</div>
+        <div class="health-stat-label">闭环数</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="chip-row">
+    <span class="chip active">最近复盘 28</span>
+    <span class="chip">📌 教训 12</span>
+    <span class="chip">🎯 策略表现</span>
+    <span class="chip">📊 周报</span>
+    <span class="chip">🛡️ 风控规则</span>
+  </div>
+
+  <div class="review-card">
+    <div class="review-hdr">
+      <div>
+        <span style="font-weight:600;">AAPL.us</span>
+        <span class="grade-pill B" style="margin-left:6px;">B</span>
+      </div>
+      <span class="review-pnl down">-$23 (-2.3%)</span>
+    </div>
+    <div class="review-meta">持 4h · 触发 SL · 策略: triple_screen</div>
+    <div class="review-lesson">
+      📌 教训: SL 抗噪不足 — 短线波动 1.8% 即触发, 对应"赢小亏大"模式
+    </div>
+  </div>
+
+  <div class="review-card">
+    <div class="review-hdr">
+      <div>
+        <span style="font-weight:600;">SOL-USDT ⚡</span>
+        <span class="grade-pill A" style="margin-left:6px;">A</span>
+      </div>
+      <span class="review-pnl up">+$76 (+8.5%)</span>
+    </div>
+    <div class="review-meta">持 2h · 触发 T1 · 策略: 共振 L1</div>
+    <div class="review-lesson" style="border-color:var(--up);">
+      ✅ 做对: 限价等回踩成功, T1 减 60% 锁利
+    </div>
+  </div>
+
+  <div class="review-card">
+    <div class="review-hdr">
+      <div>
+        <span style="font-weight:600;">NEE.us</span>
+        <span class="grade-pill D" style="margin-left:6px;">D</span>
+      </div>
+      <span class="review-pnl down">-$87 (-3.2%)</span>
+    </div>
+    <div class="review-meta">持 18h · 触发 SL · 闭市段 SL 离 1.5% 被打中</div>
+    <div class="review-lesson">
+      📌 教训: 闭市后仍持仓 → 隔夜跳空 → 开盘瞬间打 SL (高频低质教训)
+    </div>
+  </div>
+</div>
+
+<!-- 浮动按钮: 快速分析 -->
+<div class="fab" title="快速按需分析">⚡</div>
+
+<!-- 底部 4 Tab -->
+<nav class="tabbar">
+  <div class="tab active" data-go="now">
+    <span class="tab-icon">🏠</span>
+    <span>现在</span>
+  </div>
+  <div class="tab" data-go="holdings">
+    <span class="tab-icon">💼</span>
+    <span>持仓</span>
+  </div>
+  <div class="tab" data-go="opp">
+    <span class="tab-icon">🎯</span>
+    <span>机会</span>
+  </div>
+  <div class="tab" data-go="insights">
+    <span class="tab-icon">🧠</span>
+    <span>复盘</span>
+  </div>
+</nav>
+
+<script>
+  // 简单 tab 切换 (mockup 用)
+  document.querySelectorAll('.tab').forEach(t => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      const target = t.dataset.go;
+      document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.dataset.tab === target));
+      window.scrollTo(0, 0);
+    });
+  });
+</script>
+
+</body>
+</html>
