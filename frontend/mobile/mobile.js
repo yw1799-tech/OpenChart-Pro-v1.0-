@@ -18,9 +18,40 @@
 //   /api/auto-trade/summary-now  立即推持仓简报
 //   /api/settings/telegram-test  Telegram 测试
 
+// v12.27.5 全局 runtime error 拦截 (放 IIFE 外, 优先生效)
+window.addEventListener('error', function(e) {
+  const vs = document.getElementById('version-status');
+  if (vs) {
+    vs.textContent = '⚠️ ' + ((e.message || 'JS Err').slice(0, 30));
+    vs.style.color = '#f85149';
+    vs.parentElement.title = (e.filename || '') + ':' + (e.lineno || '') + '\n' + (e.message || '');
+    // 把错误堆栈也显示在屏幕中央 (持续 30s)
+    const errBox = document.createElement('div');
+    errBox.style.cssText = 'position:fixed;top:80px;left:14px;right:14px;background:#2a1010;border:2px solid #f85149;border-radius:8px;padding:12px;color:#fff;font-size:11px;z-index:9999;word-break:break-all;';
+    errBox.innerHTML = '<div style="color:#f85149;font-weight:700;margin-bottom:6px;">⚠️ JS RUNTIME ERROR</div>' +
+      '<div><b>消息:</b> ' + (e.message || '?') + '</div>' +
+      '<div><b>文件:</b> ' + (e.filename || '?') + ':' + (e.lineno || '?') + ':' + (e.colno || '?') + '</div>' +
+      '<div style="margin-top:6px;color:#9ba8b8;"><b>堆栈:</b> ' + ((e.error && e.error.stack) ? String(e.error.stack).slice(0, 400) : '无') + '</div>' +
+      '<button onclick="this.parentElement.remove()" style="background:#f85149;color:#fff;border:none;padding:4px 10px;border-radius:4px;margin-top:6px;font-size:11px;cursor:pointer;">关闭</button>';
+    document.body.appendChild(errBox);
+    setTimeout(() => errBox.remove(), 30000);
+  }
+});
+window.addEventListener('unhandledrejection', function(e) {
+  const vs = document.getElementById('version-status');
+  if (vs) {
+    vs.textContent = '⚠️ Promise: ' + ((e.reason && e.reason.message) || 'rej').slice(0, 25);
+    vs.style.color = '#f85149';
+  }
+});
+
 (function() {
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => document.querySelectorAll(s);
+
+  // v12.27.5: 立即标记 IIFE 开始执行
+  const _vs0 = document.getElementById('version-status');
+  if (_vs0) { _vs0.textContent = '🟡 IIFE 启动'; _vs0.style.color = '#d29922'; }
 
   // v12.21.0 PR1: 重新设计 5 tab 结构 (按业务流: 总览/行情/交易/学习/设置)
   const PAGE_TITLES = {
