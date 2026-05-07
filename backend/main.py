@@ -764,19 +764,58 @@ async def _signal_verify_backfill_loop():
 
 async def _position_advice_loop():
     """
-    持仓 AI 建议主动巡检：每 2 小时为每个持仓出一次建议（即使无新闻）。
-    - 新开仓会在 _execute_open / add_position 里立即触发一次，不必等本轮
-    - 本循环只为"持仓存在但尚无建议"或"上次建议已过期"的场景兜底
-    用户也可在前端"🤖 建议"按钮主动触发立即生成。
+    持仓 AI 建议主动巡检:每 2 小时为每个持仓出一次建议(即使无新闻)。
+
+    v12.26.1 P1-C 新增:开市瞬间全量重评估
+      - 跟踪每市场 open/closed 状态切换
+      - 检测到 closed → open 时, 立刻 force=True 刷一遍该市场所有持仓的 advice
+      - 用最新数据(开市后第一根 K 线 + 最新新闻)重新决策, 替代闭市生成的过期建议
     """
     await asyncio.sleep(60)  # 启动 1 分钟后第一次巡检
+    # v12.26.1 P1-C: 跟踪市场开闭市状态
+    market_open_state: Dict[str, bool] = {"us": None, "hk": None, "cn": None}
     while True:
         try:
             from backend.news.scheduler import _ai_analyzer
+            from backend.signals.monitor import is_market_executable as _ime
             if _ai_analyzer is None:
                 await asyncio.sleep(600)
                 continue
-            # 优先处理"从未有过建议"的持仓，然后才是旧建议刷新
+
+            # ─ v12.26.1 P1-C: 检测刚开市的市场, 立刻 force 刷一遍该市场全部持仓 advice ─
+            just_opened: List[str] = []
+            for mkt in ("us", "hk", "cn"):
+                now_open = _ime(mkt)
+                prev = market_open_state[mkt]
+                if prev is None:
+                    market_open_state[mkt] = now_open  # 启动首次, 仅记录
+                elif now_open and not prev:
+                    # closed → open 切换 → 刚开市
+                    just_opened.append(mkt)
+                    market_open_state[mkt] = True
+                    logger.info(f"[advice-onopen] {mkt} 刚开市, 触发全量重评估 (force=True)")
+                elif (not now_open) and prev:
+                    market_open_state[mkt] = False
+
+            if just_opened:
+                # 拉刚开市市场的所有持仓
+                async with db.acquire() as conn:
+                    placeholders = ",".join("?" * len(just_opened))
+                    cur = await conn.execute(
+                        f"SELECT id FROM positions WHERE quantity > 0 AND market IN ({placeholders})",
+                        just_opened,
+                    )
+                    onopen_pids = [r["id"] for r in await cur.fetchall()]
+                if onopen_pids:
+                    logger.info(f"[advice-onopen] {','.join(just_opened)} 共 {len(onopen_pids)} 持仓 force 刷新 advice")
+                    for pid in onopen_pids:
+                        try:
+                            await _ai_analyzer.generate_advice_for_position(pid, force=True)
+                            await asyncio.sleep(1)
+                        except Exception as e:
+                            logger.debug(f"[advice-onopen] {pid} 异常: {e}")
+
+            # ─ 常规巡检 (开市闭市都跑, 但闭市时 advice driver 不会真减/平 — 见 P0-B) ─
             async with db.acquire() as conn:
                 cur = await conn.execute("""
                     SELECT p.id
@@ -798,14 +837,15 @@ async def _position_advice_loop():
                     res = await _ai_analyzer.generate_advice_for_position(pid, force=False)
                     if res: ok += 1
                     else: fail += 1
-                    await asyncio.sleep(1)  # 1s 限速；LLM 自身有 semaphore
+                    await asyncio.sleep(1)  # 1s 限速;LLM 自身有 semaphore
                 except Exception as e:
                     logger.debug(f"[advice-loop] {pid} 异常: {e}")
                     fail += 1
             logger.info(f"[advice-loop] 持仓建议巡检完成 ok={ok} fail={fail}")
         except Exception as e:
             logger.warning(f"持仓建议循环异常: {e}")
-        await asyncio.sleep(2 * 3600)  # 2 小时一轮
+        # v12.26.1: 间隔从 2h 缩到 30 min, 让 P1-C 的"刚开市"检测更敏锐 (否则可能慢 2h)
+        await asyncio.sleep(30 * 60)
 
 
 async def _trade_review_loop():
@@ -1262,16 +1302,17 @@ async def _pending_orders_retry_loop():
               系统在做大量无效重验, 信号已彻底过期但仍在反复尝试
     """
     # 信号有效窗口 (按 K 线周期)
-    # v12.24.2 修: 1H 12h → 18h
-    #   US 闭市窗口实际是 04:00-21:30 CST = 17.5h, 12h 不够
-    #   信号在 03:00 CST (US 收盘前 1h) 生成 → 次日 21:30 重验 age=18.5h
-    #   → 12h 会被误 expire, 应给到 18h 才能覆盖隔夜
+    # v12.24.2: 1H 12h → 18h (覆盖 US 隔夜 17.5h)
+    # v12.26.2 P2-D: 18h → 6h (设计哲学转变)
+    #   旧: 让闭市生成的信号"复活"到开市后执行 — 但 8-15h 跨度后世界已变, 复活不合理
+    #   新: 信号是瞬时决策, 6h 内有效, 闭市生成的信号绝大部分会过期作废
+    #   配合 P1-C 开市瞬间全量重评估: 开市后用最新数据**重新生成**信号, 不复活老信号
     INTERVAL_VALIDITY_SEC = {
-        "15m":  4 * 3600,    # 15m 信号 4h 后失效 (16 根 15m bar, 不跨夜)
-        "1H":  18 * 3600,    # 1H 信号 18h 后失效 (覆盖 US 隔夜 17.5h + 0.5h 缓冲)
-        "1D":  48 * 3600,    # 1D 信号 48h 后失效 (覆盖周末)
+        "15m": 2 * 3600,     # 15m 信号 2h 后失效 (8 根 15m bar)
+        "1H":  6 * 3600,     # 1H 信号 6h 后失效 (6 根 1H bar 内决策)
+        "1D":  12 * 3600,    # 1D 信号 12h 后失效 (半天)
     }
-    DEFAULT_VALIDITY_SEC = 18 * 3600
+    DEFAULT_VALIDITY_SEC = 6 * 3600
 
     await asyncio.sleep(120)
     while True:

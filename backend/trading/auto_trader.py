@@ -2204,17 +2204,46 @@ class AutoTrader:
             return
         if not hasattr(self, "_advice_last_executed"):
             self._advice_last_executed: Dict[str, int] = {}
+        # v12.26.0 P0-B: 跟踪市场开市时刻, advice driver 只用开市后生成的 advice
+        if not hasattr(self, "_market_session_open_at"):
+            self._market_session_open_at: Dict[str, int] = {}
 
         from backend.signals.monitor import is_market_executable
+        # 检测各市场状态切换 — 从 closed → open 时记录开市时刻
+        now_sec = int(time.time())
+        for mkt_chk in ('us', 'hk', 'cn', 'crypto'):
+            is_open = (mkt_chk == 'crypto') or is_market_executable(mkt_chk)
+            last_open_ts = self._market_session_open_at.get(mkt_chk, 0)
+            if is_open and last_open_ts == 0:
+                # 刚开市 (或服务启动时已开市) — 记当前时刻
+                self._market_session_open_at[mkt_chk] = now_sec
+                logger.info(f"[market-session] {mkt_chk} 进入开市状态 @ {now_sec}, advice driver 只接受此时刻后生成的 advice")
+            elif not is_open and last_open_ts > 0:
+                # 刚闭市 — 清零, 闭市期间生成的 advice 不会被认可
+                self._market_session_open_at[mkt_chk] = 0
+
         for r in rows:
             pid = r["position_id"]
             advice_id = r["id"]
+            mkt = r["market"]
             # 已执行过这条 advice → skip
             if self._advice_last_executed.get(pid) == advice_id:
                 continue
-            if not is_market_executable(r["market"]):
+            if not is_market_executable(mkt):
                 continue
-            # 同股冷却也作用于 advice 执行（避免反复减）
+            # v12.26.0 P0-B: advice 必须生成于"当前 open session"内, 闭市生成的不复活
+            # 加密 24/7, _market_session_open_at[crypto] 一直有值
+            session_open_ts = self._market_session_open_at.get(mkt, 0)
+            adv_ts_sec = (r["advised_at"] or 0) // 1000
+            if session_open_ts > 0 and adv_ts_sec < session_open_ts:
+                logger.info(
+                    f"[advice-skip-stale] {r['symbol']}({mkt}) advice 生成于闭市段 "
+                    f"({adv_ts_sec} < session_open_ts={session_open_ts}), 跳过避免老信号复活"
+                )
+                # 标记已看过, 防止 loop 反复 log
+                self._advice_last_executed[pid] = advice_id
+                continue
+            # 同股冷却也作用于 advice 执行(避免反复减)
             if not await self._check_cooldown(r["symbol"], r["market"]):
                 continue
             pos_dict = {
@@ -2262,6 +2291,12 @@ class AutoTrader:
         """
         单个持仓的 SL/TP/分批/跟踪检查。lock 防与其他动作冲突。
         触发顺序：SL（最高优先）→ TP3 全平 → T2 → T1 → trailing。
+
+        v12.26.0 P0-A 设计变更: 信号是瞬时决策, 不跨周期复活
+          - 闭市时段: 仅更新 peak_price/peak_pnl 监控状态, 不触发动作
+          - 开市时段: 正常完整链路 (SL/TP/break-even/trailing/T1/T2)
+          - 理由: 闭市生成的减仓/平仓信号无法立即执行, 等开市时世界已变;
+                 与其用 8-15h 前的判断"复活"老信号, 不如开市后基于最新数据重新评估
         """
         async with self._lock:
             # 重新拉一遍 position 防止已被其他 handler 改动
@@ -2291,6 +2326,28 @@ class AutoTrader:
                 pnl_pct = (price - avg) / avg * 100.0
             else:
                 pnl_pct = (avg - price) / avg * 100.0
+
+            # v12.26.0 P0-A: 闭市时段冻结所有"触发动作", 仅更新观察状态
+            # 加密 24/7 不冻结; 美股/港股/A股 闭市仅观察
+            from backend.signals.monitor import is_market_executable as _ime
+            in_session = (market == "crypto") or _ime(market)
+            if not in_session:
+                # 仅更新 peak_price / peak_pnl_pct, 不触发任何 SL/TP/break-even/trailing 动作
+                try:
+                    st = await self._get_or_init_position_state(p["id"])
+                    cur_peak = float(st.get("peak_price") or price)
+                    new_peak = cur_peak
+                    if side == "long" and price > cur_peak: new_peak = price
+                    if side == "short" and price < cur_peak: new_peak = price
+                    new_peak_pnl = max(float(st.get("peak_pnl_pct") or 0), pnl_pct)
+                    updates = {"last_check_at": int(time.time())}
+                    if new_peak != cur_peak: updates["peak_price"] = new_peak
+                    if new_peak_pnl != float(st.get("peak_pnl_pct") or 0): updates["peak_pnl_pct"] = new_peak_pnl
+                    if updates:
+                        await self._save_position_state(p["id"], **updates)
+                except Exception as e:
+                    logger.debug(f"[closed-mkt-observe] {symbol}({market}) state 更新失败: {e}")
+                return  # 闭市直接返回, 不进入 SL/TP/break-even/trailing 触发逻辑
 
             # ─ 状态机：peak / 标记（必须在默认兜底前初始化，grace 检查依赖 state.created_at）
             st = await self._get_or_init_position_state(p["id"], init_price=price)

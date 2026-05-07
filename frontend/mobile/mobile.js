@@ -1273,25 +1273,40 @@
       const lifeEvents = lifecycle.items || [];
       const adviceHistory = allAdvices.items || allAdvices || [];
       const ccy = p.cost_currency || 'USD';
-      // 时间线 HTML 构造
-      const timelineHTML = lifeEvents.length ? lifeEvents.map(ev => {
+      // v12.26.3 P2-E: 时间线分组显示 — 真发生 vs 仅观察
+      // 已执行 (executed) — 绿色边, 真减仓/平仓
+      // 闭市拒单 (rejected + 含"连续竞价") — 灰色边, 仅观察 (闭市生成被拦)
+      // 其他拒单 (rejected + 其他原因) — 黄色边, 真拒单
+      const execEvents = lifeEvents.filter(ev => ev.status === 'executed');
+      const closedMktEvents = lifeEvents.filter(ev =>
+        ev.status === 'rejected' && /连续竞价|pending|减仓延后/.test(ev.rejected_reason || '')
+      );
+      const otherRejectEvents = lifeEvents.filter(ev =>
+        ev.status === 'rejected' && !/连续竞价|pending|减仓延后/.test(ev.rejected_reason || '')
+      );
+      function _renderEv(ev, kind) {
         const action = ACTION_LABEL[ev.action] || ev.action;
-        const isExec = ev.status === 'executed';
         const isOpen = ev.action === 'open';
         const isClose = ev.action === 'close';
         const isAdd = ev.action === 'add';
         const isReduce = ev.action === 'reduce';
         const icon = isOpen ? '🟢' : isAdd ? '➕' : isReduce ? '➖' : isClose ? '🔴' : '•';
-        const cls = isExec ? 'up' : 'warn';
         const reason = ev.reason || ev.rejected_reason || '';
-        return `<div class="lifecycle-event ${cls}" style="border-left:3px solid ${isExec?'#10b981':'#fbbf24'};padding:6px 10px;margin:6px 0;background:var(--bg-card-2);border-radius:4px;">
+        const colors = { exec: '#10b981', observe: '#6b7280', reject: '#fbbf24' };
+        const tag = { exec: '✅ 已执行', observe: '👁️ 仅观察 (闭市)', reject: '⊘ 拒单' };
+        return `<div class="lifecycle-event" style="border-left:3px solid ${colors[kind]};padding:6px 10px;margin:6px 0;background:var(--bg-card-2);border-radius:4px;${kind==='observe'?'opacity:0.7;':''}">
           <div style="display:flex;justify-content:space-between;font-size:12px;">
-            <span><b>${icon} ${action}</b> ${ev.quantity||0} @ ${(ev.price||0).toFixed(4)}</span>
+            <span><b>${icon} ${action}</b> ${ev.quantity||0} @ ${(ev.price||0).toFixed(4)} <span class="small muted">${tag[kind]}</span></span>
             <span class="small muted">${fmtTime(ev.traded_at)}</span>
           </div>
           ${reason ? `<div class="small muted" style="margin-top:3px;">${escape(reason).slice(0,120)}</div>` : ''}
         </div>`;
-      }).join('') : '<div class="muted small">无历史记录</div>';
+      }
+      const timelineHTML = lifeEvents.length ? `
+        ${execEvents.length ? `<div class="small muted" style="margin:8px 0 4px;">✅ 真发生的操作 (${execEvents.length})</div>${execEvents.map(ev => _renderEv(ev, 'exec')).join('')}` : ''}
+        ${closedMktEvents.length ? `<div class="small muted" style="margin:8px 0 4px;">👁️ 闭市观察记录 (${closedMktEvents.length}, 系统尝试但未执行)</div>${closedMktEvents.map(ev => _renderEv(ev, 'observe')).join('')}` : ''}
+        ${otherRejectEvents.length ? `<div class="small muted" style="margin:8px 0 4px;">⊘ 其他拒单 (${otherRejectEvents.length})</div>${otherRejectEvents.map(ev => _renderEv(ev, 'reject')).join('')}` : ''}
+      ` : '<div class="muted small">无历史记录</div>';
       // AI 建议历史 HTML
       const adviceHistHTML = adviceHistory.length ? adviceHistory.slice(0, 8).map(a => {
         const cn = ADVICE_LABEL_CN[a.advice] || a.advice || '?';
