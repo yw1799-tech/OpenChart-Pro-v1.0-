@@ -135,7 +135,7 @@ window.addEventListener('unhandledrejection', function(e) {
 
   let _state = {
     activeTab: 'now',
-    activeSub: 'home',         // 'home/home' / 'market/news' 等的右半
+    activeSub: 'now',          // v12.27.7: 默认 'now' (匹配新 4 tab); 旧 'home' 导致路由 'now/home' 找不到 renderer
     signalFilter: 'all',
     newsFilter: 'all',
     poolFilter: 'all',
