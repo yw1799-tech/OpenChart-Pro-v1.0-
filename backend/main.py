@@ -848,6 +848,88 @@ async def _position_advice_loop():
         await asyncio.sleep(30 * 60)
 
 
+async def _onopen_signal_verify_loop():
+    """
+    v12.26.5 P-A: 闭市段开仓信号统一刷 LLM verify.
+
+    背景: 闭市时段股票信号 monitor 标 ai_verdict='deferred' 不调 LLM
+          (避免老信号验证后跨周期复活). 等市场开市瞬间, 本 loop 扫
+          该市场最近 N 小时的 deferred 信号, force=True 调 LLM verify
+          (基于开市后最新 K 线 + 新闻). confirm 的进入正常开仓队列.
+
+    设计: 跟踪每市场 closed → open 状态切换, 一旦切换立即扫;
+          常规巡检每 30min 跑一次保险.
+    """
+    await asyncio.sleep(45)  # 启动 45s 后第一次
+    market_open_state: Dict[str, bool] = {"us": None, "hk": None, "cn": None}
+    while True:
+        try:
+            from backend.news.scheduler import _ai_analyzer
+            from backend.signals.monitor import is_market_executable as _ime
+            from backend.signals.monitor import MonitorEngine
+            if _ai_analyzer is None or monitor_engine is None:
+                await asyncio.sleep(180)
+                continue
+
+            # 检测刚开市的市场
+            just_opened: List[str] = []
+            for mkt in ("us", "hk", "cn"):
+                now_open = _ime(mkt)
+                prev = market_open_state[mkt]
+                if prev is None:
+                    market_open_state[mkt] = now_open
+                elif now_open and not prev:
+                    just_opened.append(mkt)
+                    market_open_state[mkt] = True
+                    logger.info(f"[onopen-verify] {mkt} 刚开市, 扫 deferred 信号 force LLM verify")
+                elif not now_open and prev:
+                    market_open_state[mkt] = False
+
+            if just_opened:
+                # 拉刚开市市场的最近 6h 内 deferred 信号 (与 v12.26.2 信号 6h validity 一致)
+                cutoff_ms = int(time.time() * 1000) - 6 * 3600 * 1000
+                async with db.acquire() as conn:
+                    placeholders = ",".join("?" * len(just_opened))
+                    cur = await conn.execute(
+                        f"""SELECT id FROM signals
+                            WHERE market IN ({placeholders})
+                              AND ai_verdict='deferred'
+                              AND generated_at > ?
+                            ORDER BY generated_at DESC LIMIT 100""",
+                        list(just_opened) + [cutoff_ms],
+                    )
+                    deferred_ids = [r["id"] for r in await cur.fetchall()]
+                if deferred_ids:
+                    logger.info(f"[onopen-verify] {','.join(just_opened)} 共 {len(deferred_ids)} deferred 信号, 触发 force verify")
+                    for sid in deferred_ids:
+                        try:
+                            # 拉信号对象
+                            async with db.acquire() as conn:
+                                cur = await conn.execute("SELECT * FROM signals WHERE id=?", (sid,))
+                                row = await cur.fetchone()
+                            if not row:
+                                continue
+                            # 简单封装成 monitor _ai_verify_signal 需要的对象
+                            class _Sig:
+                                def __init__(self, r):
+                                    self.id = r["id"]; self.symbol = r["symbol"]
+                                    self.market = type('M', (), {'value': r["market"]})()
+                                    self.action = r["action"]; self.price = r["price"]
+                                    self.confidence = r["confidence"]; self.strategy_name = r["strategy_name"]
+                                    self.interval = r.get("interval", "1H") if hasattr(r, 'get') else r["interval"] if "interval" in r.keys() else "1H"
+                                    self.reason = r["reason"]
+                            sig_obj = _Sig(dict(row))
+                            # 触发 monitor 的 _ai_verify_signal (会调 LLM 写新 verdict)
+                            await monitor_engine._ai_verify_signal(sig_obj)
+                            await asyncio.sleep(0.5)  # 半秒限速 (semaphore 30 也允许)
+                        except Exception as e:
+                            logger.debug(f"[onopen-verify] {sid} 失败: {e}")
+                    logger.info(f"[onopen-verify] 完成 {len(deferred_ids)} 信号 force verify")
+        except Exception as e:
+            logger.warning(f"[onopen-verify-loop] 异常: {e}")
+        await asyncio.sleep(30 * 60)  # 30min 巡检 (开闭市切换的瞬间会被 just_opened 捕获)
+
+
 async def _trade_review_loop():
     """v12.3 每 4h 批量复盘当天新闭环的单（最多 10 笔/轮，避免 LLM 突发开销）"""
     await asyncio.sleep(300)  # 启动 5 分钟后开始
@@ -1880,6 +1962,7 @@ async def lifespan(app: FastAPI):
     _app_bg_tasks.append(asyncio.create_task(_pending_orders_retry_loop()))
     _app_bg_tasks.append(asyncio.create_task(_position_advice_loop()))
     _app_bg_tasks.append(asyncio.create_task(_aged_position_advice_loop()))  # v11.3 老持仓加速
+    _app_bg_tasks.append(asyncio.create_task(_onopen_signal_verify_loop()))  # v12.26.5 闭市开仓信号 onopen 统一 verify
     _app_bg_tasks.append(asyncio.create_task(_holding_diagnose_loop()))  # v12.13 持仓诊断加速
     _app_bg_tasks.append(asyncio.create_task(_position_summary_loop()))  # v12.13 4h 持仓简报推送
     logger.info(f"NewsScheduler + SymbolRegistry + AI Analyzer started (registry size={symbol_registry.size()})")

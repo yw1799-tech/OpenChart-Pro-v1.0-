@@ -481,11 +481,16 @@ class NewsAIAnalyzer:
         self._today_cost: float = 0.0
         self._today_date: str = ""
         # 并发限制 (LLM 单账户限速)
-        # 全局 Semaphore 提到 8（deepseek-reasoner 单账户限速 60 RPM，8 并发 + 单次 ~5s ≈ 96 RPM）
-        # 用户充值后允许更高吞吐；如果触发 429 再调回 6
-        # crypto_diag 单独 Semaphore(2)，6 币诊断时也能并发跑 2 个
-        self._semaphore = asyncio.Semaphore(8)
-        self._crypto_semaphore = asyncio.Semaphore(2)
+        # v12.26.4: 8 → 30 (取消开市瞬间排队等待)
+        #   旧: 60 RPM 限制下设 8 并发, 开市瞬间 35-50 调用涌出 → 排队 20-30s
+        #       关键是新开仓信号 verify 等待期间价格已跑动 → 错过开仓时机
+        #   新: 30 并发, 单次 LLM ~3-5s, 实际触发 ≈ 360-600 RPM 看起来高但
+        #       1) deepseek 充值后无明确 RPM 硬上限
+        #       2) 单次调用慢 (thinking 模式), 实际峰值 RPM 由 LLM 自身延迟限制
+        #       3) 触发 429 时 _call_llm 已有 retry 兜底
+        #   crypto_diag 也提到 5 (6 币诊断时并发更顺)
+        self._semaphore = asyncio.Semaphore(30)
+        self._crypto_semaphore = asyncio.Semaphore(5)
         # 持仓新闻批量缓冲：{ (symbol, market): {"news": [..], "first_ts": ms} }
         # 同品种新闻 30 分钟窗口内累积，到期统一喂给 LLM 一次
         self._pos_news_buffer: Dict[tuple, Dict[str, Any]] = {}

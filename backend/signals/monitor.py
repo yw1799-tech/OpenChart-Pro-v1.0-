@@ -995,6 +995,21 @@ class MonitorEngine:
                 f"信号置信度 {signal.confidence} < 阈值 {required_conf}（rating={pool_rating or '-'}）",
             )
 
+        # v12.26.5 P-A: 闭市时段股票信号不调 LLM verify, 标记 deferred 等开市统一刷
+        # 加密 24/7 仍走原路径; us/hk/cn 闭市时仅记录信号, 等市场重开瞬间用最新数据重新 verify
+        # 设计哲学: 信号是瞬时决策, 不跨周期; 闭市验证的结果到开市已过期, 浪费 LLM 成本
+        if should_verify and mkt != "crypto":
+            try:
+                if not is_market_executable(mkt):
+                    await self._mark_verify_deferred(
+                        signal.id,
+                        f"闭市时段不调 LLM (避免老信号复活), 等开市重新 verify"
+                    )
+                    logger.info(f"[verify-defer] {signal.symbol}({mkt}) 闭市暂存 deferred, 开市时刷")
+                    should_verify = False  # 避免下面的 verify 路径触发
+            except Exception as e:
+                logger.debug(f"[verify-defer] {signal.symbol} 闭市判断失败, 走正常 LLM: {e}")
+
         # === v2 修订：按池中 rating + age 决定 verify 路径 ===
         # v12.14 (B5 修复): 诊断时效从 24h/12h 收紧到 2h/1h —— 8h+ 前的 buy 与 0min 后的 K 线已经脱节
         # strong_buy + age<1h + BUY 信号 → 跳过 LLM verify，直接 confirm（强买直通）
@@ -1510,6 +1525,31 @@ class MonitorEngine:
                 pass
         except Exception as e:
             logger.debug(f"[verify-skip] 写 skipped 失败 {signal_id}: {e}")
+
+    async def _mark_verify_deferred(self, signal_id: str, reason: str):
+        """v12.26.5 P-A: 闭市时段股票信号标 deferred (待开市验证).
+        与 skipped 区别: skipped 是"无需验证", deferred 是"暂不验证, 等开市再说".
+        开市瞬间 _onopen_signal_verify_loop 会扫这些 deferred 信号 force LLM verify."""
+        try:
+            async with self.db.acquire() as conn:
+                await conn.execute(
+                    """UPDATE signals SET ai_verdict='deferred', ai_confidence=0,
+                           ai_reason=?, ai_verified_at=? WHERE id=?""",
+                    (reason[:300], int(time.time() * 1000), signal_id),
+                )
+                await conn.commit()
+            try:
+                broadcast = getattr(self.ws_hub, "broadcast_signal", None)
+                if broadcast:
+                    await broadcast({
+                        "id": signal_id, "_ai_update": True,
+                        "ai_verdict": "deferred", "ai_confidence": 0,
+                        "ai_reason": reason,
+                    })
+            except Exception:
+                pass
+        except Exception as e:
+            logger.debug(f"[verify-defer] 写 deferred 失败 {signal_id}: {e}")
 
     async def _ai_verify_signal(self, signal):
         """异步对信号做 AI 二次验证 → 回填 DB + WS 推送 ai_verdict 事件。"""
