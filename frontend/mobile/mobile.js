@@ -445,7 +445,8 @@
     // llm budget
     const budget = $('#sb-llm-budget');
     if (budget && _state.cache.llmCost) {
-      const used = _state.cache.llmCost.today_total_usd || 0;
+      // v12.27.2: API 字段是 today_cost_usd, 不是 today_total_usd (历史 bug 修复)
+      const used = _state.cache.llmCost.today_cost_usd || _state.cache.llmCost.today_total_usd || 0;
       const total = _state.cache.llmCost.daily_budget || 25;
       const pct = (used / total * 100);
       budget.textContent = `💰 $${used.toFixed(2)} / $${total}`;
@@ -640,7 +641,7 @@
         && (s.status === 'active' || !s.status)
         && (now - (s.generated_at || 0)) < 24 * 3600 * 1000
       ).length;
-      const todayCost = (llmCost && llmCost.today_total_usd) || 0;
+      const todayCost = (llmCost && (llmCost.today_cost_usd || llmCost.today_total_usd)) || 0;
       $('#home-stats').innerHTML = `
         <div class="stat-card">
           <div class="stat-label">📊 当前持仓</div>
@@ -2630,7 +2631,7 @@
         && (s.status === 'active' || !s.status)
         && (now - (s.generated_at || 0)) < 24 * 3600 * 1000
       ).length;
-      const todayCost = (llmCost && llmCost.today_total_usd) || 0;
+      const todayCost = (llmCost && (llmCost.today_cost_usd || llmCost.today_total_usd)) || 0;
       // v12.25.0: quick-stats 可点击跳转
       $('#home-stats').innerHTML = `
         <div class="stat-card clickable" data-go="trade/spot" style="cursor:pointer;">
@@ -3254,8 +3255,8 @@
         $('#llm-detail-card').innerHTML = '<div class="empty">无法加载 LLM 数据</div>';
         return;
       }
-      const today = cost.today_total_usd || 0;
-      const limit = cost.daily_limit_usd || 5.0;
+      const today = cost.today_cost_usd || cost.today_total_usd || 0;
+      const limit = cost.daily_budget || cost.daily_limit_usd || 25.0;
       const ratio = Math.min(100, today / limit * 100);
       const byPath = cost.today_by_path || {};
       const pathRows = Object.entries(byPath)
