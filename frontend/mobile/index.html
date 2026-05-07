@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <!-- v12.27.4: index.html 永不缓存 (避免新 mobile.js 不生效) -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>OpenChart Pro</title>
   <link rel="manifest" href="/mobile/manifest.json">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -340,6 +344,19 @@
   </div>
 </div>
 
-<script src="/mobile/mobile.js?v=12.27.3"></script>
+<!-- v12.27.4: mobile.js 用 timestamp 永远 fresh, 彻底解决缓存问题 -->
+<script>document.write('<sc'+'ript src="/mobile/mobile.js?v=12.27.4&t=' + Date.now() + '"></scr'+'ipt>');</script>
+
+<!-- v12.27.4: 显眼的版本徽章 (右下浮在 fab 上方), 用户能直观看到当前加载的版本 -->
+<div id="version-badge" style="position:fixed;right:14px;bottom:140px;z-index:88;background:rgba(0,0,0,0.8);color:#c4ff4d;padding:3px 8px;border-radius:10px;font-size:9px;font-weight:700;border:1px solid rgba(196,255,77,0.3);">
+  v12.27.4 · <span id="version-status">加载中…</span>
+</div>
+<script>
+  // 5 秒内 mobile.js 应该 init 完成并设置 #version-status='已加载'
+  setTimeout(() => {
+    const s = document.getElementById('version-status');
+    if (s && s.textContent === '加载中…') s.textContent = '⚠️ JS 未运行';
+  }, 5000);
+</script>
 </body>
 </html>

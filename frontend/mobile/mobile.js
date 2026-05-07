@@ -2279,6 +2279,9 @@
   // v12.27.0 Phase 2: Now 主页完整实现
   async function renderNow() {
     console.log('[renderNow] 开始渲染主页...');
+    // v12.27.4: 标记 mobile.js 已加载执行
+    const vs = document.getElementById('version-status');
+    if (vs) { vs.textContent = '✓ 已加载 ' + new Date().toLocaleTimeString().slice(0,5); vs.style.color = '#3fb950'; }
     try {
       const [status, log, signals, positions, llmCost, swapAcct, swapPos, advices] = await Promise.all([
         loadStatus(), loadHistory(), loadSignals(), loadPositions(),
