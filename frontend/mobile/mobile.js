@@ -364,8 +364,14 @@ window.addEventListener('unhandledrejection', function(e) {
     });
   });
 
-  // ─── 设置页交互 ───
-  $('#auto-trade-toggle').addEventListener('change', async (e) => {
+  // ─── 设置页交互 (v12.27.6: 全部加 null guard, 旧 ID 在 v3 框架可能不存在) ───
+  // v12.27.0 后这些 control 移到右上 ⚙ 设置 sheet
+  // 但旧 render 函数内部可能动态注入这些元素, 所以保留 listener 但安全引用
+  function _bindSafe(selector, event, handler) {
+    const el = $(selector);
+    if (el) el.addEventListener(event, handler);
+  }
+  _bindSafe('#auto-trade-toggle', 'change', async (e) => {
     try {
       const r = await fetch('/api/auto-trade/toggle', {
         method: 'POST',
@@ -380,8 +386,7 @@ window.addEventListener('unhandledrejection', function(e) {
       e.target.checked = !e.target.checked;
     }
   });
-
-  $('#tg-test-btn').addEventListener('click', async () => {
+  _bindSafe('#tg-test-btn', 'click', async () => {
     toast('⏳ 发送中…');
     try {
       const r = await fetch('/api/settings/telegram-test', {method: 'POST'});
@@ -392,8 +397,7 @@ window.addEventListener('unhandledrejection', function(e) {
       toast('❌ ' + err.message, 'down');
     }
   });
-
-  $('#summary-now-btn').addEventListener('click', async () => {
+  _bindSafe('#summary-now-btn', 'click', async () => {
     toast('⏳ 推送中…');
     try {
       const r = await fetch('/api/auto-trade/summary-now', {method: 'POST'});
@@ -406,12 +410,12 @@ window.addEventListener('unhandledrejection', function(e) {
     }
   });
 
-  // ─── 刷新按钮 ───
-  $('#refresh-btn').addEventListener('click', () => {
+  // ─── 刷新按钮 (v12.27.0 移到 .statusbar 的 #refresh-btn) ───
+  _bindSafe('#refresh-btn', 'click', () => {
     Object.keys(_state.cache).forEach(k => _state.cache[k] = null);
     const btn = $('#refresh-btn');
-    btn.classList.add('spinning');
-    setTimeout(() => btn.classList.remove('spinning'), 600);
+    if (btn) btn.classList.add('spinning');
+    setTimeout(() => { if (btn) btn.classList.remove('spinning'); }, 600);
     refresh();
   });
 
