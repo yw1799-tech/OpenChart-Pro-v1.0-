@@ -3967,14 +3967,17 @@ window.addEventListener('unhandledrejection', function(e) {
   // ─── PR2: 周报页 ───
   // v12.27.8 Bug 4: top_wins / top_losses 是 position_id 数组(后端 reviewer.py:806),
   //   先拉 reviews 列表建 pid → review 映射, 渲染时把 pid 还原成 symbol + pnl%
+  // v12.27.11: 周报里 pid 来自 N 周前 (可能 12+ 天前), 默认 loadReviews limit=50
+  //   不够覆盖 → reviewMap 找不到 → 退化截断 UUID. 改用 limit=500 (API 上限)
+  //   还找不到的, 单条降级 fetch /api/trade-review/{pid}
   async function renderWeekly() {
     const container = document.querySelector('.subpage[data-subpage="weekly"]');
     if (!container) return;
     container.innerHTML = '<div class="empty">⏳ 加载周报...</div>';
     try {
-      const [data, reviewsData] = await Promise.all([
+      const [data, bigReviews] = await Promise.all([
         fetchJSON('/api/trade-review/weekly/list?limit=4'),
-        loadReviews().catch(() => ({items: []})),
+        fetchJSON('/api/trade-review?limit=500').catch(() => ({items: []})),
       ]);
       const reports = data.items || [];
       if (!reports.length) {
@@ -3985,10 +3988,29 @@ window.addEventListener('unhandledrejection', function(e) {
         </div>`;
         return;
       }
-      // 建 pid → review 映射 (用于把 top_wins/top_losses 的 pid 还原成 symbol+pnl%)
+      // 建 pid → review 映射 (用 500 条窗口, 覆盖最近 4-8 周的周报)
       const reviewMap = {};
-      for (const r of (reviewsData.items || [])) {
+      for (const r of (bigReviews.items || [])) {
         reviewMap[r.position_id] = r;
+      }
+      // 单条降级: 找出所有周报里出现但 reviewMap 没有的 pid, 并发拉
+      const allPids = new Set();
+      for (const rpt of reports) {
+        for (const arr of [rpt.top_wins || [], rpt.top_losses || []]) {
+          for (const x of arr) {
+            if (typeof x === 'string') allPids.add(x);
+            else if (x && typeof x === 'object' && x.position_id) allPids.add(x.position_id);
+          }
+        }
+      }
+      const missing = [...allPids].filter(pid => !reviewMap[pid]);
+      if (missing.length) {
+        const fetched = await Promise.all(missing.map(pid =>
+          fetchJSON('/api/trade-review/' + encodeURIComponent(pid)).catch(() => null)
+        ));
+        for (const r of fetched) {
+          if (r && r.position_id) reviewMap[r.position_id] = r;
+        }
       }
       container.innerHTML = reports.map(r => renderWeeklyReportCard(r, reviewMap)).join('');
     } catch (e) {

@@ -15,7 +15,7 @@
   <meta name="theme-color" content="#0d1117">
   <link rel="apple-touch-icon" href="/mobile/icon-192.png">
   <!-- v12.27.0 cache-busting: 大改 v3 设计 -->
-  <link rel="stylesheet" href="/mobile/mobile.css?v=12.27.10">
+  <link rel="stylesheet" href="/mobile/mobile.css?v=12.27.11">
 </head>
 <body>
 
@@ -353,12 +353,12 @@
   </div>
 </div>
 
-<!-- v12.27.10: mobile.js 用 timestamp 永远 fresh, 彻底解决缓存问题 -->
-<script>document.write('<sc'+'ript src="/mobile/mobile.js?v=12.27.10&t=' + Date.now() + '"></scr'+'ipt>');</script>
+<!-- v12.27.11: mobile.js 用 timestamp 永远 fresh, 彻底解决缓存问题 -->
+<script>document.write('<sc'+'ript src="/mobile/mobile.js?v=12.27.11&t=' + Date.now() + '"></scr'+'ipt>');</script>
 
-<!-- v12.27.10: 显眼的版本徽章 (右下浮在 fab 上方), 用户能直观看到当前加载的版本 -->
+<!-- v12.27.11: 显眼的版本徽章 (右下浮在 fab 上方), 用户能直观看到当前加载的版本 -->
 <div id="version-badge" style="position:fixed;right:14px;bottom:140px;z-index:88;background:rgba(0,0,0,0.8);color:#c4ff4d;padding:3px 8px;border-radius:10px;font-size:9px;font-weight:700;border:1px solid rgba(196,255,77,0.3);">
-  v12.27.10 · <span id="version-status">加载中…</span>
+  v12.27.11 · <span id="version-status">加载中…</span>
 </div>
 <script>
   // 5 秒内 mobile.js 应该 init 完成并设置 #version-status='已加载'
