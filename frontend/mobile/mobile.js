@@ -18,6 +18,15 @@
 //   /api/auto-trade/summary-now  立即推持仓简报
 //   /api/settings/telegram-test  Telegram 测试
 
+// v12.27.9: 立刻设置版本徽章 (不等 IIFE/renderNow), 防 5s 超时误报 'JS 未运行'
+(function() {
+  const vs = document.getElementById('version-status');
+  if (vs) {
+    vs.textContent = '✓ 已加载 ' + new Date().toLocaleTimeString().slice(0,5);
+    vs.style.color = '#3fb950';
+  }
+})();
+
 // v12.27.5 全局 runtime error 拦截 (放 IIFE 外, 优先生效)
 window.addEventListener('error', function(e) {
   const vs = document.getElementById('version-status');
@@ -141,6 +150,7 @@ window.addEventListener('unhandledrejection', function(e) {
     poolFilter: 'all',
     rejectedFilter: 'all',
     orderFilter: 'all',        // v12.21.0: 订单流水 filter (pending/filled/cancelled)
+    orderMarketFilter: 'all',  // v12.27.9: 订单流水按市场过滤 (all/us/hk/cn/crypto)
     holdingsFilter: 'all',     // v12.27.0: 持仓页 chip (all/us/hk/cn/crypto/swap/risk)
     // v12.25.0: 跨页联动 — 跳转后可设的临时过滤
     symbolFilter: null,        // 跨 tab 跳转时锁定 symbol (e.g. AAPL)
@@ -374,6 +384,14 @@ window.addEventListener('unhandledrejection', function(e) {
     chip.addEventListener('click', () => {
       _state.orderFilter = chip.dataset.ofilter;
       $$('.chip[data-ofilter]').forEach(c => c.classList.toggle('active', c === chip));
+      renderOrderFlow();
+    });
+  });
+  // v12.27.9: 订单流水 按市场 filter
+  $$('.chip[data-omfilter]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      _state.orderMarketFilter = chip.dataset.omfilter;
+      $$('.chip[data-omfilter]').forEach(c => c.classList.toggle('active', c === chip));
       renderOrderFlow();
     });
   });
@@ -1574,6 +1592,33 @@ window.addEventListener('unhandledrejection', function(e) {
     }
   }
 
+  // v12.27.9: 把 LLM 教训对象/字符串还原成可读文本
+  //   后端 reviewer.py 提示 lesson 是 {type, content} 对象
+  //   也兼容旧格式纯字符串 + LLM 偶尔输出的其他字段名 (text/summary/lesson)
+  function _fmtLessonItem(x) {
+    if (typeof x === 'string') return escape(x);
+    if (x && typeof x === 'object') {
+      const content = x.content || x.text || x.summary || x.lesson || x.pattern || '';
+      const type = x.type ? `<span class="muted small">[${escape(x.type)}]</span> ` : '';
+      if (content) return type + escape(String(content));
+      // 没有可识别字段时, 显示所有字段值拼接
+      const vals = Object.values(x).filter(v => typeof v === 'string' || typeof v === 'number');
+      if (vals.length) return escape(vals.join(' · '));
+      return '<span class="muted small">' + escape(JSON.stringify(x).slice(0,80)) + '</span>';
+    }
+    return escape(String(x));
+  }
+  // 通用文本项 (pros/cons 偶尔也是对象)
+  function _fmtTextItem(x) {
+    if (typeof x === 'string') return escape(x);
+    if (x && typeof x === 'object') {
+      const txt = x.content || x.text || x.summary || x.note || '';
+      if (txt) return escape(String(txt));
+      return escape(JSON.stringify(x).slice(0, 80));
+    }
+    return escape(String(x));
+  }
+
   function renderReviewRow(r) {
     const grade = (r.grade || '').toUpperCase();
     // v12.27.8 Bug 3 修: trade_review 表只有 realized_pnl_local + realized_pnl_pct
@@ -1607,7 +1652,11 @@ window.addEventListener('unhandledrejection', function(e) {
         持仓 ${Math.round((r.hold_hours || (r.holding_seconds||0)/3600))} h · ${fmtTime(r.close_at)}
         ${isSwap && r.swap_funding_total ? ' · funding ' + fmtPnl(r.swap_funding_total) : ''}
       </div>
-      ${lessonsArr.length ? `<div class="row-reason">📌 ${escape(lessonsArr.slice(0,2).join(' / '))}</div>` : ''}
+      ${lessonsArr.length ? `<div class="row-reason">📌 ${lessonsArr.slice(0,2).map(x => {
+        if (typeof x === 'string') return escape(x);
+        if (x && typeof x === 'object') return escape(x.content || x.text || x.summary || JSON.stringify(x).slice(0,40));
+        return escape(String(x));
+      }).join(' / ')}</div>` : ''}
     </div>`;
   }
 
@@ -1650,13 +1699,13 @@ window.addEventListener('unhandledrejection', function(e) {
         ${r.entry_analysis ? `<h4>📥 入场分析</h4><div>${escape(r.entry_analysis)}</div>` : ''}
         ${r.mid_analysis ? `<h4>⚙ 持仓中分析</h4><div>${escape(r.mid_analysis)}</div>` : ''}
         ${r.exit_analysis ? `<h4>📤 出场分析</h4><div>${escape(r.exit_analysis)}</div>` : ''}
-        ${pros.length ? `<h4>👍 做对了什么</h4><ul>${pros.map(x=>`<li>${escape(x)}</li>`).join('')}</ul>` : ''}
-        ${cons.length ? `<h4>👎 做错了什么</h4><ul>${cons.map(x=>`<li>${escape(x)}</li>`).join('')}</ul>` : ''}
+        ${pros.length ? `<h4>👍 做对了什么</h4><ul>${pros.map(x=>`<li>${_fmtTextItem(x)}</li>`).join('')}</ul>` : ''}
+        ${cons.length ? `<h4>👎 做错了什么</h4><ul>${cons.map(x=>`<li>${_fmtTextItem(x)}</li>`).join('')}</ul>` : ''}
         ${turning.length ? `<h4>关键转折点</h4><ul>${turning.map(x=>{
             const t = typeof x === 'object' ? `${escape(x.time||'')} ${escape(x.event||x.note||'')}` : escape(x);
             return `<li>${t}</li>`;
           }).join('')}</ul>` : ''}
-        ${lessons.length ? `<h4>📌 教训</h4><ul style="cursor:pointer;" data-go-lessons>${lessons.map(x=>`<li>${escape(x)}</li>`).join('')}</ul><div class="small muted" style="margin-top:-6px;">💡 点击教训列表可跳到教训库查看完整收录</div>` : ''}
+        ${lessons.length ? `<h4>📌 教训</h4><ul style="cursor:pointer;" data-go-lessons>${lessons.map(x=>`<li>${_fmtLessonItem(x)}</li>`).join('')}</ul><div class="small muted" style="margin-top:-6px;">💡 点击教训列表可跳到教训库查看完整收录</div>` : ''}
         ${r.improvements ? `<h4>💡 改进建议</h4><div>${escape(r.improvements)}</div>` : ''}
         ${renderStrategyParamAnalysis(r.strategy_param_analysis)}
         <div class="sheet-actions" style="display:flex;flex-wrap:wrap;gap:6px;">
@@ -2686,19 +2735,28 @@ window.addEventListener('unhandledrejection', function(e) {
       } else if (f === 'swap') {
         filteredSwap = swapPositions.slice();
       } else if (f === 'risk') {
-        // 风险榜: 距 SL <5% 或 浮亏 >5% 或 距强平 <10%
+        // v12.27.9 风险榜: 三档分级 (放宽标准, 之前过严导致空)
+        //   🚨 严重: 距 SL <5% / 浮亏 >5% / 距强平 <5%
+        //   ⚠️ 关注: 距 SL <10% / 浮亏 1~5% / 距强平 5~15%
+        //   按风险等级排序 (严重在上)
         filtered = items.filter(p => {
           const sl = p.stop_loss; const cur = p.current_price;
-          if (sl && cur && Math.abs((cur - sl) / cur) * 100 < 5) return true;
-          if ((p.pnl_pct || 0) < -5) return true;
+          const pnl = p.pnl_pct || 0;
+          if (sl && cur && Math.abs((cur - sl) / cur) * 100 < 10) return true;
+          if (pnl < -1) return true;
           return false;
+        }).sort((a, b) => {
+          // 风险得分高的在前 (越亏 / 越接近 SL = 风险越高)
+          const scoreA = -(a.pnl_pct || 0) + (a.stop_loss && a.current_price ? Math.max(0, 10 - Math.abs((a.current_price - a.stop_loss)/a.current_price)*100) : 0);
+          const scoreB = -(b.pnl_pct || 0) + (b.stop_loss && b.current_price ? Math.max(0, 10 - Math.abs((b.current_price - b.stop_loss)/b.current_price)*100) : 0);
+          return scoreB - scoreA;
         });
         filteredSwap = swapPositions.filter(p => {
           if (p.liq_price && p.avg_open_price) {
             const distPct = p.pos_side === 'long'
               ? (1 - p.liq_price / p.avg_open_price) * 100
               : (p.liq_price / p.avg_open_price - 1) * 100;
-            return distPct < 10;
+            return distPct < 15;
           }
           return false;
         });
@@ -2719,18 +2777,30 @@ window.addEventListener('unhandledrejection', function(e) {
         subEl.innerHTML = `${totalCount} 笔 · 浮动 <span class="${cls}">${fmtPnl(totalPnl)}</span>`;
       }
 
+      // v12.27.9: 风险榜顶部说明依据 (用户问"数据怎么来的")
+      const riskHintHtml = f === 'risk' ? `
+        <div style="margin: 0 14px 12px; padding: 10px 12px; background: rgba(248,81,73,0.06); border-left: 3px solid var(--down); border-radius: 0 8px 8px 0; font-size: 11px; line-height: 1.6;">
+          <div style="color: var(--down); font-weight: 700; margin-bottom: 4px;">🚨 风险榜判定依据</div>
+          <div style="color: var(--text-2);">现货命中 <b>任一</b> 即列入:</div>
+          <div style="color: var(--text-3); margin-left: 8px;">• 距止损 SL &lt;10%</div>
+          <div style="color: var(--text-3); margin-left: 8px;">• 当前浮亏 &gt;1%</div>
+          <div style="color: var(--text-2); margin-top: 4px;">合约: 距强平 &lt;15%</div>
+          <div style="color: var(--text-3); margin-top: 4px; font-size: 10px;">⚠️ 排序 = 风险得分 (越亏 / 越接近 SL → 越靠前)</div>
+        </div>` : '';
+
       // ── 渲染卡片 ──
       if (!totalCount) {
-        listEl.innerHTML = `<div class="empty" style="padding:30px 14px;">
-          <div class="empty-icon">📭</div>
+        listEl.innerHTML = riskHintHtml + `<div class="empty" style="padding:30px 14px;">
+          <div class="empty-icon">${f === 'risk' ? '✅' : '📭'}</div>
           <div>${f === 'risk' ? '当前无风险持仓' : '该分类下无持仓'}</div>
+          ${f === 'risk' ? `<div class="muted small" style="margin-top:6px;">${items.length + swapPositions.length} 笔持仓 全部健康 (无亏损 &gt;1%, 无逼近 SL)</div>` : ''}
         </div>`;
         return;
       }
       // 现货卡 + 合约卡
       const spotHtml = filtered.map(p => renderHoldingV3(p, adviceMap[p.id])).join('');
       const swapHtml = filteredSwap.map(p => renderHoldingV3Swap(p)).join('');
-      listEl.innerHTML = spotHtml + swapHtml;
+      listEl.innerHTML = riskHintHtml + spotHtml + swapHtml;
       // 绑点击 → 持仓详情
       listEl.querySelectorAll('.holding-v3[data-id]').forEach(c => {
         c.addEventListener('click', () => openPositionDetail(c.dataset.id));
@@ -2947,33 +3017,44 @@ window.addEventListener('unhandledrejection', function(e) {
           `;
         }
       }
-      // 30 天权益曲线 (按 close_at 时序累积 pnl_pct)
+      // 30 天权益曲线 — v12.27.9 改为时间轴 (X = 真实日期, 不是 review 序号)
+      //   旧版按 review index 等距, 一笔交易 = 一个点 → 时间稀疏的话曲线压缩, 视觉误导
+      //   新版: 31 个点 (day -30 ~ day 0), 每点 = 该日及之前累计 pnl%
       const eqEl = $('#equity-30d');
       if (eqEl) {
         const sorted = recent.slice().sort((a, b) => (a.close_at || 0) - (b.close_at || 0));
-        let cum = 0;
-        const points = sorted.map(r => { cum += (r.realized_pnl_pct || 0); return cum; });
-        if (points.length < 2) {
-          eqEl.innerHTML = '<text x="160" y="70" text-anchor="middle" fill="#9ba8b8" font-size="11">数据不足</text>';
-        } else {
-          const max = Math.max(...points, 0);
-          const min = Math.min(...points, 0);
-          const range = (max - min) || 1;
-          const w = 320, h = 140;
-          const stride = w / (points.length - 1);
-          const ptStr = points.map((v, i) => `${i * stride},${h - ((v - min) / range) * h}`).join(' ');
-          const isPos = points[points.length-1] >= 0;
-          const color = isPos ? '#c4ff4d' : '#f85149';
-          const fill = isPos ? 'rgba(196,255,77,0.15)' : 'rgba(248,81,73,0.15)';
-          // 0 baseline
-          const zeroY = h - ((0 - min) / range) * h;
-          eqEl.innerHTML = `
-            <line x1="0" y1="${zeroY}" x2="${w}" y2="${zeroY}" stroke="#30363d" stroke-width="0.5" stroke-dasharray="2,2"/>
-            <polygon points="0,${h} ${ptStr} ${w},${h}" fill="${fill}"/>
-            <polyline points="${ptStr}" fill="none" stroke="${color}" stroke-width="1.5"/>
-            <text x="6" y="14" fill="#9ba8b8" font-size="9">累计 ${points[points.length-1].toFixed(2)}%</text>
-          `;
+        const today = new Date(); today.setHours(23, 59, 59, 999);
+        const todayTs = today.getTime() / 1000;
+        // 生成 31 个 day-ts 点 (day -30 → day 0)
+        const dayPoints = [];
+        for (let d = 30; d >= 0; d--) {
+          const ts = todayTs - d * 86400;
+          let cum = 0;
+          for (const r of sorted) {
+            if ((r.close_at || 0) <= ts) cum += (r.realized_pnl_pct || 0);
+          }
+          dayPoints.push(cum);
         }
+        const w = 320, h = 140;
+        const max = Math.max(...dayPoints, 0);
+        const min = Math.min(...dayPoints, 0);
+        const range = (max - min) || 1;
+        const stride = w / (dayPoints.length - 1);
+        const ptStr = dayPoints.map((v, i) => `${i * stride},${(h - ((v - min) / range) * h).toFixed(2)}`).join(' ');
+        const last = dayPoints[dayPoints.length - 1];
+        const isPos = last >= 0;
+        const color = isPos ? '#c4ff4d' : '#f85149';
+        const fill = isPos ? 'rgba(196,255,77,0.15)' : 'rgba(248,81,73,0.15)';
+        const zeroY = (h - ((0 - min) / range) * h).toFixed(2);
+        eqEl.innerHTML = `
+          <line x1="0" y1="${zeroY}" x2="${w}" y2="${zeroY}" stroke="#30363d" stroke-width="0.5" stroke-dasharray="3,3"/>
+          <text x="${w-2}" y="${parseFloat(zeroY)-2}" text-anchor="end" fill="#6b7280" font-size="8">0%</text>
+          <polygon points="0,${h} ${ptStr} ${w},${h}" fill="${fill}"/>
+          <polyline points="${ptStr}" fill="none" stroke="${color}" stroke-width="1.8"/>
+          <circle cx="${w}" cy="${(h - ((last - min) / range) * h).toFixed(2)}" r="3" fill="${color}"/>
+          <text x="6" y="14" fill="#9ba8b8" font-size="10">累计 ${last >= 0 ? '+' : ''}${last.toFixed(2)}%</text>
+          <text x="${w-6}" y="14" text-anchor="end" fill="#6b7280" font-size="9">最高 ${max >= 0 ? '+' : ''}${max.toFixed(1)}% · 最低 ${min.toFixed(1)}%</text>
+        `;
       }
     } catch (e) {
       console.error('[insightsHeader]', e);
@@ -3487,9 +3568,67 @@ window.addEventListener('unhandledrejection', function(e) {
       // 按时间倒序
       items.sort((a, b) => (b.ts || 0) - (a.ts || 0));
 
+      // v12.27.9: 顶部 各市场 30 天成交汇总卡 (用户问"缺少各市场历史成交")
+      const sumEl = $('#order-market-summary');
+      if (sumEl) {
+        const cutoff = Date.now() / 1000 - 30 * 86400;
+        const exec30d = items.filter(i =>
+          (i.status === 'filled' || i.status === 'executed') && (i.ts || 0) >= cutoff
+        );
+        const mktAgg = {us: {n:0, pnl:0}, hk: {n:0, pnl:0}, cn: {n:0, pnl:0}, crypto: {n:0, pnl:0}};
+        for (const it of exec30d) {
+          const m = it.isSwap ? 'crypto' : (it.market || 'crypto');
+          if (!mktAgg[m]) continue;
+          mktAgg[m].n++;
+          if (it.realized_pnl_usd != null) mktAgg[m].pnl += Number(it.realized_pnl_usd) || 0;
+        }
+        const mktConf = [
+          {k: 'us', emoji: '🇺🇸', name: '美股'},
+          {k: 'hk', emoji: '🇭🇰', name: '港股'},
+          {k: 'cn', emoji: '🇨🇳', name: 'A股'},
+          {k: 'crypto', emoji: '🪙', name: '加密'},
+        ];
+        const totalN = exec30d.length;
+        sumEl.innerHTML = `
+          <div style="margin: 0 14px 10px; padding: 10px 12px; background: var(--bg-1); border-radius: 10px; border: 1px solid var(--bd);">
+            <div style="font-size: 11px; color: var(--text-2); margin-bottom: 8px; display:flex; justify-content:space-between;">
+              <span>📊 30 天各市场成交</span>
+              <span class="muted">共 ${totalN} 笔</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
+              ${mktConf.map(({k, emoji, name}) => {
+                const a = mktAgg[k];
+                const cls = a.pnl > 0 ? 'up' : a.pnl < 0 ? 'down' : '';
+                return `<div style="text-align:center; padding: 6px 4px; background: var(--bg-2); border-radius: 6px; cursor: pointer;" data-mkt-quick="${k}">
+                  <div style="font-size:14px;">${emoji}</div>
+                  <div style="font-size: 11px; color: var(--text-2); margin: 2px 0;">${name}</div>
+                  <div style="font-size: 14px; font-weight: 700;">${a.n}</div>
+                  <div class="${cls}" style="font-size: 10px; font-weight: 600;">${a.pnl !== 0 ? (a.pnl >= 0 ? '+' : '') + '$' + a.pnl.toFixed(0) : '—'}</div>
+                </div>`;
+              }).join('')}
+            </div>
+          </div>`;
+        // 点击市场卡 → 切换 chip + 过滤
+        sumEl.querySelectorAll('[data-mkt-quick]').forEach(el => {
+          el.addEventListener('click', () => {
+            const m = el.dataset.mktQuick;
+            _state.orderMarketFilter = m;
+            $$('.chip[data-omfilter]').forEach(c => c.classList.toggle('active', c.dataset.omfilter === m));
+            renderOrderFlow();
+          });
+        });
+      }
+
       // 应用 filter
       const f = _state.orderFilter || 'all';
+      const mf = _state.orderMarketFilter || 'all';
       let filtered = f === 'all' ? items : items.filter(i => i.status === f);
+      if (mf !== 'all') {
+        filtered = filtered.filter(i => {
+          const m = i.isSwap ? 'crypto' : (i.market || 'crypto');
+          return m === mf;
+        });
+      }
       // v12.25.0: 跨页 symbol 锁定
       if (_state.symbolFilter) {
         filtered = filtered.filter(i => i.symbol === _state.symbolFilter);
@@ -3534,9 +3673,10 @@ window.addEventListener('unhandledrejection', function(e) {
     const pnlHtml = (pnl !== null && pnl !== undefined && pnl !== '')
       ? ` · <span class="${pnl >= 0 ? 'up' : 'down'}" style="font-weight:600;">${pnl >= 0 ? '+' : ''}$${Number(pnl).toFixed(2)}</span>`
       : '';
+    const marketLabel = o.isSwap ? '🪙' : (o.market === 'us' ? '🇺🇸' : o.market === 'hk' ? '🇭🇰' : o.market === 'cn' ? '🇨🇳' : o.market === 'crypto' ? '🪙' : '');
     return `<div class="order-row status-${o.status}">
       <div class="order-hdr">
-        <div class="order-symbol">${escape(o.symbol)} ${swapTag} <span class="muted small">${intentTxt} ${sideTxt}</span></div>
+        <div class="order-symbol">${marketLabel ? marketLabel + ' ' : ''}${escape(o.symbol)} ${swapTag} <span class="muted small">${intentTxt} ${sideTxt}</span></div>
         <span class="order-status">${statusLabel}</span>
       </div>
       <div class="order-meta">
