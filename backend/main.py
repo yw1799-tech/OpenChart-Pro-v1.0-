@@ -872,12 +872,17 @@ async def _onopen_signal_verify_loop():
                 continue
 
             # 检测刚开市的市场
+            # v12.27.15 修: 重启时 prev=None & now_open=True 也应触发 (否则 deferred 信号要等下次收盘再开盘)
             just_opened: List[str] = []
             for mkt in ("us", "hk", "cn"):
                 now_open = _ime(mkt)
                 prev = market_open_state[mkt]
                 if prev is None:
                     market_open_state[mkt] = now_open
+                    if now_open:
+                        # 服务启动时市场已开盘 — 也扫一次, 救 deferred 信号
+                        just_opened.append(mkt)
+                        logger.info(f"[onopen-verify] {mkt} 启动时已开市, 补扫 deferred 信号 force LLM verify")
                 elif now_open and not prev:
                     just_opened.append(mkt)
                     market_open_state[mkt] = True
@@ -2892,6 +2897,68 @@ async def remove_pool_item(item_id: str):
 # ═══════════════════════════════════════════════════════════════════
 
 signal_router = APIRouter(prefix="/api/signals", tags=["策略信号"])
+
+
+@signal_router.post("/verify-deferred-now")
+async def verify_deferred_now(
+    market: Optional[str] = Query(None, description="us|hk|cn, 默认全部"),
+    hours: int = Query(6, ge=1, le=72, description="拉最近 N 小时内 deferred 信号"),
+    limit: int = Query(100, ge=1, le=500),
+):
+    """v12.27.15: 手动触发 deferred 信号 force LLM verify (救火接口).
+
+    场景: 服务重启时若市场已开盘, _onopen_signal_verify_loop 错过 closed→open 切换,
+    导致 deferred 信号永远不被验证 (要等下次收盘再开盘). 此接口手动救火.
+
+    返回: {scanned, verified, failed, signal_ids}
+    """
+    if monitor_engine is None:
+        raise HTTPException(status_code=503, detail="monitor_engine 未启动")
+    cutoff_ms = int(time.time() * 1000) - hours * 3600 * 1000
+    async with db.acquire() as conn:
+        sql = "SELECT id FROM signals WHERE ai_verdict='deferred' AND generated_at > ?"
+        params: list = [cutoff_ms]
+        if market:
+            sql += " AND market=?"; params.append(market)
+        sql += " ORDER BY generated_at DESC LIMIT ?"; params.append(limit)
+        cur = await conn.execute(sql, params)
+        deferred_ids = [r["id"] for r in await cur.fetchall()]
+
+    if not deferred_ids:
+        return {"scanned": 0, "verified": 0, "failed": 0, "signal_ids": [], "msg": "无 deferred 信号"}
+
+    verified = failed = 0
+    for sid in deferred_ids:
+        try:
+            async with db.acquire() as conn:
+                cur = await conn.execute("SELECT * FROM signals WHERE id=?", (sid,))
+                row = await cur.fetchone()
+            if not row:
+                failed += 1
+                continue
+
+            class _Sig:
+                def __init__(self, r):
+                    self.id = r["id"]; self.symbol = r["symbol"]
+                    self.market = type('M', (), {'value': r["market"]})()
+                    self.action = r["action"]; self.price = r["price"]
+                    self.confidence = r["confidence"]; self.strategy_name = r["strategy_name"]
+                    self.interval = r["interval"] if "interval" in r.keys() else "1H"
+                    self.reason = r["reason"]
+            await monitor_engine._ai_verify_signal(_Sig(dict(row)))
+            verified += 1
+            await asyncio.sleep(0.5)
+        except Exception as e:
+            failed += 1
+            logger.debug(f"[manual-verify-deferred] {sid} 失败: {e}")
+
+    logger.info(f"[manual-verify-deferred] 完成 scanned={len(deferred_ids)} verified={verified} failed={failed}")
+    return {
+        "scanned": len(deferred_ids),
+        "verified": verified,
+        "failed": failed,
+        "signal_ids": deferred_ids[:20],  # 只返回前 20 个 id 给前端展示
+    }
 
 
 @signal_router.get("")
