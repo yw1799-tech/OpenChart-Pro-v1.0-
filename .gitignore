@@ -18,6 +18,18 @@ data/*.db
 data/*.db-shm
 data/*.db-wal
 data/*.db-journal
+/openchart.db
+/openchart.db-shm
+/openchart.db-wal
+/openchart.db-journal
+/_test_*.db
+/_test_*.db-shm
+/_test_*.db-wal
+/_test_*.db-journal
+backend/openchart.db
+backend/openchart.db-shm
+backend/openchart.db-wal
+backend/openchart.db-journal
 
 # 日志
 *.log
@@ -47,3 +59,51 @@ backend/chanlun_engine/chanpy_*.py
 backend/chanlun_engine/full_audit.py
 backend/chanlun_engine/Image/
 .claude/
+
+# v12.27.x: 根目录调试快照 / 一次性导出 (审计脚本输出, 不进 repo)
+/adv_*.json
+/leg_*.json
+/rev_*.json
+/rev_audit.json
+/sig_*.json
+/sigs.json
+/sigs*.json
+/kl_*.json
+/p_us.json
+/p_hk.json
+/p_cn.json
+/pool.json
+/pool[0-9]*.json
+/pool_final*.json
+/pool_log.txt
+/lessons.json
+/lessons[0-9]*.json
+/lessons_*.json
+/reviews.json
+/reviews[0-9]*.json
+/strategies.json
+/strategies_audit.json
+/rescore*.json
+/rr*.json
+/arch.json
+/arch_check.json
+/eth.json
+/log.json
+/pos_audit.json
+
+# 根目录一次性调试脚本
+/debug_*.py
+/diag_*.py
+
+# 根目录截图 (临时分析用, 不要 commit)
+/*.png
+
+# 根目录调试日志
+/errs.txt
+/keys.txt
+/logq.txt
+/srv_log.txt
+
+# 临时打包 / 一次性报告文档
+/openchart_patch.tgz
+/FIX_REPORT.md
