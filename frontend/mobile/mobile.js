@@ -3569,33 +3569,43 @@ window.addEventListener('unhandledrejection', function(e) {
       items.sort((a, b) => (b.ts || 0) - (a.ts || 0));
 
       // v12.27.9: 顶部 各市场 30 天成交汇总卡 (用户问"缺少各市场历史成交")
+      // v12.27.10: 区分 现货加密 vs 合约 (swap), swap → 合约 (⚡), spot → 加密 (🪙)
       const sumEl = $('#order-market-summary');
       if (sumEl) {
         const cutoff = Date.now() / 1000 - 30 * 86400;
-        const exec30d = items.filter(i =>
-          (i.status === 'filled' || i.status === 'executed') && (i.ts || 0) >= cutoff
-        );
-        const mktAgg = {us: {n:0, pnl:0}, hk: {n:0, pnl:0}, cn: {n:0, pnl:0}, crypto: {n:0, pnl:0}};
+        const isFilled = (s) => s === 'filled' || s === 'executed';
+        const exec30d = items.filter(i => isFilled(i.status) && (i.ts || 0) >= cutoff);
+        const mktAgg = {us: {n:0, pnl:0}, hk: {n:0, pnl:0}, cn: {n:0, pnl:0},
+                        swap: {n:0, pnl:0}, crypto: {n:0, pnl:0}};
         for (const it of exec30d) {
-          const m = it.isSwap ? 'crypto' : (it.market || 'crypto');
+          // swap 走 'swap' 桶, 现货 crypto 走 'crypto' 桶, 股市走对应市场
+          const m = it.isSwap ? 'swap' : (it.market || 'crypto');
           if (!mktAgg[m]) continue;
           mktAgg[m].n++;
           if (it.realized_pnl_usd != null) mktAgg[m].pnl += Number(it.realized_pnl_usd) || 0;
         }
+        // 4 列布局: 现货 crypto 笔数为 0 时不占列, 把合约塞进第 4 列
+        const hasSpotCrypto = mktAgg.crypto.n > 0;
         const mktConf = [
           {k: 'us', emoji: '🇺🇸', name: '美股'},
           {k: 'hk', emoji: '🇭🇰', name: '港股'},
           {k: 'cn', emoji: '🇨🇳', name: 'A股'},
-          {k: 'crypto', emoji: '🪙', name: '加密'},
+          // 没现货加密单时, 第 4 列直接显示合约
+          hasSpotCrypto ? {k: 'crypto', emoji: '🪙', name: '加密现货'} : {k: 'swap', emoji: '⚡', name: '合约'},
         ];
+        // 如果同时有现货+合约, 加第 5 列
+        if (hasSpotCrypto && mktAgg.swap.n > 0) {
+          mktConf.push({k: 'swap', emoji: '⚡', name: '合约'});
+        }
         const totalN = exec30d.length;
+        const cols = mktConf.length;
         sumEl.innerHTML = `
           <div style="margin: 0 14px 10px; padding: 10px 12px; background: var(--bg-1); border-radius: 10px; border: 1px solid var(--bd);">
             <div style="font-size: 11px; color: var(--text-2); margin-bottom: 8px; display:flex; justify-content:space-between;">
               <span>📊 30 天各市场成交</span>
               <span class="muted">共 ${totalN} 笔</span>
             </div>
-            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
+            <div style="display: grid; grid-template-columns: repeat(${cols}, 1fr); gap: 6px;">
               ${mktConf.map(({k, emoji, name}) => {
                 const a = mktAgg[k];
                 const cls = a.pnl > 0 ? 'up' : a.pnl < 0 ? 'down' : '';
@@ -3609,20 +3619,27 @@ window.addEventListener('unhandledrejection', function(e) {
             </div>
           </div>`;
         // 点击市场卡 → 切换 chip + 过滤
+        // chip 用 'crypto' 桶名涵盖现货+合约, 'swap'/'crypto' 都映射到 chip 'crypto'
         sumEl.querySelectorAll('[data-mkt-quick]').forEach(el => {
           el.addEventListener('click', () => {
-            const m = el.dataset.mktQuick;
-            _state.orderMarketFilter = m;
-            $$('.chip[data-omfilter]').forEach(c => c.classList.toggle('active', c.dataset.omfilter === m));
+            const k = el.dataset.mktQuick;
+            const chipKey = (k === 'swap') ? 'crypto' : k;
+            _state.orderMarketFilter = chipKey;
+            $$('.chip[data-omfilter]').forEach(c => c.classList.toggle('active', c.dataset.omfilter === chipKey));
             renderOrderFlow();
           });
         });
       }
 
       // 应用 filter
+      // v12.27.10: '已成交' chip 同时匹配 'filled' (合约) 和 'executed' (现货)
+      //   旧版 chip 只对一种状态生效, 美股/港股/A股 (status=executed) 全被遮
       const f = _state.orderFilter || 'all';
       const mf = _state.orderMarketFilter || 'all';
-      let filtered = f === 'all' ? items : items.filter(i => i.status === f);
+      let filtered;
+      if (f === 'all') filtered = items;
+      else if (f === 'filled') filtered = items.filter(i => i.status === 'filled' || i.status === 'executed');
+      else filtered = items.filter(i => i.status === f);
       if (mf !== 'all') {
         filtered = filtered.filter(i => {
           const m = i.isSwap ? 'crypto' : (i.market || 'crypto');
@@ -3673,7 +3690,7 @@ window.addEventListener('unhandledrejection', function(e) {
     const pnlHtml = (pnl !== null && pnl !== undefined && pnl !== '')
       ? ` · <span class="${pnl >= 0 ? 'up' : 'down'}" style="font-weight:600;">${pnl >= 0 ? '+' : ''}$${Number(pnl).toFixed(2)}</span>`
       : '';
-    const marketLabel = o.isSwap ? '🪙' : (o.market === 'us' ? '🇺🇸' : o.market === 'hk' ? '🇭🇰' : o.market === 'cn' ? '🇨🇳' : o.market === 'crypto' ? '🪙' : '');
+    const marketLabel = o.isSwap ? '⚡' : (o.market === 'us' ? '🇺🇸' : o.market === 'hk' ? '🇭🇰' : o.market === 'cn' ? '🇨🇳' : o.market === 'crypto' ? '🪙' : '');
     return `<div class="order-row status-${o.status}">
       <div class="order-hdr">
         <div class="order-symbol">${marketLabel ? marketLabel + ' ' : ''}${escape(o.symbol)} ${swapTag} <span class="muted small">${intentTxt} ${sideTxt}</span></div>
