@@ -3525,10 +3525,16 @@ window.addEventListener('unhandledrejection', function(e) {
   }
   async function renderOrderFlow() {
     try {
-      const [swapOrders, log] = await Promise.all([
-        loadSwapOrdersAll(),
-        loadHistory(),
+      // v12.27.12: 订单页专用大窗口拉取 (independent of cache)
+      //   loadHistory() 默认 limit=50, 但用户 30 天有 50+ 闭环 → 每笔 ≥2 log
+      //   = 100+ entries, 50 窗口被新数据填满 → 老 close 拿不到 → 美股只剩 9 个 open
+      //   订单流水页改为拉 500 (API 上限) + swap orders 拉 500
+      const [swapOrdersResp, logResp] = await Promise.all([
+        fetchJSON('/api/swap/orders?limit=500').catch(() => ({items: []})),
+        fetchJSON('/api/auto-trade/log?limit=500').catch(() => ({items: []})),
       ]);
+      const swapOrders = swapOrdersResp.items || [];
+      const log = logResp;
       // 把 swap orders 和 spot trades 合并到一个时间线
       const items = [];
       for (const o of (swapOrders || [])) {
