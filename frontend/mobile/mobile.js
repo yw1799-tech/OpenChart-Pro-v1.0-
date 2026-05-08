@@ -243,6 +243,20 @@ window.addEventListener('unhandledrejection', function(e) {
   function navigate(tab, sub = null, opts = {}) {
     // 关闭当前抽屉
     if (typeof closeSheet === 'function') closeSheet();
+    // v12.27.8 Bug 2 修: 旧 tab/sub 路径自动转换为 v3 4-tab 路径
+    //   旧: navigate('market', 'news') → 新: navigate('opp', 'news')
+    //   旧: navigate('learn', 'reviews') → 新: navigate('insights', 'reviews')
+    //   旧: navigate('trade', 'spot') → 新: navigate('holdings', 'all')
+    if (tab && sub) {
+      const legacyKey = `${tab}/${sub}`;
+      if (LEGACY_TAB_REDIRECT[legacyKey]) {
+        [tab, sub] = LEGACY_TAB_REDIRECT[legacyKey];
+      }
+    } else if (tab && !sub) {
+      // 仅 tab 没 sub: 旧 tab → 新 tab
+      const legacyTabMap = { home: 'now', market: 'opp', trade: 'holdings', learn: 'insights' };
+      if (legacyTabMap[tab]) tab = legacyTabMap[tab];
+    }
     // 应用 symbolFilter (跨页锁定 symbol)
     _state.symbolFilter = opts.symbolFilter || null;
     // 应用 chip filter
@@ -1562,9 +1576,13 @@ window.addEventListener('unhandledrejection', function(e) {
 
   function renderReviewRow(r) {
     const grade = (r.grade || '').toUpperCase();
-    const pnl = r.realized_pnl_usd || 0;
+    // v12.27.8 Bug 3 修: trade_review 表只有 realized_pnl_local + realized_pnl_pct
+    //   旧代码用 realized_pnl_usd (字段不存在) → 永远 0 → 永远 'up' (绿) → 颜色错乱
+    //   现按 pnl_pct 决定颜色 (准确), 显示用 realized_pnl_local
     const pnlPct = r.realized_pnl_pct || 0;
-    const cls = pnl >= 0 ? 'up' : 'down';
+    const pnlLocal = r.realized_pnl_local != null ? r.realized_pnl_local : (r.realized_pnl_usd || 0);
+    const ccy = (r.market === 'cn') ? 'CNY' : (r.market === 'hk') ? 'HKD' : 'USD';
+    const cls = pnlPct > 0.01 ? 'up' : (pnlPct < -0.01 ? 'down' : 'muted');
     const lessonsArr = Array.isArray(r.lessons) ? r.lessons : [];
     // v12.20.9: swap 复盘加 ⚡ 徽章 + 杠杆/funding/强平标记
     const isSwap = r.is_swap == 1 || r.is_swap === true;
@@ -1583,10 +1601,10 @@ window.addEventListener('unhandledrejection', function(e) {
           <span class="small muted">${MARKET_LABEL[r.market]||r.market}</span>
           ${swapBadges}
         </div>
-        <div class="row-pnl ${cls}">${fmtPnl(pnl)} (${fmtPct(pnlPct)})</div>
+        <div class="row-pnl ${cls}">${fmtPnl(pnlLocal, ccy)} (${fmtPct(pnlPct)})</div>
       </div>
       <div class="row-meta">
-        持仓 ${Math.round((r.holding_seconds||0)/3600)} h · ${fmtTime(r.close_at)}
+        持仓 ${Math.round((r.hold_hours || (r.holding_seconds||0)/3600))} h · ${fmtTime(r.close_at)}
         ${isSwap && r.swap_funding_total ? ' · funding ' + fmtPnl(r.swap_funding_total) : ''}
       </div>
       ${lessonsArr.length ? `<div class="row-reason">📌 ${escape(lessonsArr.slice(0,2).join(' / '))}</div>` : ''}
@@ -1598,7 +1616,10 @@ window.addEventListener('unhandledrejection', function(e) {
     try {
       const r = await fetchJSON('/api/trade-review/' + encodeURIComponent(pid));
       const grade = (r.grade || '').toUpperCase();
-      const pnl = r.realized_pnl_usd || 0;
+      // v12.27.8 Bug 3: trade_review 没有 realized_pnl_usd 列, 用 realized_pnl_local + 货币
+      const pnl = r.realized_pnl_local != null ? r.realized_pnl_local : (r.realized_pnl_usd || 0);
+      const ccy = (r.market === 'cn') ? 'CNY' : (r.market === 'hk') ? 'HKD' : 'USD';
+      const pnlPct = r.realized_pnl_pct || 0;
       const pros = Array.isArray(r.pros) ? r.pros : [];
       const cons = Array.isArray(r.cons) ? r.cons : [];
       const lessons = Array.isArray(r.lessons) ? r.lessons : [];
@@ -1620,8 +1641,8 @@ window.addEventListener('unhandledrejection', function(e) {
         <h4>结果</h4>
         <div class="kv-row"><span class="k">代码</span><span class="v">${escape(r.symbol)}${isSwap ? ' <span style="background:#3d2f5a;color:#c4b5fd;padding:1px 4px;border-radius:3px;font-size:9px;margin-left:4px;">⚡合约</span>' : ''}</span></div>
         <div class="kv-row"><span class="k">评级</span><span class="v"><span class="grade-pill ${grade}">${grade||'?'}</span> ${GRADE_LABEL[grade]||''}</span></div>
-        <div class="kv-row"><span class="k">实现盈亏</span><span class="v ${pnl>=0?'up':'down'}">${fmtPnl(pnl)} (${fmtPct(r.realized_pnl_pct||0)})</span></div>
-        <div class="kv-row"><span class="k">持仓时长</span><span class="v">${Math.round((r.holding_seconds||0)/3600)} h</span></div>
+        <div class="kv-row"><span class="k">实现盈亏</span><span class="v ${pnlPct>0.01?'up':(pnlPct<-0.01?'down':'muted')}">${fmtPnl(pnl, ccy)} (${fmtPct(pnlPct)})</span></div>
+        <div class="kv-row"><span class="k">持仓时长</span><span class="v">${Math.round(r.hold_hours || (r.holding_seconds||0)/3600)} h</span></div>
         <div class="kv-row"><span class="k">闭环时间</span><span class="v">${fmtTime(r.close_at)}</span></div>
         ${r.summary ? `<h4>总结</h4><div>${escape(r.summary)}</div>` : ''}
         ${r.primary_lesson ? `<h4>🎯 核心教训</h4><div>${escape(r.primary_lesson)}</div>` : ''}
@@ -2592,24 +2613,450 @@ window.addEventListener('unhandledrejection', function(e) {
     </svg>`;
   }
 
+  // v12.27.8 Phase 3: 真实 renderHoldings (用 v3 框架的 #holdings-list)
+  //   - chip 切换 (all/us/hk/cn/crypto/swap/risk)
+  //   - 顶部环形饼图 (按市场分布持仓市值)
+  //   - holding-v3 卡 (sparkline + SL/TP 进度条 + AI inline)
   async function renderHoldings() {
-    // Phase 3 完整实现; 现暂时复用 renderPositions
-    try { await renderPositions(); }
-    catch (e) { console.error('[renderHoldings]', e); }
+    const listEl = $('#holdings-list');
+    const pieCard = $('#holdings-pie-card');
+    const pieSvg = $('#holdings-pie');
+    const pieLeg = $('#holdings-pie-legend');
+    const titleEl = $('#holdings-title');
+    const subEl = $('#holdings-sub');
+    if (!listEl) return;
+    listEl.innerHTML = '<div class="muted small" style="padding:14px;">⏳ 加载持仓中...</div>';
+    try {
+      const [items, advices, swapAcct, swapPos] = await Promise.all([
+        loadPositions(), loadAdvices(), loadSwapAccount(), loadSwapPositions(),
+      ]);
+      const swapMode = swapAcct && swapAcct.mode === 'swap_mock';
+      const swapPositions = swapMode ? (swapPos || []) : [];
+      const adviceMap = {};
+      (advices || []).forEach(a => { if (a && a.position_id) adviceMap[a.position_id] = a; });
+
+      // ── 顶部饼图 (按市场聚合 USD 市值) ──
+      const allUsd = {us: 0, hk: 0, cn: 0, crypto: 0, swap: 0};
+      for (const p of items) {
+        const m = p.market || 'crypto';
+        if (allUsd[m] != null) allUsd[m] += (p.market_value_usd || 0);
+        else allUsd.crypto += (p.market_value_usd || 0);
+      }
+      for (const p of swapPositions) {
+        allUsd.swap += (p.margin_usd || 0) + (p.unrealized_pnl_usd || 0);
+      }
+      const total = Object.values(allUsd).reduce((s, v) => s + v, 0);
+      if (total > 0 && pieSvg && pieLeg) {
+        if (pieCard) pieCard.hidden = false;
+        const colors = {us: '#5b9eff', hk: '#bc8cff', cn: '#f4a13b', crypto: '#c4ff4d', swap: '#a78bfa'};
+        const labels = {us: '🇺🇸 美股', hk: '🇭🇰 港股', cn: '🇨🇳 A股', crypto: '🪙 加密', swap: '⚡ 合约'};
+        // SVG 环形饼 (viewBox 0 0 36 36, r=15.9)
+        let segs = '';
+        let acc = 0;
+        for (const k of ['us','hk','cn','crypto','swap']) {
+          const v = allUsd[k];
+          if (v <= 0) continue;
+          const pct = v / total * 100;
+          segs += `<circle cx="18" cy="18" r="15.9155" fill="none" stroke="${colors[k]}" stroke-width="3.5"
+            stroke-dasharray="${pct.toFixed(2)} ${(100-pct).toFixed(2)}"
+            stroke-dashoffset="${(-acc).toFixed(2)}"
+            transform="rotate(-90 18 18)"/>`;
+          acc += pct;
+        }
+        pieSvg.innerHTML = segs +
+          `<text x="18" y="17" text-anchor="middle" font-size="3.5" fill="#fff" font-weight="700">${fmtMoney(total)}</text>
+           <text x="18" y="22" text-anchor="middle" font-size="2.5" fill="#9ba8b8">总市值</text>`;
+        pieLeg.innerHTML = ['us','hk','cn','crypto','swap']
+          .filter(k => allUsd[k] > 0)
+          .map(k => `<div class="pie-legend-row">
+            <span class="pie-l-name"><span class="pie-dot" style="background:${colors[k]};"></span>${labels[k]}</span>
+            <span class="pie-l-val">${fmtMoney(allUsd[k])} <span class="muted small">(${(allUsd[k]/total*100).toFixed(1)}%)</span></span>
+          </div>`).join('');
+      } else if (pieCard) {
+        pieCard.hidden = true;
+      }
+
+      // ── 按 chip 过滤 ──
+      const f = _state.holdingsFilter || 'all';
+      let filtered = [];
+      let filteredSwap = [];
+      if (f === 'all') {
+        filtered = items.slice();
+        filteredSwap = swapPositions.slice();
+      } else if (f === 'swap') {
+        filteredSwap = swapPositions.slice();
+      } else if (f === 'risk') {
+        // 风险榜: 距 SL <5% 或 浮亏 >5% 或 距强平 <10%
+        filtered = items.filter(p => {
+          const sl = p.stop_loss; const cur = p.current_price;
+          if (sl && cur && Math.abs((cur - sl) / cur) * 100 < 5) return true;
+          if ((p.pnl_pct || 0) < -5) return true;
+          return false;
+        });
+        filteredSwap = swapPositions.filter(p => {
+          if (p.liq_price && p.avg_open_price) {
+            const distPct = p.pos_side === 'long'
+              ? (1 - p.liq_price / p.avg_open_price) * 100
+              : (p.liq_price / p.avg_open_price - 1) * 100;
+            return distPct < 10;
+          }
+          return false;
+        });
+      } else {
+        filtered = items.filter(p => p.market === f);
+      }
+
+      // ── 标题/小字 更新 ──
+      const filterLabels = {all: '所有', us: '🇺🇸 美股', hk: '🇭🇰 港股', cn: '🇨🇳 A股',
+                            crypto: '🪙 加密现货', swap: '⚡ 加密合约', risk: '🚨 风险榜'};
+      const totalCount = filtered.length + filteredSwap.length;
+      let totalPnl = 0;
+      for (const p of filtered) totalPnl += (p.pnl_usd || 0);
+      for (const p of filteredSwap) totalPnl += (p.unrealized_pnl_usd || 0);
+      if (titleEl) titleEl.textContent = `💼 持仓 — ${filterLabels[f] || f}`;
+      if (subEl) {
+        const cls = totalPnl >= 0 ? 'up' : 'down';
+        subEl.innerHTML = `${totalCount} 笔 · 浮动 <span class="${cls}">${fmtPnl(totalPnl)}</span>`;
+      }
+
+      // ── 渲染卡片 ──
+      if (!totalCount) {
+        listEl.innerHTML = `<div class="empty" style="padding:30px 14px;">
+          <div class="empty-icon">📭</div>
+          <div>${f === 'risk' ? '当前无风险持仓' : '该分类下无持仓'}</div>
+        </div>`;
+        return;
+      }
+      // 现货卡 + 合约卡
+      const spotHtml = filtered.map(p => renderHoldingV3(p, adviceMap[p.id])).join('');
+      const swapHtml = filteredSwap.map(p => renderHoldingV3Swap(p)).join('');
+      listEl.innerHTML = spotHtml + swapHtml;
+      // 绑点击 → 持仓详情
+      listEl.querySelectorAll('.holding-v3[data-id]').forEach(c => {
+        c.addEventListener('click', () => openPositionDetail(c.dataset.id));
+      });
+      listEl.querySelectorAll('.holding-v3[data-swap-id]').forEach(c => {
+        c.addEventListener('click', () => openSwapPositionDetail(c.dataset.swapId));
+      });
+    } catch (e) {
+      console.error('[renderHoldings]', e);
+      listEl.innerHTML = `<div class="empty" style="padding:14px;color:#f85149;">
+        加载失败: ${escape((e && e.message) || String(e))}
+      </div>`;
+    }
+  }
+
+  // v3 现货持仓卡
+  function renderHoldingV3(p, advice) {
+    const pnlPct = p.pnl_pct || 0;
+    const cls = pnlPct >= 0 ? '' : (pnlPct < -5 ? 'danger' : 'warn-b');
+    const ccy = p.cost_currency || 'USD';
+    const sl = p.stop_loss, tp = p.take_profit;
+    const cur = p.current_price || p.avg_cost || 0;
+    const avg = p.avg_cost || 0;
+    // SL 进度条: 当前价距 SL 多远 (越近越红)
+    let slBarHtml = '';
+    if (sl && cur) {
+      const distPct = Math.abs((cur - sl) / cur) * 100;
+      const fill = Math.max(5, Math.min(100, 100 - distPct * 5));
+      const cls2 = distPct < 2 ? 'danger' : distPct < 5 ? 'warn-b' : 'safe';
+      slBarHtml = `<div class="bar-row-v3 ${cls2}">
+        <span class="lbl">SL</span>
+        <div class="progress"><div class="progress-fill ${cls2 === 'safe' ? 'safe' : (cls2 === 'danger' ? 'danger' : 'warn-bg')}" style="width:${fill}%;"></div></div>
+        <span class="pct">${distPct.toFixed(1)}%</span>
+      </div>`;
+    }
+    let tpBarHtml = '';
+    if (tp && cur) {
+      const distPct = Math.abs((tp - cur) / cur) * 100;
+      const fill = Math.max(5, Math.min(100, 100 - distPct * 2));
+      tpBarHtml = `<div class="bar-row-v3 safe">
+        <span class="lbl">TP</span>
+        <div class="progress"><div class="progress-fill acc" style="width:${fill}%;"></div></div>
+        <span class="pct">${distPct.toFixed(1)}%</span>
+      </div>`;
+    }
+    // AI 建议 inline
+    let aiHtml = '';
+    if (advice && advice.advice) {
+      const cn = ADVICE_LABEL_CN[advice.advice] || advice.advice;
+      const adCls = (advice.advice === 'close' || advice.advice === 'reduce') ? 'close'
+                   : (advice.advice === 'add') ? '' : 'warn-b';
+      aiHtml = `<div class="ai-tip ${adCls}">
+        <span class="ai-tip-role">🤖 AI</span>${escape(cn)}${advice.confidence ? `<span class="ai-tip-conf">置信 ${advice.confidence}</span>` : ''}
+        ${advice.reason ? `<div style="margin-top:3px;font-size:11px;color:var(--text-2);">${escape(String(advice.reason).slice(0, 80))}</div>` : ''}
+      </div>`;
+    }
+    return `<div class="holding-v3 ${cls}" data-id="${escape(p.id)}">
+      <div class="h3-hdr">
+        <div class="h3-l">
+          <span class="h3-symbol">${escape(p.symbol)}</span>
+          <span class="h3-side">${MARKET_LABEL[p.market] || p.market} · ${p.side === 'long' ? '多' : '空'}</span>
+        </div>
+        <div class="h3-pnl-pct ${pnlPct >= 0 ? 'up' : 'down'}">${fmtPct(pnlPct)}</div>
+      </div>
+      <div class="h3-row">
+        <span>${(p.quantity || 0).toLocaleString()} @ ${fmtMoney(avg, ccy)}</span>
+        <span class="v">${fmtMoney(cur, ccy)}</span>
+      </div>
+      <div class="h3-row">
+        <span>浮动盈亏</span>
+        <span class="v ${pnlPct >= 0 ? 'up' : 'down'}">${fmtPnl(p.pnl_local || 0, ccy)}</span>
+      </div>
+      ${slBarHtml}
+      ${tpBarHtml}
+      ${aiHtml}
+    </div>`;
+  }
+
+  // v3 合约持仓卡
+  function renderHoldingV3Swap(p) {
+    const upnl = p.unrealized_pnl_usd || 0;
+    const margin = p.margin_usd || 1;
+    const upnlPct = (upnl / margin) * 100;
+    const cls = upnlPct >= 0 ? '' : (upnlPct < -20 ? 'danger' : 'warn-b');
+    const sideTxt = p.pos_side === 'long' ? '🟢多' : '🔴空';
+    const dispSym = (p.symbol || '').replace('-SWAP', '');
+    let liqBarHtml = '';
+    if (p.liq_price && p.avg_open_price) {
+      const distPct = p.pos_side === 'long'
+        ? (1 - p.liq_price / p.avg_open_price) * 100
+        : (p.liq_price / p.avg_open_price - 1) * 100;
+      const fill = Math.max(5, Math.min(100, 100 - distPct * 3));
+      const c2 = distPct < 5 ? 'danger' : distPct < 15 ? 'warn-b' : 'safe';
+      liqBarHtml = `<div class="bar-row-v3 ${c2}">
+        <span class="lbl">强平</span>
+        <div class="progress"><div class="progress-fill ${c2 === 'safe' ? 'safe' : (c2 === 'danger' ? 'danger' : 'warn-bg')}" style="width:${fill}%;"></div></div>
+        <span class="pct">${distPct.toFixed(1)}%</span>
+      </div>`;
+    }
+    return `<div class="holding-v3 swap ${cls}" data-swap-id="${escape(p.id)}">
+      <div class="h3-hdr">
+        <div class="h3-l">
+          <span class="h3-symbol">${escape(dispSym)}</span>
+          <span class="h3-side swap">${sideTxt} · ${p.leverage || 1}x</span>
+        </div>
+        <div class="h3-pnl-pct ${upnlPct >= 0 ? 'up' : 'down'}">${fmtPct(upnlPct)}</div>
+      </div>
+      <div class="h3-row">
+        <span>${((p.qty||0) * (p.contract_size||0.01)).toFixed(6)} 个 @ ${(p.avg_open_price||0).toFixed(4)}</span>
+        <span class="v">${fmtMoney(p.mark_price || p.avg_open_price || 0)}</span>
+      </div>
+      <div class="h3-row">
+        <span>浮动 PnL</span>
+        <span class="v ${upnlPct >= 0 ? 'up' : 'down'}">${fmtPnl(upnl)}</span>
+      </div>
+      ${liqBarHtml}
+      <div class="h3-row">
+        <span class="muted small">资金费 ${fmtPnl(p.funding_fee_total_usd || 0)} · 保证金 ${fmtMoney(margin)}</span>
+      </div>
+    </div>`;
+  }
+
+  // v12.27.8: swap 持仓详情 (复用旧抽屉, 简版)
+  async function openSwapPositionDetail(swapId) {
+    openSheet('合约持仓详情', '<div class="empty">加载中…</div>');
+    try {
+      const items = await loadSwapPositions();
+      const p = (items || []).find(x => String(x.id) === String(swapId));
+      if (!p) { $('#sheet-content').innerHTML = '<div class="empty">未找到</div>'; return; }
+      const sym = (p.symbol || '').replace('-SWAP', '');
+      const html = `
+        <h4>基本</h4>
+        <div class="kv-row"><span class="k">代码</span><span class="v">${escape(sym)} (永续)</span></div>
+        <div class="kv-row"><span class="k">方向</span><span class="v">${p.pos_side === 'long' ? '🟢 多' : '🔴 空'} · ${p.leverage || 1}x</span></div>
+        <div class="kv-row"><span class="k">数量</span><span class="v">${((p.qty||0) * (p.contract_size||0.01)).toFixed(6)}</span></div>
+        <div class="kv-row"><span class="k">开仓价</span><span class="v">${(p.avg_open_price||0).toFixed(4)}</span></div>
+        <div class="kv-row"><span class="k">现价</span><span class="v">${(p.mark_price||p.avg_open_price||0).toFixed(4)}</span></div>
+        <div class="kv-row"><span class="k">浮动盈亏</span><span class="v ${(p.unrealized_pnl_usd||0)>=0?'up':'down'}">${fmtPnl(p.unrealized_pnl_usd||0)}</span></div>
+        <h4>风控</h4>
+        <div class="kv-row"><span class="k">保证金</span><span class="v">${fmtMoney(p.margin_usd||0)}</span></div>
+        <div class="kv-row"><span class="k">强平价</span><span class="v">${(p.liq_price||0).toFixed(4)}</span></div>
+        <div class="kv-row"><span class="k">累计 funding</span><span class="v">${fmtPnl(p.funding_fee_total_usd||0)}</span></div>
+        <div class="kv-row"><span class="k">累计手续费</span><span class="v down">-${fmtMoney(p.total_fee_usd||0)}</span></div>
+        <div class="sheet-actions" style="display:flex;flex-wrap:wrap;gap:6px;">
+          <button class="btn btn-link" data-go-news>📰 该币新闻</button>
+          <button class="btn btn-link" data-go-signals>🎯 历史信号</button>
+        </div>
+      `;
+      $('#sheet-content').innerHTML = html;
+      const goN = $('#sheet-content [data-go-news]');
+      if (goN) goN.addEventListener('click', () => navigate('opp', 'news', { symbolFilter: sym }));
+      const goS = $('#sheet-content [data-go-signals]');
+      if (goS) goS.addEventListener('click', () => navigate('opp', 'signals', { symbolFilter: sym }));
+    } catch (e) {
+      $('#sheet-content').innerHTML = `<div class="empty">加载失败: ${escape(e.message)}</div>`;
+    }
   }
   async function renderInsightsWithCharts() {
     // Phase 5 完整实现; 现根据 sub 调对应 render
     const sub = _state.activeSub;
     try {
+      // 顶部 健康度卡 + 30 天权益曲线 (常驻所有 sub)
+      await renderInsightsHeader();
       if (sub === 'reviews') await renderReviewList();
       else if (sub === 'lessons') await renderLessons();
       else if (sub === 'rules') await renderRulesOnly();
       else if (sub === 'weekly') await renderWeekly();
-      else if (sub === 'strategies') {
-        const el = $('#strategy-bars');
-        if (el) el.innerHTML = '<div class="muted small" style="padding:14px;">📊 策略 PnL 图表 — Phase 5 实施</div>';
-      }
+      else if (sub === 'strategies') await renderStrategyPerf();
     } catch (e) { console.error('[renderInsightsWithCharts]', e); }
+  }
+
+  // v12.27.8 Phase 5: 健康度卡 + 30 天权益曲线
+  async function renderInsightsHeader() {
+    try {
+      const reviewsData = await loadReviews().catch(() => ({items: []}));
+      const reviews = reviewsData.items || [];
+      // 30 天内
+      const cutoff = Date.now() / 1000 - 30 * 86400;
+      const recent = reviews.filter(r => (r.close_at || 0) >= cutoff);
+      // 累计 pnl_pct
+      let cumPct = 0;
+      let wins = 0, losses = 0, totalPctSum = 0;
+      for (const r of recent) {
+        const p = r.realized_pnl_pct || 0;
+        if (p > 0) wins++; else if (p < 0) losses++;
+        totalPctSum += p;
+        cumPct += p;
+      }
+      const winRate = recent.length ? (wins / recent.length * 100) : 0;
+      // 健康度卡
+      const healthCard = $('#health-card');
+      const healthPnl = $('#health-pnl');
+      const healthWarn = $('#health-warn');
+      const healthDetail = $('#health-detail');
+      const healthStats = $('#health-stats');
+      if (healthCard && healthPnl) {
+        healthCard.hidden = false;
+        const healthy = totalPctSum >= 0;
+        healthCard.classList.toggle('healthy', healthy);
+        healthPnl.textContent = `${totalPctSum >= 0 ? '+' : ''}${totalPctSum.toFixed(2)}%`;
+        healthPnl.className = 'health-num ' + (totalPctSum >= 0 ? 'up' : 'down');
+        if (healthWarn) {
+          healthWarn.textContent = healthy ? '✓ 系统健康' : '⚠️ 累计亏损';
+          healthWarn.className = 'health-warn-text' + (healthy ? ' up' : '');
+        }
+        if (healthDetail) {
+          healthDetail.textContent = `30 天内 ${recent.length} 笔闭环 · 胜率 ${winRate.toFixed(1)}% · 平均 ${recent.length ? (totalPctSum/recent.length).toFixed(2) : 0}%/笔`;
+        }
+        if (healthStats) {
+          healthStats.innerHTML = `
+            <div class="h-stat"><div class="h-stat-num up">${wins}</div><div class="h-stat-label">盈利笔数</div></div>
+            <div class="h-stat"><div class="h-stat-num down">${losses}</div><div class="h-stat-label">亏损笔数</div></div>
+            <div class="h-stat"><div class="h-stat-num">${winRate.toFixed(0)}%</div><div class="h-stat-label">胜率</div></div>
+          `;
+        }
+      }
+      // 30 天权益曲线 (按 close_at 时序累积 pnl_pct)
+      const eqEl = $('#equity-30d');
+      if (eqEl) {
+        const sorted = recent.slice().sort((a, b) => (a.close_at || 0) - (b.close_at || 0));
+        let cum = 0;
+        const points = sorted.map(r => { cum += (r.realized_pnl_pct || 0); return cum; });
+        if (points.length < 2) {
+          eqEl.innerHTML = '<text x="160" y="70" text-anchor="middle" fill="#9ba8b8" font-size="11">数据不足</text>';
+        } else {
+          const max = Math.max(...points, 0);
+          const min = Math.min(...points, 0);
+          const range = (max - min) || 1;
+          const w = 320, h = 140;
+          const stride = w / (points.length - 1);
+          const ptStr = points.map((v, i) => `${i * stride},${h - ((v - min) / range) * h}`).join(' ');
+          const isPos = points[points.length-1] >= 0;
+          const color = isPos ? '#c4ff4d' : '#f85149';
+          const fill = isPos ? 'rgba(196,255,77,0.15)' : 'rgba(248,81,73,0.15)';
+          // 0 baseline
+          const zeroY = h - ((0 - min) / range) * h;
+          eqEl.innerHTML = `
+            <line x1="0" y1="${zeroY}" x2="${w}" y2="${zeroY}" stroke="#30363d" stroke-width="0.5" stroke-dasharray="2,2"/>
+            <polygon points="0,${h} ${ptStr} ${w},${h}" fill="${fill}"/>
+            <polyline points="${ptStr}" fill="none" stroke="${color}" stroke-width="1.5"/>
+            <text x="6" y="14" fill="#9ba8b8" font-size="9">累计 ${points[points.length-1].toFixed(2)}%</text>
+          `;
+        }
+      }
+    } catch (e) {
+      console.error('[insightsHeader]', e);
+    }
+  }
+
+  // v12.27.8 Phase 5: 策略表现页 — 按 pool_id (市场) + symbol top-N + 日 PnL 热图
+  async function renderStrategyPerf() {
+    const barsEl = $('#strategy-bars');
+    const heatEl = $('#pnl-heatmap');
+    if (!barsEl) return;
+    barsEl.innerHTML = '<div class="muted small" style="padding:8px;">⏳ 加载中…</div>';
+    try {
+      const reviewsData = await loadReviews().catch(() => ({items: []}));
+      const reviews = reviewsData.items || [];
+      const cutoff = Date.now() / 1000 - 30 * 86400;
+      const recent = reviews.filter(r => (r.close_at || 0) >= cutoff);
+      if (!recent.length) {
+        barsEl.innerHTML = '<div class="muted small" style="padding:14px;text-align:center;">30 天内无闭环交易</div>';
+        if (heatEl) heatEl.innerHTML = '<div class="muted small" style="grid-column:1/-1;text-align:center;padding:14px;">无数据</div>';
+        return;
+      }
+      // ── 按 symbol 聚合 (top-10 by 累计 pnl_pct, 含正负) ──
+      const bySymbol = {};
+      for (const r of recent) {
+        const k = r.symbol || '?';
+        if (!bySymbol[k]) bySymbol[k] = {symbol: k, market: r.market, count: 0, totalPct: 0};
+        bySymbol[k].count++;
+        bySymbol[k].totalPct += (r.realized_pnl_pct || 0);
+      }
+      const sorted = Object.values(bySymbol).sort((a, b) => Math.abs(b.totalPct) - Math.abs(a.totalPct)).slice(0, 10);
+      const maxAbs = Math.max(...sorted.map(s => Math.abs(s.totalPct)), 1);
+      barsEl.innerHTML = sorted.map(s => {
+        const pct = s.totalPct;
+        const cls = pct >= 0 ? 'up' : 'down';
+        const w = (Math.abs(pct) / maxAbs * 100).toFixed(1);
+        return `<div class="bar-h-row">
+          <div class="bar-h-name">${escape(s.symbol)} <span class="muted small">${MARKET_LABEL[s.market]||s.market} ${s.count}笔</span></div>
+          <div class="bar-h-track"><div class="bar-h-fill ${cls}" style="width:${w}%;"></div></div>
+          <div class="bar-h-val ${cls}">${fmtPct(pct)}</div>
+        </div>`;
+      }).join('');
+
+      // ── 30 天日 PnL 热图 ──
+      if (heatEl) {
+        // 按日期分组 (本地时区)
+        const byDay = {};
+        for (const r of recent) {
+          if (!r.close_at) continue;
+          const d = new Date(r.close_at * 1000);
+          const key = d.toISOString().slice(0, 10);  // YYYY-MM-DD
+          if (!byDay[key]) byDay[key] = {pct: 0, count: 0};
+          byDay[key].pct += (r.realized_pnl_pct || 0);
+          byDay[key].count++;
+        }
+        // 生成最近 30 天 cell
+        const cells = [];
+        const today = new Date(); today.setHours(0,0,0,0);
+        for (let i = 29; i >= 0; i--) {
+          const d = new Date(today); d.setDate(d.getDate() - i);
+          const key = d.toISOString().slice(0, 10);
+          const v = byDay[key];
+          let cls = '';
+          if (v) {
+            const p = v.pct;
+            if (p > 5) cls = 'u4';
+            else if (p > 2) cls = 'u3';
+            else if (p > 0.5) cls = 'u2';
+            else if (p > 0) cls = 'u1';
+            else if (p > -0.5) cls = 'd1';
+            else if (p > -2) cls = 'd2';
+            else if (p > -5) cls = 'd3';
+            else cls = 'd4';
+          }
+          const title = v ? `${key}: ${v.count} 笔 ${fmtPct(v.pct)}` : `${key}: 无交易`;
+          cells.push(`<div class="heat-cell ${cls}" title="${title}"></div>`);
+        }
+        heatEl.innerHTML = cells.join('');
+      }
+    } catch (e) {
+      console.error('[strategyPerf]', e);
+      barsEl.innerHTML = `<div class="muted small" style="padding:14px;color:#f85149;">加载失败: ${escape((e && e.message) || String(e))}</div>`;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -3361,12 +3808,17 @@ window.addEventListener('unhandledrejection', function(e) {
   }
 
   // ─── PR2: 周报页 ───
+  // v12.27.8 Bug 4: top_wins / top_losses 是 position_id 数组(后端 reviewer.py:806),
+  //   先拉 reviews 列表建 pid → review 映射, 渲染时把 pid 还原成 symbol + pnl%
   async function renderWeekly() {
     const container = document.querySelector('.subpage[data-subpage="weekly"]');
     if (!container) return;
     container.innerHTML = '<div class="empty">⏳ 加载周报...</div>';
     try {
-      const data = await fetchJSON('/api/trade-review/weekly/list?limit=4');
+      const [data, reviewsData] = await Promise.all([
+        fetchJSON('/api/trade-review/weekly/list?limit=4'),
+        loadReviews().catch(() => ({items: []})),
+      ]);
       const reports = data.items || [];
       if (!reports.length) {
         container.innerHTML = `<div class="empty">
@@ -3376,14 +3828,54 @@ window.addEventListener('unhandledrejection', function(e) {
         </div>`;
         return;
       }
-      container.innerHTML = reports.map(r => renderWeeklyReportCard(r)).join('');
+      // 建 pid → review 映射 (用于把 top_wins/top_losses 的 pid 还原成 symbol+pnl%)
+      const reviewMap = {};
+      for (const r of (reviewsData.items || [])) {
+        reviewMap[r.position_id] = r;
+      }
+      container.innerHTML = reports.map(r => renderWeeklyReportCard(r, reviewMap)).join('');
     } catch (e) {
       console.error('[weekly]', e);
       container.innerHTML = '<div class="empty">加载周报失败</div>';
     }
   }
 
-  function renderWeeklyReportCard(r) {
+  // v12.27.8 Bug 4: 把任意类型的 top_wins/top_losses 元素还原成可读文本
+  function _formatWeeklyTopItem(item, reviewMap, isWin) {
+    // 字符串 → 假定是 position_id, 查映射
+    if (typeof item === 'string') {
+      const r = reviewMap && reviewMap[item];
+      if (r) {
+        const pct = r.realized_pnl_pct || 0;
+        return `${escape(r.symbol)} <span class="${isWin?'up':'down'}">${fmtPct(pct)}</span>${r.grade ? ` <span class="grade-pill ${r.grade.toUpperCase()}" style="font-size:9px;">${r.grade.toUpperCase()}</span>` : ''}`;
+      }
+      // 找不到对应复盘 — 直接显示截断的 pid
+      return `<span class="muted small">${escape(item.slice(0, 24))}</span>`;
+    }
+    // 对象 → 提取关键字段
+    if (item && typeof item === 'object') {
+      const sym = item.symbol || item.position_id || '?';
+      const pct = item.realized_pnl_pct != null ? item.realized_pnl_pct : (item.pnl_pct != null ? item.pnl_pct : null);
+      const note = item.note || item.text || item.reason || '';
+      const pctStr = pct != null ? ` <span class="${isWin?'up':'down'}">${fmtPct(pct)}</span>` : '';
+      return `${escape(String(sym))}${pctStr}${note ? ' — ' + escape(String(note)) : ''}`;
+    }
+    return escape(String(item));
+  }
+
+  // v12.27.8 Bug 4: 把 recurring_mistakes / actionable_changes 元素还原成文本
+  function _formatWeeklyMistake(item) {
+    if (typeof item === 'string') return escape(item);
+    if (item && typeof item === 'object') {
+      const txt = item.text || item.summary || item.pattern || item.description || '';
+      const cnt = item.count != null ? ` (${item.count} 次)` : '';
+      if (txt) return escape(String(txt)) + cnt;
+      return escape(JSON.stringify(item));
+    }
+    return escape(String(item));
+  }
+
+  function renderWeeklyReportCard(r, reviewMap) {
     const weekStart = new Date(r.week_start * 1000);
     const weekEnd = new Date(r.week_end * 1000);
     const winRate = ((r.win_rate || 0) * 100).toFixed(1);
@@ -3409,22 +3901,22 @@ window.addEventListener('unhandledrejection', function(e) {
       ${wins.length ? `
         <div style="font-size:12px;font-weight:600;color:var(--up);margin-bottom:6px;">🏆 Top 盈利</div>
         <ul style="margin:0 0 12px 0;padding-left:18px;font-size:11px;line-height:1.6;">
-          ${wins.slice(0, 3).map(w => `<li>${escape(typeof w === 'string' ? w : (w.symbol || '?') + ' ' + (w.note || ''))}</li>`).join('')}
+          ${wins.slice(0, 3).map(w => `<li>${_formatWeeklyTopItem(w, reviewMap, true)}</li>`).join('')}
         </ul>` : ''}
       ${losses.length ? `
         <div style="font-size:12px;font-weight:600;color:var(--down);margin-bottom:6px;">📉 Top 亏损</div>
         <ul style="margin:0 0 12px 0;padding-left:18px;font-size:11px;line-height:1.6;">
-          ${losses.slice(0, 3).map(l => `<li>${escape(typeof l === 'string' ? l : (l.symbol || '?') + ' ' + (l.note || ''))}</li>`).join('')}
+          ${losses.slice(0, 3).map(l => `<li>${_formatWeeklyTopItem(l, reviewMap, false)}</li>`).join('')}
         </ul>` : ''}
       ${mistakes.length ? `
         <div style="font-size:12px;font-weight:600;color:var(--warn);margin-bottom:6px;">🔁 反复出现的错误</div>
         <ul style="margin:0 0 12px 0;padding-left:18px;font-size:11px;line-height:1.6;">
-          ${mistakes.slice(0, 5).map(m => `<li>${escape(typeof m === 'string' ? m : (m.text || JSON.stringify(m)))}</li>`).join('')}
+          ${mistakes.slice(0, 5).map(m => `<li>${_formatWeeklyMistake(m)}</li>`).join('')}
         </ul>` : ''}
       ${changes.length ? `
         <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:6px;">💡 可操作的改进</div>
         <ul style="margin:0;padding-left:18px;font-size:11px;line-height:1.6;">
-          ${changes.slice(0, 5).map(c => `<li>${escape(typeof c === 'string' ? c : (c.text || JSON.stringify(c)))}</li>`).join('')}
+          ${changes.slice(0, 5).map(c => `<li>${_formatWeeklyMistake(c)}</li>`).join('')}
         </ul>` : ''}
     </div>`;
   }
