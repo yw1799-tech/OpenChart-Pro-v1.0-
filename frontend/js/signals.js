@@ -75,6 +75,7 @@ const Signals = (function () {
     stale:     { label: '⌛ 已过期', color: 'var(--text-tertiary)' },
     llm_error: { label: '⛔ LLM 失败', color: 'var(--color-down)' },
     skipped:   { label: '⊘ 无需验证', color: 'var(--text-tertiary)' },
+    deferred:  { label: '🌙 闭市待验', color: '#bc8cff' },  // v12.26.5: 闭市股票信号, 等开市批量验证
   };
 
   // 快速通道源标签（不走 LLM verify）→ 显示中文徽章
@@ -184,6 +185,7 @@ const Signals = (function () {
           <button class="oc-pill signals-chip" data-verdict="llm_error" style="border-color:var(--color-down);color:var(--color-down);" title="LLM 调用失败（API Key 余额不足 / 网络 / 限流）。充值后这些信号会被自动重新验证">⛔ LLM失败 <span class="oc-pill-count" data-count="llm_error">0</span></button>
           <button class="oc-pill signals-chip" data-verdict="reject" style="border-color:var(--color-down);color:var(--color-down);">❌ 否决 <span class="oc-pill-count" data-count="reject">0</span></button>
           <button class="oc-pill signals-chip" data-verdict="none" title="还在排队等 LLM 验证（短暂状态，几秒-几分钟）">⏳ 验证中 <span class="oc-pill-count" data-count="none">0</span></button>
+          <button class="oc-pill signals-chip" data-verdict="deferred" style="border-color:#bc8cff;color:#bc8cff;" title="v12.26.5: 闭市时段股票信号, 等开市后批量 LLM 验证">🌙 闭市待验 <span class="oc-pill-count" data-count="deferred">0</span></button>
           <button class="oc-pill signals-chip" data-verdict="skipped" title="无需 LLM 验证（如：股票 SELL 无持仓 / 信号置信度不足阈值）">⊘ 无需验证 <span class="oc-pill-count" data-count="skipped">0</span></button>
           <button class="oc-pill signals-chip" data-verdict="stale">⌛ 已过期 <span class="oc-pill-count" data-count="stale">0</span></button>
         </div>
@@ -231,16 +233,17 @@ const Signals = (function () {
     let visible = _items;
     if (_filterMarket !== 'all') visible = visible.filter((s) => s.market === _filterMarket);
     // 2) 更新 chip 计数（基于市场过滤后的集合）
-    const counts = { confirm: 0, warn: 0, reject: 0, none: 0, stale: 0, llm_error: 0, skipped: 0 };
+    // v12.26.5: deferred = 闭市时段股票信号 (开市后批量验证), 独立 chip
+    const counts = { confirm: 0, warn: 0, reject: 0, none: 0, stale: 0, llm_error: 0, skipped: 0, deferred: 0 };
+    const KNOWN_VERDICTS = ['confirm', 'warn', 'reject', 'stale', 'llm_error', 'skipped', 'deferred'];
     for (const s of visible) {
       const v = s.ai_verdict;
-      // 覆盖 null / undefined / '' / 未知字符串都算"验证中"
-      if (v === 'confirm' || v === 'warn' || v === 'reject' || v === 'stale' || v === 'llm_error' || v === 'skipped') counts[v]++;
-      else counts.none++;  // null / undefined / '' / 任何未知值 → 真的还在排队
+      if (KNOWN_VERDICTS.includes(v)) counts[v]++;
+      else counts.none++;  // null / undefined / '' / 真未知值 → 排队中
     }
     const pane = document.querySelector('.bottom-pane[data-pane="signals"]');
     if (pane) {
-      for (const k of ['confirm', 'warn', 'reject', 'none', 'stale', 'llm_error', 'skipped']) {
+      for (const k of ['confirm', 'warn', 'reject', 'none', 'stale', 'llm_error', 'skipped', 'deferred']) {
         const el = pane.querySelector(`[data-count="${k}"]`);
         if (el) el.textContent = counts[k];
       }
@@ -252,8 +255,9 @@ const Signals = (function () {
         return s.ai_verdict === _filterVerdict;
       });
     }
-    // 4) 排序：confirm > warn > 验证中 > reject > skipped > stale；同级按时间倒序
-    const verdictWeight = { confirm: 3, warn: 2, '': 1, undefined: 1, null: 1, reject: 0, skipped: -0.5, stale: -1, llm_error: 0 };
+    // 4) 排序：confirm > warn > 验证中 ≈ deferred > reject > skipped > stale；同级按时间倒序
+    // v12.26.5: deferred (闭市待验) 与 验证中同优先级
+    const verdictWeight = { confirm: 3, warn: 2, '': 1, undefined: 1, null: 1, deferred: 1, reject: 0, skipped: -0.5, stale: -1, llm_error: 0 };
     const getWeight = (v) => {
       if (v === 'stale') return -1;
       if (v === 'skipped') return -0.5;
