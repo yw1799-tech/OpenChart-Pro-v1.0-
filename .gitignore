@@ -107,3 +107,6 @@ backend/chanlun_engine/Image/
 # 临时打包 / 一次性报告文档
 /openchart_patch.tgz
 /FIX_REPORT.md
+
+# scratch/ 暂存区: 所有调试/分析临时文件挪到这里 (本地保留, 不进 repo)
+/scratch/
