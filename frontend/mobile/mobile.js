@@ -19,11 +19,23 @@
 //   /api/settings/telegram-test  Telegram 测试
 
 // v12.27.9: 立刻设置版本徽章 (不等 IIFE/renderNow), 防 5s 超时误报 'JS 未运行'
+// v12.27.13: 修 — mobile.js 在 version-badge div 之前加载, 此时 getElementById
+//   返回 null. 加 DOMContentLoaded 兜底, 确保 div 解析后再设
 (function() {
-  const vs = document.getElementById('version-status');
-  if (vs) {
-    vs.textContent = '✓ 已加载 ' + new Date().toLocaleTimeString().slice(0,5);
-    vs.style.color = '#3fb950';
+  function _setLoadedBadge() {
+    const vs = document.getElementById('version-status');
+    if (vs) {
+      vs.textContent = '✓ 已加载 ' + new Date().toLocaleTimeString().slice(0,5);
+      vs.style.color = '#3fb950';
+    }
+  }
+  // 立即试 (脚本顺序对的情况)
+  _setLoadedBadge();
+  // 兜底: DOM 完成后再试 (脚本在 div 之前的情况)
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _setLoadedBadge, { once: true });
+  } else {
+    setTimeout(_setLoadedBadge, 0);
   }
 })();
 
@@ -3528,9 +3540,9 @@ window.addEventListener('unhandledrejection', function(e) {
       // v12.27.12: 订单页专用大窗口拉取 (independent of cache)
       //   loadHistory() 默认 limit=50, 但用户 30 天有 50+ 闭环 → 每笔 ≥2 log
       //   = 100+ entries, 50 窗口被新数据填满 → 老 close 拿不到 → 美股只剩 9 个 open
-      //   订单流水页改为拉 500 (API 上限) + swap orders 拉 500
+      // v12.27.13: swap orders 后端 max=200 (不是 500), 之前 500 返回 422
       const [swapOrdersResp, logResp] = await Promise.all([
-        fetchJSON('/api/swap/orders?limit=500').catch(() => ({items: []})),
+        fetchJSON('/api/swap/orders?limit=200').catch(() => ({items: []})),
         fetchJSON('/api/auto-trade/log?limit=500').catch(() => ({items: []})),
       ]);
       const swapOrders = swapOrdersResp.items || [];
@@ -3558,6 +3570,14 @@ window.addEventListener('unhandledrejection', function(e) {
         });
       }
       for (const t of (log.items || [])) {
+        // v12.27.13: spot close/reduce 的 realized_pnl_usd 在 trigger_detail 里, 旧版没提取 → 平仓盈亏看不到
+        let spotPnl = null;
+        if (t.trigger_detail && (t.action === 'close' || t.action === 'reduce')) {
+          const td = typeof t.trigger_detail === 'string'
+            ? (() => { try { return JSON.parse(t.trigger_detail); } catch { return {}; } })()
+            : t.trigger_detail;
+          if (td && td.realized_pnl_usd != null) spotPnl = td.realized_pnl_usd;
+        }
         items.push({
           ts: t.traded_at,
           status: t.status,
@@ -3569,6 +3589,7 @@ window.addEventListener('unhandledrejection', function(e) {
           isSwap: t.market === 'crypto' && t.trigger_type && t.trigger_type.indexOf('swap') === 0,
           reason: t.reason || '',
           market: t.market,
+          realized_pnl_usd: spotPnl,  // v12.27.13: 现货 close PnL 也走顶层字段, 让 renderOrderRow 显示
         });
       }
       // 按时间倒序
